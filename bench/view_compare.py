@@ -7,6 +7,10 @@ import html
 import json
 from pathlib import Path
 from typing import Any
+import webbrowser
+
+from bench.cli_ui import colorize, use_color
+from engine.version import __version__
 
 
 def render_html(payload: dict[str, Any], page_title: str) -> str:
@@ -88,6 +92,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .page-title span {
       color: var(--accent);
+    }
+
+    .page-title #dashVersion {
+      color: var(--text-dim);
+      font-size: 0.68rem;
+      font-weight: 500;
     }
 
     /* ── PODIUM CARDS ── */
@@ -360,6 +370,80 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-size: 0.7rem;
       color: var(--text-secondary);
       white-space: nowrap;
+    }
+
+    .chip .chip-key {
+      color: var(--text-dim);
+    }
+
+    .chip .chip-val {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .chip-btn {
+      cursor: pointer;
+      border: 1px solid rgba(34, 211, 238, 0.3);
+      background: var(--accent-dim);
+      transition: border-color 0.15s;
+    }
+
+    .chip-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .protocol-panel {
+      display: none;
+      gap: 10px;
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 12px;
+    }
+
+    .protocol-panel.open {
+      display: grid;
+    }
+
+    .protocol-head {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .protocol-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+    }
+
+    .protocol-block {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      display: grid;
+      gap: 2px;
+    }
+
+    .protocol-block strong {
+      color: var(--accent);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .protocol-note {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
     }
 
     /* ── PANEL CARD ── */
@@ -1135,6 +1219,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </button>
       <div class=\"tech-body\" id=\"techBody\">
         <div class=\"chip-row\" id=\"metaChips\"></div>
+        <div class=\"protocol-panel\" id=\"protocolPanel\"></div>
       </div>
     </section>
 
@@ -1461,20 +1546,96 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return 'meter';
     }
 
+    function chip(label, value) {
+      return `<span class="chip"><span class="chip-key">${label}</span> <span class="chip-val">${value}</span></span>`;
+    }
+
     function renderMetaChips() {
+      const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" title="Show protocol rules"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
       const chips = [
-        `protocol: ${meta.protocol_version || '-'}`,
-        `bench: ${meta.bench_version || '-'}`,
-        `engine: ${meta.engine_version || '-'}`,
-        `scenario: ${meta.scenario || '-'}`,
-        `models: ${formatCount(meta.models?.length || models.length)}`,
-        `runs/model: ${formatCount(meta.runs_per_model)}`,
-        `total runs: ${formatCount(meta.total_runs || runs.length)}`,
-        `seeds: ${(meta.seed_list || []).join(', ') || '-'}`,
-        `prompt: ${String(meta.prompt_set_sha256 || '-').slice(0, 12)}`,
-        `fairness: paired seeds`,
+        protocolBtn,
+        chip('bench', meta.bench_version || '-'),
+        chip('engine', meta.engine_version || '-'),
+        chip('scenario', meta.scenario || '-'),
+        chip('models', formatCount(meta.models?.length || models.length)),
+        chip('runs/model', formatCount(meta.runs_per_model)),
+        chip('total runs', formatCount(meta.total_runs || runs.length)),
+        chip('seeds', (meta.seed_list || []).join(', ') || '-'),
+        chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12)),
+        chip('fairness', 'paired seeds'),
       ];
-      metaChips.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join('');
+      metaChips.innerHTML = chips.join('');
+
+      const protocolChip = document.getElementById('protocolChip');
+      if (protocolChip) {
+        protocolChip.addEventListener('click', () => { toggleProtocolPanel(); });
+      }
+    }
+
+    function renderProtocolPanel() {
+      const panel = document.getElementById('protocolPanel');
+      if (!panel) return;
+      const p = runs[0]?.replay?.protocol || meta.protocol || {};
+      const rules = p.rules || {};
+      const scoring = p.scoring || {};
+
+      const energyMax = Math.max(1, numberOr(rules.energy_max, 100));
+      const hungerMax = Math.max(1, numberOr(rules.hunger_max, 100));
+      const thirstMax = Math.max(1, numberOr(rules.thirst_max, 100));
+
+      panel.innerHTML = `
+        <div class="protocol-head">Protocol ${p.protocol_version || meta.protocol_version || '-'}</div>
+        <div class="protocol-grid">
+          <div class="protocol-block">
+            <strong>State Scale</strong>
+            <div>Energy: 0..${energyMax}</div>
+            <div>Hunger: 0..${hungerMax}</div>
+            <div>Thirst: 0..${thirstMax}</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Start State</strong>
+            <div>Energy ${numberOr(rules.start_energy, '-')}/${energyMax}</div>
+            <div>Hunger ${numberOr(rules.start_hunger, '-')}/${hungerMax}</div>
+            <div>Thirst ${numberOr(rules.start_thirst, '-')}/${thirstMax}</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Passive / Turn</strong>
+            <div>Energy ${formatSignedScore(-numberOr(rules.passive_energy_loss, 0))}</div>
+            <div>Hunger +${numberOr(rules.passive_hunger_gain, '-')}</div>
+            <div>Thirst +${numberOr(rules.passive_thirst_gain, '-')}</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Critical Thresholds</strong>
+            <div>hunger=${hungerMax}: ${formatSignedScore(-numberOr(rules.starvation_energy_penalty, 0))} energy</div>
+            <div>thirst=${thirstMax}: ${formatSignedScore(-numberOr(rules.dehydration_energy_penalty, 0))} energy</div>
+            <div>death: energy &lt;= 0</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Action Effects</strong>
+            <div>rest: +${numberOr(rules.rest_energy_gain, '-')} energy</div>
+            <div>eat: -${numberOr(rules.eat_hunger_reduction, '-')} hunger</div>
+            <div>drink: -${numberOr(rules.drink_thirst_reduction, '-')} thirst</div>
+            <div>gather: collect from tile</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Scoring</strong>
+            <div>survive: ${formatSignedScore(scoring.survive_turn)}</div>
+            <div>gather: ${formatSignedScore(scoring.gather_useful)}</div>
+            <div>consume: ${formatSignedScore(scoring.consume_useful)}</div>
+            <div>invalid: ${formatSignedScore(scoring.invalid_action)}</div>
+            <div>death: ${formatSignedScore(scoring.death)}</div>
+          </div>
+        </div>
+        <div class="protocol-note">
+          Parser: ${p.parser_case_mode || '-'} | Invalid policy: ${p.invalid_action_policy || '-'}
+        </div>
+      `;
+    }
+
+    function toggleProtocolPanel() {
+      const panel = document.getElementById('protocolPanel');
+      if (!panel) return;
+      panel.classList.toggle('open');
     }
 
     function enrichModelsFromRuns() {
@@ -2107,6 +2268,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       enrichModelsFromRuns();
       renderCompareSummary();
       renderMetaChips();
+      renderProtocolPanel();
       renderScoreChart();
       renderRanking();
       renderPairwise();
@@ -2145,16 +2307,31 @@ def generate_compare_viewer(compare_path: Path, output_path: Path, title: str | 
     return output_path
 
 
+def _short_path(path: Path) -> str:
+    resolved = path.resolve()
+    cwd = Path.cwd().resolve()
+    try:
+        return str(resolved.relative_to(cwd))
+    except ValueError:
+        return str(resolved)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate HTML compare dashboard from TinyWorld compare JSON")
     parser.add_argument("--compare", type=str, required=True, help="Path to compare JSON artifact")
     parser.add_argument("--output", type=str, default=None, help="Output HTML path")
     parser.add_argument("--title", type=str, default=None, help="Optional page title")
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the generated dashboard in your default browser.",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    color_enabled = use_color()
 
     compare_path = Path(args.compare)
     if not compare_path.is_absolute():
@@ -2168,7 +2345,25 @@ def main() -> None:
             output_path = (Path.cwd() / output_path).resolve()
 
     generated = generate_compare_viewer(compare_path=compare_path, output_path=output_path, title=args.title)
-    print(f"Compare dashboard generated: {generated}")
+
+    header = (
+        colorize("TinyWorld Compare Viewer", "1;36", color_enabled)
+        + " "
+        + colorize(f"v{__version__}", "1;97", color_enabled)
+    )
+    print(header)
+    print("Compare dashboard ready")
+    print(f"  Compare JSON: {_short_path(compare_path)}")
+    print(f"  HTML output:  {_short_path(generated)}")
+
+    if args.open_browser:
+        opened = webbrowser.open(generated.resolve().as_uri())
+        if opened:
+            print("  Browser:      opened in your default browser")
+        else:
+            print("  Browser:      generated, but failed to auto-open")
+    else:
+        print("  Browser:      not opened (use --open-browser)")
 
 
 if __name__ == "__main__":
