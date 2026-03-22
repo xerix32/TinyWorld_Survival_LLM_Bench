@@ -21,477 +21,753 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>""" + safe_title + """</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
     :root {
-      --bg-a: #f5f1e8;
-      --bg-b: #dbe7e4;
-      --panel: #fffdf8;
-      --ink: #1f2928;
-      --muted: #576563;
-      --line: #ccd8d5;
-      --accent: #0f766e;
-      --accent-2: #c2410c;
-      --ok: #1f8f5f;
-      --bad: #b42318;
-      --warn: #b96b00;
-      --shadow: 0 10px 30px rgba(16, 42, 51, 0.10);
-      --radius: 14px;
+      --bg: #0a0a0b;
+      --bg-raised: #111113;
+      --bg-card: #161619;
+      --bg-card-hover: #1c1c20;
+      --border: #27272a;
+      --border-bright: #3f3f46;
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.15);
+      --accent-glow: rgba(34, 211, 238, 0.08);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.15);
+      --red: #f87171;
+      --red-dim: rgba(248, 113, 113, 0.15);
+      --orange: #fb923c;
+      --orange-dim: rgba(251, 146, 60, 0.12);
+      --purple: #a78bfa;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 15% 10%, rgba(15, 118, 110, 0.08), transparent 35%),
-        radial-gradient(circle at 80% 20%, rgba(194, 65, 12, 0.08), transparent 32%),
-        repeating-linear-gradient(
-          90deg,
-          rgba(35, 73, 70, 0.03),
-          rgba(35, 73, 70, 0.03) 1px,
-          transparent 1px,
-          transparent 24px
-        ),
-        linear-gradient(180deg, var(--bg-a), var(--bg-b));
-      font-family: "Avenir Next", "Trebuchet MS", "Gill Sans", sans-serif;
-      line-height: 1.35;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
 
     .wrap {
-      max-width: 1560px;
+      max-width: 1400px;
       margin: 0 auto;
-      padding: 20px;
+      padding: 16px 20px;
       display: grid;
-      gap: 14px;
+      gap: 12px;
     }
 
-    .hero {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 14px 16px;
-      box-shadow: var(--shadow);
-      display: grid;
-      gap: 6px;
+    /* ── HEADER ── */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
     }
 
-    .hero h1 {
-      margin: 0;
-      font-size: 1.35rem;
+    .page-title {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
       font-weight: 700;
-      letter-spacing: 0.2px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    .hero p {
-      margin: 0;
-      color: var(--muted);
+    .page-title span {
+      color: var(--accent);
+    }
+
+    /* ── SUMMARY BAR ── */
+    .summary-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .summary-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .winner-badge {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      border-radius: 6px;
+      padding: 5px 14px;
+      letter-spacing: 0.04em;
+    }
+
+    .summary-vs {
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    .summary-model {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .summary-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .summary-metric {
+      background: var(--bg-raised);
+      padding: 12px 16px;
+      text-align: center;
+    }
+
+    .summary-metric .s-value {
+      font-family: var(--font-mono);
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .summary-metric .s-value.highlight { color: var(--accent); }
+
+    .summary-metric .s-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    /* ── TAB BAR ── */
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 10px 20px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-secondary);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .tab-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.2);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: grid;
+      gap: 16px;
+    }
+
+    /* ── TECH ACCORDION ── */
+    .tech-accordion {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--bg-card);
+    }
+
+    .tech-toggle {
+      width: 100%;
+      background: var(--bg-card);
+      border: none;
+      padding: 10px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      transition: color 0.15s;
+    }
+
+    .tech-toggle:hover { color: var(--text-secondary); }
+
+    .tech-body {
+      display: none;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .tech-body.open {
+      display: grid;
+      gap: 8px;
     }
 
     .chip-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 4px;
+      gap: 6px;
     }
 
     .chip {
-      border: 1px solid var(--line);
-      background: #f7faf8;
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 0.82rem;
-      color: var(--ink);
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-secondary);
       white-space: nowrap;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1.45fr 2.35fr;
-      gap: 14px;
-      align-items: start;
-    }
-
+    /* ── PANEL CARD ── */
     .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 12px;
+      padding: 20px;
       display: grid;
-      gap: 10px;
+      gap: 16px;
     }
 
-    .panel h2 {
-      margin: 0;
-      font-size: 1.02rem;
-      color: var(--accent);
-      letter-spacing: 0.2px;
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-dim);
       text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
+    /* ── TABLES ── */
     .table-wrap {
       overflow: auto;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fcfffd;
-      max-height: 320px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      max-height: 400px;
     }
+
+    .table-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+    .table-wrap::-webkit-scrollbar-track { background: var(--bg-raised); }
+    .table-wrap::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.92rem;
-    }
-
-    th, td {
-      padding: 8px 9px;
-      border-bottom: 1px solid #e7efec;
-      text-align: left;
-      white-space: nowrap;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
     }
 
     th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
       position: sticky;
       top: 0;
-      background: #edf4f2;
+      background: var(--bg-raised);
       z-index: 2;
     }
 
-    tbody tr.selected-row {
-      background: rgba(15, 118, 110, 0.10);
-      outline: 1px solid rgba(15, 118, 110, 0.28);
-      outline-offset: -1px;
+    td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      white-space: nowrap;
     }
 
-    .run-browser-controls {
+    tr { transition: background 0.1s; }
+    tr:hover { background: rgba(255,255,255,0.03); cursor: pointer; }
+
+    tbody tr.selected-row {
+      background: var(--accent-dim);
+    }
+
+    /* ── EXPLORER LAYOUT ── */
+    .explorer-layout {
       display: grid;
-      grid-template-columns: repeat(3, minmax(110px, 1fr));
+      grid-template-columns: 340px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .sidebar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+      max-height: calc(100vh - 100px);
+      overflow: hidden;
+    }
+
+    .sidebar-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* ── FILTERS ── */
+    .filter-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
 
     .field {
       display: grid;
-      gap: 4px;
-      font-size: 0.82rem;
-      color: var(--muted);
+      gap: 3px;
+    }
+
+    .field-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
 
     select {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 7px 8px;
-      background: #fcfffd;
-      font: inherit;
-      color: var(--ink);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: var(--bg-raised);
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      cursor: pointer;
     }
 
-    .run-nav {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+    select:focus {
+      outline: 1px solid var(--accent);
+      border-color: var(--accent);
     }
 
+    /* ── BUTTONS ── */
     button {
-      border: 1px solid #b9ccc8;
-      background: #f2f8f6;
-      color: #1f2928;
-      border-radius: 11px;
-      padding: 8px 11px;
-      font: inherit;
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
       font-weight: 600;
       cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
     }
 
     button:hover {
-      background: #e6f2ef;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── RUN NAV ── */
+    .run-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
     }
 
     .run-count {
-      color: var(--muted);
-      font-size: 0.86rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      margin-left: auto;
     }
 
+    /* ── RUN LIST ── */
     .run-list {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fcfffd;
-      max-height: 500px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
       overflow: auto;
       padding: 6px;
       display: grid;
-      gap: 6px;
+      gap: 4px;
+      flex: 1;
+      max-height: calc(100vh - 360px);
+      min-height: 200px;
     }
 
-    .run-group {
-      font-weight: 700;
-      font-size: 0.82rem;
-      color: #24524b;
-      margin-top: 2px;
-      padding-left: 3px;
-    }
+    .run-list::-webkit-scrollbar { width: 5px; }
+    .run-list::-webkit-scrollbar-track { background: transparent; }
+    .run-list::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
 
-    .run-item {
-      border: 1px solid #d7e4e0;
-      border-radius: 9px;
-      padding: 8px;
-      background: #ffffff;
+    .seed-pair {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: var(--bg-card);
       cursor: pointer;
       display: grid;
-      gap: 2px;
+      gap: 5px;
+      transition: border-color 0.15s;
     }
 
-    .run-item:hover {
-      border-color: #8db5ad;
-      background: #f7fcfa;
+    .seed-pair:hover { border-color: var(--border-bright); }
+
+    .seed-pair.active {
+      border-color: rgba(34, 211, 238, 0.4);
+      background: rgba(34, 211, 238, 0.05);
     }
 
-    .run-item.active {
-      border-color: var(--accent);
-      background: #edf8f4;
-      box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.18);
-    }
-
-    .run-title {
-      font-size: 0.89rem;
+    .seed-pair-header {
+      font-family: var(--font-mono);
       font-weight: 700;
+      font-size: 0.76rem;
+      color: var(--text-secondary);
       display: flex;
       justify-content: space-between;
-      gap: 8px;
+      align-items: center;
     }
 
-    .run-sub {
-      color: var(--muted);
-      font-size: 0.82rem;
-    }
-
-    .badge {
+    .seed-pair-row {
+      display: grid;
+      grid-template-columns: 1fr auto 50px;
+      gap: 6px;
+      align-items: center;
+      font-family: var(--font-mono);
       font-size: 0.74rem;
-      border-radius: 999px;
-      padding: 2px 8px;
-      border: 1px solid transparent;
+      color: var(--text-dim);
+    }
+
+    .seed-pair-row span:last-child {
+      text-align: right;
+      color: var(--text-secondary);
+      font-weight: 700;
+    }
+
+    .seed-delta {
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 0.72rem;
+    }
+
+    .seed-delta.positive { color: var(--green); }
+    .seed-delta.negative { color: var(--red); }
+
+    /* ── BADGES ── */
+    .badge {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      font-weight: 700;
     }
 
     .badge.ok {
-      color: #0f5132;
-      background: #dcfce7;
-      border-color: #86efac;
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
     }
 
     .badge.bad {
-      color: #7f1d1d;
-      background: #fee2e2;
-      border-color: #fca5a5;
+      background: var(--red-dim);
+      color: var(--red);
+      border: 1px solid rgba(248, 113, 113, 0.3);
     }
 
     .badge.warn {
-      color: #7a4700;
-      background: #fff3cf;
-      border-color: #f4d07b;
+      background: var(--orange-dim);
+      color: var(--orange);
+      border: 1px solid rgba(251, 146, 60, 0.25);
+    }
+
+    /* ── REPLAY PANEL ── */
+    .replay-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: grid;
+      gap: 16px;
     }
 
     .replay-header {
       display: grid;
-      gap: 6px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #f8fcfb;
-      padding: 10px;
+      gap: 8px;
     }
 
     .replay-title {
+      font-family: var(--font-mono);
       font-weight: 700;
-      font-size: 1rem;
+      font-size: 0.92rem;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      color: var(--text);
+    }
+
+    .replay-sub {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-dim);
     }
 
     .summary-cards {
       display: grid;
-      grid-template-columns: repeat(3, minmax(120px, 1fr));
-      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
     }
 
     .card {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 8px;
-      display: grid;
-      gap: 3px;
+      background: var(--bg-raised);
+      padding: 10px 14px;
     }
 
     .card .label {
-      color: var(--muted);
-      font-size: 0.74rem;
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.2px;
+      letter-spacing: 0.08em;
+      font-family: var(--font-mono);
     }
 
     .card .value {
+      font-family: var(--font-mono);
       font-weight: 800;
-      font-size: 1rem;
+      font-size: 0.95rem;
+      color: var(--text);
+      margin-top: 2px;
     }
 
+    .model-switch {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .model-switch .muted-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+
+    /* ── TURN CONTROLS ── */
     .turn-controls {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 8px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #f8fcfb;
-      padding: 8px;
+      padding: 10px 12px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
     }
 
     .turn-controls input[type=range] {
       flex: 1;
-      min-width: 180px;
+      min-width: 120px;
+      accent-color: var(--accent);
+      height: 4px;
     }
 
     .turn-meta {
-      color: var(--muted);
-      font-size: 0.9rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      font-size: 0.76rem;
       white-space: nowrap;
     }
 
+    /* ── MAP + DETAIL GRID ── */
     .replay-grid {
       display: grid;
-      grid-template-columns: 1.6fr 1.2fr;
-      gap: 10px;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 12px;
       align-items: start;
     }
 
     .map-board {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #f8fcfb;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       padding: 8px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .map-grid {
       display: grid;
       gap: 6px;
     }
 
+    .map-grid {
+      display: grid;
+      gap: 3px;
+    }
+
     .tile {
-      border: 1px solid #d7e4e0;
-      border-radius: 8px;
-      min-height: 66px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-height: 56px;
       padding: 4px;
-      background: #ffffff;
+      background: var(--bg-card);
       display: grid;
       align-content: space-between;
-      gap: 3px;
+      gap: 2px;
       position: relative;
       overflow: hidden;
     }
 
-    .tile.empty { background: #f9fbfc; }
-    .tile.tree { background: #f2fbf4; }
-    .tile.rock { background: #f2f4f5; }
-    .tile.food { background: #fff6ed; }
-    .tile.water { background: #eef7ff; }
-    .tile.unknown { background: #f3f3f3; color: #7a7a7a; }
+    .tile.empty   { background: #1a1a1e; }
+    .tile.tree    { background: #0d1f12; border-color: #1a3a22; }
+    .tile.rock    { background: #1a1a1e; border-color: #2a2a30; }
+    .tile.food    { background: #1f1408; border-color: #3a2810; }
+    .tile.water   { background: #081820; border-color: #103040; }
+    .tile.unknown { background: #18181b; color: #52525b; }
 
     .tile.visited::after {
       content: '';
       position: absolute;
-      inset: 3px;
-      border: 1px dashed rgba(15, 118, 110, 0.45);
-      border-radius: 6px;
+      inset: 2px;
+      border: 1px dashed rgba(34, 211, 238, 0.3);
+      border-radius: 4px;
       pointer-events: none;
     }
 
     .tile.current {
-      box-shadow: inset 0 0 0 2px rgba(194, 65, 12, 0.60);
+      box-shadow: inset 0 0 0 2px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.15);
     }
 
     .coord {
       position: absolute;
-      top: 3px;
-      right: 5px;
-      color: #576563;
-      font-size: 0.72rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      opacity: 0.9;
+      top: 2px;
+      right: 4px;
+      color: var(--text-dim);
+      font-size: 0.56rem;
+      font-family: var(--font-mono);
+      opacity: 0.5;
     }
 
     .tile-main {
-      font-size: 1.36rem;
+      font-size: 1.2rem;
       text-align: center;
       line-height: 1;
-      margin-top: 13px;
+      margin-top: 12px;
     }
 
     .agent-mark {
       position: absolute;
-      bottom: 4px;
-      left: 5px;
+      bottom: 2px;
+      left: 3px;
+      right: 3px;
       display: inline-flex;
       align-items: center;
-      gap: 3px;
-      border: 1px solid rgba(15, 118, 110, 0.55);
-      border-radius: 999px;
-      padding: 1px 6px;
-      background: rgba(237, 248, 244, 0.96);
-      color: #0f5f58;
-      font-size: 0.68rem;
+      gap: 2px;
+      border: 1px solid rgba(34, 211, 238, 0.25);
+      border-radius: 4px;
+      padding: 1px 4px;
+      background: rgba(34, 211, 238, 0.1);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 0.52rem;
       font-weight: 700;
-      max-width: calc(100% - 12px);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .map-legend {
-      color: var(--muted);
-      font-size: 0.82rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      font-size: 0.68rem;
     }
 
+    /* ── DETAIL PANEL ── */
     .detail-panel {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #f8fcfb;
-      padding: 8px;
       display: grid;
-      gap: 8px;
+      gap: 12px;
     }
 
-    .label {
-      color: var(--muted);
-      font-size: 0.8rem;
+    .detail-section {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .detail-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.2px;
+      letter-spacing: 0.08em;
     }
 
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    .code-block {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      padding: 8px;
-      min-height: 34px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
+    /* ── METERS ── */
     .meter-grid {
       display: grid;
-      gap: 7px;
+      gap: 8px;
     }
 
     .meter {
@@ -502,373 +778,300 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .meter-head {
       display: flex;
       justify-content: space-between;
-      font-size: 0.82rem;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-secondary);
     }
 
     .meter-bar {
       width: 100%;
-      height: 11px;
+      height: 6px;
       border-radius: 999px;
-      background: #dce9e5;
+      background: var(--border);
       overflow: hidden;
     }
 
     .meter-fill {
       height: 100%;
-      background: #18956d;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 0.3s ease;
     }
 
-    .meter.warn .meter-fill { background: #b96b00; }
-    .meter.bad .meter-fill { background: #b42318; }
+    .meter.warn .meter-fill { background: var(--orange); }
+    .meter.bad .meter-fill { background: var(--red); }
 
+    /* ── INVENTORY ── */
     .inv-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(90px, 1fr));
-      gap: 6px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
     }
 
     .inv-item {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-card);
+      padding: 5px 8px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+    }
+
+    .inv-item strong { color: var(--text); }
+
+    /* ── CODE BLOCK ── */
+    .code-block {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      padding: 8px 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+    }
+
+    .code-block.raw-cmd {
+      color: var(--accent);
+      background: rgba(34, 211, 238, 0.05);
+      border-color: rgba(34, 211, 238, 0.15);
+    }
+
+    /* ── DETAILS/SUMMARY ── */
+    details > summary {
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      padding: 4px 0;
+      list-style: none;
+      transition: color 0.15s;
+    }
+
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: "\\25B8  "; font-size: 0.6rem; }
+    details[open] > summary::before { content: "\\25BE  "; }
+    details > summary:hover { color: var(--text-secondary); }
+
+    /* ── TIMELINE ── */
+    .timeline-section {
+      display: grid;
       gap: 8px;
     }
 
     .timeline-wrap {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fcfffd;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       overflow: auto;
       max-height: 260px;
     }
 
-    .muted { color: var(--muted); }
+    .timeline-wrap::-webkit-scrollbar { width: 5px; height: 5px; }
+    .timeline-wrap::-webkit-scrollbar-track { background: var(--bg-raised); }
+    .timeline-wrap::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
 
+    /* ── EMPTY STATE ── */
     .empty-state {
-      border: 1px dashed #c9d7d3;
-      border-radius: 10px;
-      padding: 12px;
-      background: #fafdfe;
-      color: var(--muted);
+      border: 1px dashed var(--border-bright);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      text-align: center;
     }
 
-    .compare-summary {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 16px;
-      display: grid;
-      gap: 12px;
-    }
-
-    .compare-winner {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
-    }
-
-    .winner-badge {
-      font-size: 1.05rem;
-      font-weight: 800;
-      background: #dcfce7;
-      color: #0f5132;
-      border: 2px solid #86efac;
-      border-radius: 12px;
-      padding: 8px 18px;
-    }
-
-    .compare-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-    }
-
-    .compare-stat-card {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 10px;
-      display: grid;
-      gap: 3px;
-    }
-
-    .compare-stat-card .label {
-      font-size: 0.74rem;
-    }
-
-    .compare-stat-card .value {
-      font-weight: 800;
-      font-size: 1rem;
-    }
-
-    .tech-accordion {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      overflow: hidden;
-      background: var(--panel);
-    }
-
-    .tech-toggle {
-      width: 100%;
-      background: #f7faf8;
-      border: none;
-      padding: 10px 16px;
-      font: inherit;
-      font-size: 0.86rem;
-      font-weight: 700;
-      color: var(--muted);
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .tech-toggle:hover { background: #edf7f4; }
-
-    .tech-body {
-      display: none;
-      padding: 12px 16px;
-      background: var(--panel);
-    }
-
-    .tech-body.open {
-      display: grid;
-      gap: 8px;
-    }
-
-    .seed-pair {
-      border: 1px solid #d7e4e0;
-      border-radius: 10px;
-      padding: 10px;
-      background: #ffffff;
-      cursor: pointer;
-      display: grid;
-      gap: 6px;
-    }
-
-    .seed-pair:hover { border-color: #8db5ad; background: #f7fcfa; }
-    .seed-pair.active { border-color: var(--accent); background: #edf8f4; }
-
-    .seed-pair-header {
-      font-weight: 800;
-      font-size: 0.90rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .seed-pair-row {
-      display: grid;
-      grid-template-columns: 1fr auto 60px;
-      gap: 6px;
-      align-items: center;
-      font-size: 0.84rem;
-    }
-
-    .seed-delta {
-      font-weight: 800;
-      font-size: 0.82rem;
-    }
-
-    .seed-delta.positive { color: var(--ok); }
-    .seed-delta.negative { color: var(--bad); }
-
-    .model-switch {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-top: 4px;
-    }
-
-    .model-switch .muted-label {
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
-
-    details > summary {
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--muted);
-      padding: 4px 0;
-      list-style: none;
-    }
-
-    details > summary::-webkit-details-marker { display: none; }
-
-    details > summary::before {
-      content: "\\25B6  ";
+    /* ── FOOTER ── */
+    .footer {
+      color: var(--text-dim);
+      font-family: var(--font-mono);
       font-size: 0.68rem;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 4px 0;
     }
 
-    details[open] > summary::before {
-      content: "\\25BC  ";
-    }
-
-    details > summary:hover { color: var(--ink); }
-
-    @media (max-width: 1320px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-      .replay-grid {
-        grid-template-columns: 1fr;
-      }
-      .summary-cards {
-        grid-template-columns: repeat(2, minmax(120px, 1fr));
-      }
-      .run-browser-controls {
-        grid-template-columns: 1fr;
-      }
+    /* ── RESPONSIVE ── */
+    @media (max-width: 1100px) {
+      .explorer-layout { grid-template-columns: 1fr; }
+      .replay-grid { grid-template-columns: 1fr; }
+      .summary-cards { grid-template-columns: repeat(2, 1fr); }
+      .filter-row { grid-template-columns: 1fr; }
+      .sidebar { max-height: none; }
     }
   </style>
 </head>
 <body>
   <div class=\"wrap\">
-    <section class=\"hero\">
-      <h1>TinyWorld Compare Dashboard</h1>
-      <p>Paired-seed model comparison with drill-down replay for each run.</p>
-    </section>
+    <div class=\"page-header\">
+      <div class=\"page-title\"><span>TinyWorld</span> Compare Dashboard</div>
+    </div>
 
-    <section class=\"compare-summary\" id=\"compareSummary\"></section>
+    <section class=\"summary-bar\" id=\"compareSummary\"></section>
 
     <section class=\"tech-accordion\">
       <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
-        Technical Details <span id=\"techArrow\">&#9654;</span>
+        // technical details <span id=\"techArrow\">&#9654;</span>
       </button>
       <div class=\"tech-body\" id=\"techBody\">
         <div class=\"chip-row\" id=\"metaChips\"></div>
       </div>
     </section>
 
-    <div class=\"grid\">
-      <section class=\"panel\">
-        <h2>🏁 Model Ranking</h2>
+    <nav class=\"tab-bar\">
+      <button class=\"tab-btn active\" data-tab=\"leaderboard\" type=\"button\">Leaderboard</button>
+      <button class=\"tab-btn\" data-tab=\"explorer\" type=\"button\">Run Explorer</button>
+    </nav>
+
+    <!-- TAB 1: LEADERBOARD -->
+    <div class=\"tab-panel active\" id=\"tab-leaderboard\">
+      <div class=\"panel\">
+        <div class=\"panel-title\">Model Ranking</div>
         <div class=\"table-wrap\">
           <table>
             <thead>
               <tr>
                 <th>#</th>
-                <th>Model profile</th>
-                <th>Avg score</th>
-                <th>Avg survive</th>
-                <th>Invalid avg</th>
-                <th>Death rate</th>
+                <th>Model</th>
+                <th>Avg Score</th>
+                <th>Avg Survived</th>
+                <th>Avg Invalid</th>
+                <th>Death Rate</th>
               </tr>
             </thead>
             <tbody id=\"rankingBody\"></tbody>
           </table>
         </div>
+      </div>
 
-        <h2>⚖️ Head-to-Head</h2>
+      <div class=\"panel\">
+        <div class=\"panel-title\">Head-to-Head</div>
         <div class=\"table-wrap\">
           <table>
             <thead>
               <tr>
                 <th>Pair</th>
-                <th>Paired runs</th>
-                <th>Win rate A</th>
-                <th>Avg Δ(A-B)</th>
-                <th>W/L/T</th>
+                <th>Paired Runs</th>
+                <th>Win Rate A</th>
+                <th>Avg Delta (A-B)</th>
+                <th>W / L / T</th>
               </tr>
             </thead>
             <tbody id=\"h2hBody\"></tbody>
           </table>
         </div>
-      </section>
+      </div>
+    </div>
 
-      <section class=\"panel\">
-        <h2>📚 Run Browser</h2>
-        <div class=\"run-browser-controls\">
-          <label class=\"field\">Model filter<select id=\"modelFilter\"></select></label>
-          <label class=\"field\">Seed filter<select id=\"seedFilter\"></select></label>
-          <label class=\"field\">Status filter<select id=\"statusFilter\"></select></label>
-        </div>
+    <!-- TAB 2: RUN EXPLORER -->
+    <div class=\"tab-panel\" id=\"tab-explorer\">
+      <div class=\"explorer-layout\">
+        <aside class=\"sidebar\">
+          <div class=\"sidebar-title\">Run Browser</div>
 
-        <div class=\"run-nav\">
-          <button type=\"button\" id=\"prevRunBtn\">◀ Prev run</button>
-          <button type=\"button\" id=\"nextRunBtn\">Next run ▶</button>
-          <div class=\"run-count\" id=\"runCount\"></div>
-        </div>
-
-        <div class=\"run-list\" id=\"runList\"></div>
-      </section>
-
-      <section class=\"panel\">
-        <h2>🎮 Selected Run Replay</h2>
-
-        <div class=\"replay-header\" id=\"replayHeader\"></div>
-
-        <div class=\"turn-controls\">
-          <button type=\"button\" id=\"prevTurnBtn\">◀ Prev turn</button>
-          <button type=\"button\" id=\"playTurnBtn\">▶ Play</button>
-          <button type=\"button\" id=\"nextTurnBtn\">Next turn ▶</button>
-          <input id=\"turnSlider\" type=\"range\" min=\"1\" max=\"1\" value=\"1\" />
-          <div class=\"turn-meta\" id=\"turnMeta\"></div>
-        </div>
-
-        <div class=\"replay-grid\">
-          <div class=\"map-board\">
-            <div class=\"map-grid\" id=\"mapGrid\"></div>
-            <div class=\"map-legend\" id=\"mapLegend\"></div>
+          <div class=\"filter-row\">
+            <div class=\"field\">
+              <span class=\"field-label\">Model</span>
+              <select id=\"modelFilter\"></select>
+            </div>
+            <div class=\"field\">
+              <span class=\"field-label\">Seed</span>
+              <select id=\"seedFilter\"></select>
+            </div>
+          </div>
+          <div class=\"field\">
+            <span class=\"field-label\">Status</span>
+            <select id=\"statusFilter\"></select>
           </div>
 
-          <div class=\"detail-panel\">
-            <div>
-              <div class=\"label\">Turn Details</div>
-              <div id=\"turnStatus\"></div>
-            </div>
-
-            <div>
-              <div class=\"label\">State</div>
-              <div class=\"meter-grid\" id=\"stateMeters\"></div>
-            </div>
-
-            <div>
-              <div class=\"label\">Inventory</div>
-              <div class=\"inv-grid\" id=\"inventoryGrid\"></div>
-            </div>
-
-            <details>
-              <summary>Raw model output</summary>
-              <div class=\"code-block\" id=\"rawOutput\"></div>
-            </details>
-
-            <details>
-              <summary>Score events</summary>
-              <div class=\"code-block\" id=\"scoreEvents\"></div>
-            </details>
+          <div class=\"run-nav\">
+            <button type=\"button\" id=\"prevRunBtn\">&#9664; Prev</button>
+            <button type=\"button\" id=\"nextRunBtn\">Next &#9654;</button>
+            <div class=\"run-count\" id=\"runCount\"></div>
           </div>
-        </div>
 
-        <div>
-          <h2>📜 Turn Timeline</h2>
-          <div class=\"timeline-wrap\">
-            <table>
-              <thead>
-                <tr>
-                  <th>Turn</th>
-                  <th>Action</th>
-                  <th>Valid</th>
-                  <th>Δ Score</th>
-                  <th>Total Score</th>
-                  <th>Energy</th>
-                  <th>Hunger</th>
-                  <th>Thirst</th>
-                </tr>
-              </thead>
-              <tbody id=\"timelineBody\"></tbody>
-            </table>
+          <div class=\"run-list\" id=\"runList\"></div>
+        </aside>
+
+        <main class=\"replay-panel\">
+          <div class=\"replay-header\" id=\"replayHeader\"></div>
+
+          <div class=\"turn-controls\">
+            <button type=\"button\" id=\"prevTurnBtn\">&#9664;</button>
+            <button type=\"button\" id=\"playTurnBtn\">&#9654; Play</button>
+            <button type=\"button\" id=\"nextTurnBtn\">&#9654;</button>
+            <input id=\"turnSlider\" type=\"range\" min=\"1\" max=\"1\" value=\"1\" />
+            <div class=\"turn-meta\" id=\"turnMeta\"></div>
           </div>
-        </div>
-      </section>
+
+          <div class=\"replay-grid\">
+            <div class=\"map-board\">
+              <div class=\"map-grid\" id=\"mapGrid\"></div>
+              <div class=\"map-legend\" id=\"mapLegend\"></div>
+            </div>
+
+            <div class=\"detail-panel\">
+              <div class=\"detail-section\">
+                <div class=\"detail-label\">Turn Details</div>
+                <div id=\"turnStatus\"></div>
+              </div>
+
+              <div class=\"detail-section\">
+                <div class=\"detail-label\">State</div>
+                <div class=\"meter-grid\" id=\"stateMeters\"></div>
+              </div>
+
+              <div class=\"detail-section\">
+                <div class=\"detail-label\">Inventory</div>
+                <div class=\"inv-grid\" id=\"inventoryGrid\"></div>
+              </div>
+
+              <details>
+                <summary>Raw model output</summary>
+                <div class=\"code-block raw-cmd\" id=\"rawOutput\"></div>
+              </details>
+
+              <details>
+                <summary>Score events</summary>
+                <div class=\"code-block\" id=\"scoreEvents\"></div>
+              </details>
+            </div>
+          </div>
+
+          <div class=\"timeline-section\">
+            <div class=\"panel-title\">Turn Timeline</div>
+            <div class=\"timeline-wrap\">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Action</th>
+                    <th>Valid</th>
+                    <th>&#916;</th>
+                    <th>Total</th>
+                    <th>Energy</th>
+                    <th>Hunger</th>
+                    <th>Thirst</th>
+                  </tr>
+                </thead>
+                <tbody id=\"timelineBody\"></tbody>
+              </table>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class=\"footer\">
+      <span>TinyWorld Survival Bench</span>
     </div>
   </div>
 """
@@ -880,19 +1083,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const DATA = JSON.parse(document.getElementById('compareData').textContent || '{}');
 
     const tileMeta = {
-      empty: { emoji: '▫️', label: 'empty' },
-      tree: { emoji: '🌲', label: 'tree' },
-      rock: { emoji: '🪨', label: 'rock' },
-      food: { emoji: '🍎', label: 'food' },
-      water: { emoji: '💧', label: 'water' },
-      unknown: { emoji: '◻️', label: 'unknown' },
+      empty: { emoji: '\\u00B7', label: 'empty' },
+      tree: { emoji: '\\u{1F332}', label: 'tree' },
+      rock: { emoji: '\\u{1FAA8}', label: 'rock' },
+      food: { emoji: '\\u{1F34E}', label: 'food' },
+      water: { emoji: '\\u{1F4A7}', label: 'water' },
+      unknown: { emoji: '\\u25A0', label: 'unknown' },
     };
 
     const inventoryMeta = {
-      wood: '🪵 wood',
-      stone: '🧱 stone',
-      food: '🍎 food',
-      water: '💧 water',
+      wood: '\\u{1FAB5} wood',
+      stone: '\\u{1F9F1} stone',
+      food: '\\u{1F34E} food',
+      water: '\\u{1F4A7} water',
     };
 
     const metaChips = document.getElementById('metaChips');
@@ -935,19 +1138,30 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     let currentTurnIndex = 0;
     let autoPlayTimer = null;
 
+    /* ── TABS ── */
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const panel = document.getElementById('tab-' + btn.getAttribute('data-tab'));
+        if (panel) panel.classList.add('active');
+      });
+    });
+
     function numberOr(value, fallback) {
       const num = Number(value);
       return Number.isFinite(num) ? num : fallback;
     }
 
-    function formatCount(value, fallback = 'not available') {
+    function formatCount(value, fallback = 'n/a') {
       if (value === null || value === undefined || value === '') return fallback;
       const num = Number(value);
       if (!Number.isFinite(num)) return fallback;
       return Math.round(num).toLocaleString('en-US');
     }
 
-    function formatFloat(value, digits = 2, fallback = 'not available') {
+    function formatFloat(value, digits = 2, fallback = 'n/a') {
       if (value === null || value === undefined || value === '') return fallback;
       const num = Number(value);
       if (!Number.isFinite(num)) return fallback;
@@ -955,9 +1169,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function formatDurationFromMs(valueMs) {
-      if (valueMs === null || valueMs === undefined || valueMs === '') return 'not available';
+      if (valueMs === null || valueMs === undefined || valueMs === '') return 'n/a';
       const ms = Number(valueMs);
-      if (!Number.isFinite(ms)) return 'not available';
+      if (!Number.isFinite(ms)) return 'n/a';
       if (ms < 10) return `${ms.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ms`;
       if (ms < 1000) return `${ms.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ms`;
 
@@ -983,15 +1197,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function shortProfile(value) {
       const text = String(value || 'model');
-      return text.length <= 16 ? text : `${text.slice(0, 16)}…`;
+      return text.length <= 18 ? text : `${text.slice(0, 18)}...`;
     }
 
     function getRunStatus(summary) {
       const endReason = String(summary?.end_reason || '');
       if (endReason === 'agent_dead') {
-        return { key: 'dead', label: 'Agent died', className: 'bad' };
+        return { key: 'dead', label: 'Died', className: 'bad' };
       }
-      return { key: 'finished', label: 'Reached limit', className: 'ok' };
+      return { key: 'finished', label: 'Survived', className: 'ok' };
     }
 
     function formatScoreEvent(eventName) {
@@ -1023,17 +1237,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function renderMetaChips() {
-      const chips = [];
-      chips.push(`Protocol: ${meta.protocol_version || '-'}`);
-      chips.push(`Bench/Engine: ${meta.bench_version || '-'} / ${meta.engine_version || '-'}`);
-      chips.push(`Scenario: ${meta.scenario || '-'}`);
-      chips.push(`Models: ${formatCount(meta.models?.length || models.length)}`);
-      chips.push(`Runs/model: ${formatCount(meta.runs_per_model)}`);
-      chips.push(`Total runs: ${formatCount(meta.total_runs || runs.length)}`);
-      chips.push(`Seeds: ${(meta.seed_list || []).join(', ') || '-'}`);
-      chips.push(`Prompt hash: ${String(meta.prompt_set_sha256 || '-').slice(0, 12)}`);
-      chips.push('Fairness: paired seeds (same seeds per model)');
-      metaChips.innerHTML = chips.map((item) => `<span class=\"chip\">${item}</span>`).join('');
+      const chips = [
+        `protocol: ${meta.protocol_version || '-'}`,
+        `bench: ${meta.bench_version || '-'}`,
+        `engine: ${meta.engine_version || '-'}`,
+        `scenario: ${meta.scenario || '-'}`,
+        `models: ${formatCount(meta.models?.length || models.length)}`,
+        `runs/model: ${formatCount(meta.runs_per_model)}`,
+        `total runs: ${formatCount(meta.total_runs || runs.length)}`,
+        `seeds: ${(meta.seed_list || []).join(', ') || '-'}`,
+        `prompt: ${String(meta.prompt_set_sha256 || '-').slice(0, 12)}`,
+        `fairness: paired seeds`,
+      ];
+      metaChips.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join('');
     }
 
     function renderCompareSummary() {
@@ -1045,65 +1261,61 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const h2h = pairwise.length ? pairwise[0] : null;
 
       const cards = [
-        { label: 'Avg Score', value: formatFloat(winner.avg_final_score, 2) },
+        { label: 'Avg Score', value: formatFloat(winner.avg_final_score, 2), highlight: true },
         { label: 'Survival Rate', value: `${formatFloat(100 - winner.death_rate_pct, 1)}%` },
         { label: 'Avg Invalid', value: formatFloat(winner.avg_invalid_actions, 2) },
       ];
 
       if (loser) {
-        cards.push({ label: `${loser.model_profile} Avg Score`, value: formatFloat(loser.avg_final_score, 2) });
+        cards.push({ label: `${shortProfile(loser.model_profile)} Score`, value: formatFloat(loser.avg_final_score, 2) });
         if (h2h) {
           const wr = h2h.win_rate_a_vs_b !== null && h2h.win_rate_a_vs_b !== undefined
             ? `${formatFloat(h2h.win_rate_a_vs_b, 1)}%` : 'n/a';
-          cards.push({ label: 'Win Rate (H2H)', value: wr });
+          cards.push({ label: 'H2H Win Rate', value: wr });
           cards.push({ label: 'W / L / T', value: `${h2h.wins_a} / ${h2h.wins_b} / ${h2h.ties}` });
         }
       }
 
       el.innerHTML = `
-        <div class="compare-winner">
-          <div class="winner-badge">1st: ${winner.model_profile}</div>
-          ${loser ? `<span style="color:var(--muted)">vs</span><span style="font-weight:700">${loser.model_profile}</span>` : ''}
+        <div class="summary-header">
+          <div class="winner-badge">#1 ${winner.model_profile}</div>
+          ${loser ? `<span class="summary-vs">//</span><span class="summary-model">${loser.model_profile}</span>` : ''}
         </div>
-        <div class="compare-stats-grid">
-          ${cards.map(c => `<div class="compare-stat-card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
+        <div class="summary-metrics">
+          ${cards.map(c => `<div class="summary-metric"><div class="s-value ${c.highlight ? 'highlight' : ''}">${c.value}</div><div class="s-label">${c.label}</div></div>`).join('')}
         </div>
       `;
     }
 
     function renderRanking() {
       if (!models.length) {
-        rankingBody.innerHTML = '<tr><td colspan="6" class="muted">No model stats available.</td></tr>';
+        rankingBody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No model stats.</td></tr>';
         return;
       }
 
-      rankingBody.innerHTML = models.map((row) => {
-        return `
-          <tr>
-            <td>${formatCount(row.rank)}</td>
-            <td>${row.model_profile}</td>
-            <td>${formatFloat(row.avg_final_score, 2)}</td>
-            <td>${formatFloat(row.avg_turns_survived, 2)} / ${formatCount(row.max_turns_avg || 0)}</td>
-            <td>${formatFloat(row.avg_invalid_actions, 2)}</td>
-            <td>${formatFloat(row.death_rate_pct, 1)}%</td>
-          </tr>
-        `;
-      }).join('');
+      rankingBody.innerHTML = models.map(row => `
+        <tr>
+          <td>${formatCount(row.rank)}</td>
+          <td style="color:var(--accent);font-weight:700">${row.model_profile}</td>
+          <td style="font-weight:700">${formatFloat(row.avg_final_score, 2)}</td>
+          <td>${formatFloat(row.avg_turns_survived, 2)} / ${formatCount(row.max_turns_avg || 0)}</td>
+          <td>${formatFloat(row.avg_invalid_actions, 2)}</td>
+          <td>${formatFloat(row.death_rate_pct, 1)}%</td>
+        </tr>
+      `).join('');
     }
 
     function renderPairwise() {
       if (!pairwise.length) {
-        h2hBody.innerHTML = '<tr><td colspan="5" class="muted">Need at least two models for head-to-head.</td></tr>';
+        h2hBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-dim)">Need 2+ models for H2H.</td></tr>';
         return;
       }
 
-      h2hBody.innerHTML = pairwise.map((row) => {
+      h2hBody.innerHTML = pairwise.map(row => {
         const wr = row.win_rate_a_vs_b === null || row.win_rate_a_vs_b === undefined
-          ? 'not available'
-          : `${formatFloat(row.win_rate_a_vs_b, 1)}%`;
+          ? 'n/a' : `${formatFloat(row.win_rate_a_vs_b, 1)}%`;
         const delta = row.avg_delta_a_minus_b === null || row.avg_delta_a_minus_b === undefined
-          ? 'not available'
-          : `${Number(row.avg_delta_a_minus_b) >= 0 ? '+' : ''}${formatFloat(row.avg_delta_a_minus_b, 2)}`;
+          ? 'n/a' : `${Number(row.avg_delta_a_minus_b) >= 0 ? '+' : ''}${formatFloat(row.avg_delta_a_minus_b, 2)}`;
 
         return `
           <tr>
@@ -1111,22 +1323,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <td>${formatCount(row.paired_runs)}</td>
             <td>${wr}</td>
             <td>${delta}</td>
-            <td>${formatCount(row.wins_a)}/${formatCount(row.wins_b)}/${formatCount(row.ties)}</td>
+            <td>${formatCount(row.wins_a)} / ${formatCount(row.wins_b)} / ${formatCount(row.ties)}</td>
           </tr>
         `;
       }).join('');
     }
 
     function initFilters() {
-      const modelOptions = ['all', ...new Set(runs.map((run) => String(run.model_profile || ''))).values()];
-      const seedOptions = ['all', ...new Set(runs.map((run) => String(run.seed))).values()];
+      const modelOptions = ['all', ...new Set(runs.map(run => String(run.model_profile || ''))).values()];
+      const seedOptions = ['all', ...new Set(runs.map(run => String(run.seed))).values()];
 
-      modelFilter.innerHTML = modelOptions.map((value) => `<option value=\"${value}\">${value === 'all' ? 'All models' : value}</option>`).join('');
-      seedFilter.innerHTML = seedOptions.map((value) => `<option value=\"${value}\">${value === 'all' ? 'All seeds' : `Seed ${value}`}</option>`).join('');
+      modelFilter.innerHTML = modelOptions.map(v => `<option value="${v}">${v === 'all' ? 'All' : v}</option>`).join('');
+      seedFilter.innerHTML = seedOptions.map(v => `<option value="${v}">${v === 'all' ? 'All' : `Seed ${v}`}</option>`).join('');
       statusFilter.innerHTML = [
-        '<option value="all">All statuses</option>',
-        '<option value="dead">Agent died</option>',
-        '<option value="finished">Reached turn limit</option>',
+        '<option value="all">All</option>',
+        '<option value="dead">Died</option>',
+        '<option value="finished">Survived</option>',
       ].join('');
     }
 
@@ -1155,7 +1367,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function buildSeedPairs() {
       const bySeed = {};
-      filteredRunIndexes.forEach((idx) => {
+      filteredRunIndexes.forEach(idx => {
         const run = runs[idx];
         const seedKey = String(run.seed);
         if (!bySeed[seedKey]) bySeed[seedKey] = [];
@@ -1168,15 +1380,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const seedPairs = buildSeedPairs();
 
       if (!seedPairs.length) {
-        runList.innerHTML = '<div class="empty-state">No runs match the current filters.</div>';
-        runCount.textContent = '0 runs';
+        runList.innerHTML = '<div class="empty-state">No runs match filters.</div>';
+        runCount.textContent = '0';
         renderReplayEmpty();
         return;
       }
 
-      runCount.textContent = `${seedPairs.length} seed pair(s), ${filteredRunIndexes.length} run(s)`;
+      runCount.textContent = `${filteredRunIndexes.length} runs`;
 
-      runList.innerHTML = seedPairs.map((pair) => {
+      runList.innerHTML = seedPairs.map(pair => {
         const isActive = pair.entries.some(e => e.idx === selectedRunIndex);
 
         const rows = pair.entries.map(entry => {
@@ -1184,10 +1396,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const status = getRunStatus(s);
           const score = formatCount(s.final_score);
           const isSelected = entry.idx === selectedRunIndex;
-          return `<div class="seed-pair-row" data-run-index="${entry.idx}" style="${isSelected ? 'font-weight:800' : ''}">
-            <span>${entry.run.model_profile}</span>
-            <span class="badge ${status.className}" style="font-size:0.7rem">${status.label}</span>
-            <span style="font-weight:700;text-align:right">${score} pts</span>
+          return `<div class="seed-pair-row" data-run-index="${entry.idx}" style="${isSelected ? 'color:var(--accent)' : ''}">
+            <span>${shortProfile(entry.run.model_profile)}</span>
+            <span class="badge ${status.className}">${status.label}</span>
+            <span>${score}</span>
           </div>`;
         });
 
@@ -1209,10 +1421,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         </div>`;
       }).join('');
 
-      // Click on seed pair header selects first run of that seed
-      runList.querySelectorAll('.seed-pair').forEach((node) => {
-        node.addEventListener('click', (e) => {
-          // Check if a specific row was clicked
+      runList.querySelectorAll('.seed-pair').forEach(node => {
+        node.addEventListener('click', e => {
           const rowEl = e.target.closest('.seed-pair-row');
           if (rowEl) {
             const idx = Number(rowEl.getAttribute('data-run-index'));
@@ -1225,7 +1435,6 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               return;
             }
           }
-          // Otherwise select first run of this seed
           const seed = node.getAttribute('data-seed');
           const pair = seedPairs.find(p => p.seed === seed);
           if (pair && pair.entries.length) {
@@ -1239,9 +1448,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
 
       const active = runList.querySelector('.seed-pair.active');
-      if (active) {
-        active.scrollIntoView({ block: 'nearest' });
-      }
+      if (active) active.scrollIntoView({ block: 'nearest' });
     }
 
     function selectedRun() {
@@ -1279,15 +1486,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         : `${formatCount(gathered)}/${formatCount(gatherableTotal)}`;
 
       const cards = [
-        { label: 'Final score', value: `${formatCount(summary.final_score)} points` },
-        { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)} turns` },
-        { label: 'Invalid actions', value: formatCount(summary.invalid_actions) },
-        { label: 'Resources gathered', value: gatheredLabel },
-        { label: 'Model latency', value: formatDurationFromMs(summary.latency_ms) },
-        { label: 'Tokens used', value: formatCount(summary.tokens_used) },
+        { label: 'Score', value: formatCount(summary.final_score) },
+        { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)}` },
+        { label: 'Invalid', value: formatCount(summary.invalid_actions) },
+        { label: 'Resources', value: gatheredLabel },
+        { label: 'Latency', value: formatDurationFromMs(summary.latency_ms) },
+        { label: 'Tokens', value: formatCount(summary.tokens_used) },
       ];
 
-      // Find other runs on same seed for model switcher
       const sameSeedRuns = runs
         .map((r, i) => ({ r, i }))
         .filter(item => String(item.r.seed) === String(run.seed) && item.i !== selectedRunIndex);
@@ -1295,27 +1501,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       let switcherHtml = '';
       if (sameSeedRuns.length > 0) {
         switcherHtml = `<div class="model-switch">
-          <span class="muted-label">Switch model on this seed:</span>
-          ${sameSeedRuns.map(item => `<button type="button" data-switch-run="${item.i}" style="font-size:0.82rem;padding:4px 10px">${item.r.model_profile}</button>`).join('')}
+          <span class="muted-label">Switch:</span>
+          ${sameSeedRuns.map(item => `<button type="button" data-switch-run="${item.i}">${shortProfile(item.r.model_profile)}</button>`).join('')}
         </div>`;
       }
 
       replayHeader.innerHTML = `
         <div class="replay-title">
-          <span>${run.model_profile} · seed ${run.seed}</span>
+          <span>${run.model_profile}</span>
+          <span style="color:var(--text-dim);font-size:0.78rem">seed ${run.seed}</span>
           <span class="badge ${status.className}">${status.label}</span>
         </div>
-        <div class="muted">${summary.end_reason_human || '-'}</div>
-        ${deathCause ? `<div class="muted">Cause: ${deathCause}</div>` : ''}
+        ${summary.end_reason_human ? `<div class="replay-sub">${summary.end_reason_human}</div>` : ''}
+        ${deathCause ? `<div class="replay-sub">${deathCause}</div>` : ''}
         <div class="summary-cards">
-          ${cards.map((card) => `<div class="card"><div class="label">${card.label}</div><div class="value">${card.value}</div></div>`).join('')}
+          ${cards.map(c => `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
         </div>
         ${switcherHtml}
       `;
 
-      // Bind model switch buttons
-      replayHeader.querySelectorAll('[data-switch-run]').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
+      replayHeader.querySelectorAll('[data-switch-run]').forEach(btn => {
+        btn.addEventListener('click', e => {
           e.stopPropagation();
           selectedRunIndex = Number(btn.getAttribute('data-switch-run'));
           currentTurnIndex = 0;
@@ -1334,14 +1540,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const agent = frame.agent_position_after || frame.agent_position_before || { x: 0, y: 0 };
 
       const visited = new Set(
-        (frame.path_prefix || []).map((pos) => `${numberOr(pos.x, 0)},${numberOr(pos.y, 0)}`)
+        (frame.path_prefix || []).map(pos => `${numberOr(pos.x, 0)},${numberOr(pos.y, 0)}`)
       );
 
-      mapGrid.style.gridTemplateColumns = `repeat(${width}, minmax(64px, 1fr))`;
+      mapGrid.style.gridTemplateColumns = `repeat(${width}, minmax(52px, 1fr))`;
 
       const cells = [];
-      for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) {
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
           const type = String(map?.[y]?.[x] || 'unknown');
           const metaEntry = tileMeta[type] || tileMeta.unknown;
 
@@ -1356,7 +1562,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <div class="${classes.join(' ')}">
               <div class="coord">${x},${y}</div>
               <div class="tile-main">${metaEntry.emoji}</div>
-              ${isCurrent ? `<div class="agent-mark">🤖 ${shortProfile(run.model_profile)}</div>` : ''}
+              ${isCurrent ? `<div class="agent-mark">\\u{1F916} ${shortProfile(run.model_profile)}</div>` : ''}
             </div>
           `);
         }
@@ -1365,14 +1571,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       mapGrid.innerHTML = cells.join('');
       const coverage = String(run.replay?.meta?.map_coverage || 'partial');
       mapLegend.textContent = coverage === 'full'
-        ? 'Legend: 🤖 current agent, dashed = visited path, map coverage full from engine snapshot.'
-        : 'Legend: 🤖 current agent, dashed = visited path, unknown tiles may still be hidden.';
+        ? 'full map | dashed = visited'
+        : 'partial map (fog) | dashed = visited';
     }
 
     function renderTurnDetails(run, frame) {
-      const summary = run.summary || {};
       const rules = replayRules(run);
-
       const observation = frame.observation || {};
       const validation = frame.validation_result || {};
       const actionResult = frame.action_result || {};
@@ -1382,32 +1586,33 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       const isValid = Boolean(validation.is_valid);
       const resultMessage = !isValid
-        ? `Invalid command: ${validation.error || 'not allowed this turn'}`
-        : (actionResult.message || (actionResult.success ? 'Action applied.' : 'No effect.'));
+        ? `Invalid: ${validation.error || 'not allowed'}`
+        : (actionResult.message || (actionResult.success ? 'Applied.' : 'No effect.'));
 
       const badgeClass = isValid ? 'ok' : 'bad';
       const badgeLabel = isValid ? 'VALID' : 'INVALID';
 
       turnStatus.innerHTML = `
-        <div class="replay-title">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--font-mono);font-size:0.82rem">
           <span class="badge ${badgeClass}">${badgeLabel}</span>
-          <span>Turn ${formatCount(frame.turn)} · Action: <span class="mono">${actionResult.requested || '-'}</span></span>
+          <span style="color:var(--accent);font-weight:700">${actionResult.requested || '-'}</span>
+          <span style="color:var(--text-dim)">T${formatCount(frame.turn)}</span>
         </div>
-        <div class="muted">Result: ${resultMessage}</div>
-        <div class="muted">Score total: ${formatCount(frame.cumulative_score)} · Δ this turn: ${formatSignedScore(scoreDelta.total || 0)}</div>
+        <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-dim);margin-top:4px">${resultMessage}</div>
+        <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);margin-top:2px">score: ${formatCount(frame.cumulative_score)} (${formatSignedScore(scoreDelta.total || 0)})</div>
       `;
 
       const meters = [
-        { key: 'energy', icon: '⚡', value: numberOr(observation.energy, 0), max: rules.energyMax },
-        { key: 'hunger', icon: '🍽️', value: numberOr(observation.hunger, 0), max: rules.hungerMax },
-        { key: 'thirst', icon: '🥤', value: numberOr(observation.thirst, 0), max: rules.thirstMax },
+        { key: 'energy', label: 'Energy', value: numberOr(observation.energy, 0), max: rules.energyMax },
+        { key: 'hunger', label: 'Hunger', value: numberOr(observation.hunger, 0), max: rules.hungerMax },
+        { key: 'thirst', label: 'Thirst', value: numberOr(observation.thirst, 0), max: rules.thirstMax },
       ];
 
-      stateMeters.innerHTML = meters.map((item) => {
+      stateMeters.innerHTML = meters.map(item => {
         const pct = Math.max(0, Math.min(100, (item.value / item.max) * 100));
         return `
           <div class="${meterClass(item.key, item.value, item.max)}">
-            <div class="meter-head"><span>${item.icon} ${item.key}</span><span>${formatCount(item.value)}/${formatCount(item.max)}</span></div>
+            <div class="meter-head"><span>${item.label}</span><span>${formatCount(item.value)}/${formatCount(item.max)}</span></div>
             <div class="meter-bar"><div class="meter-fill" style="width:${pct.toFixed(2)}%"></div></div>
           </div>
         `;
@@ -1420,11 +1625,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       rawOutput.textContent = String(frame.raw_model_output || '-').trim() || '-';
 
       const eventLines = [
-        `score delta total: ${formatSignedScore(scoreDelta.total || 0)}`,
-        `score events: ${(scoreDelta.events || []).map(formatScoreEvent).join(', ') || '-'}`,
-        `model latency: ${formatDurationFromMs(metrics.latency_ms)}`,
-        `tokens used: ${formatCount(metrics.tokens_used)}`,
-        `estimated cost: ${formatFloat(metrics.estimated_cost, 6, 'not available')}`,
+        `delta: ${formatSignedScore(scoreDelta.total || 0)}`,
+        `events: ${(scoreDelta.events || []).map(formatScoreEvent).join(', ') || '-'}`,
+        `latency: ${formatDurationFromMs(metrics.latency_ms)}`,
+        `tokens: ${formatCount(metrics.tokens_used)}`,
+        `cost: ${formatFloat(metrics.estimated_cost, 6, 'n/a')}`,
       ];
       scoreEvents.textContent = eventLines.join('\\n');
 
@@ -1436,8 +1641,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         return `
           <tr class="${rowClass}" data-turn-index="${idx}">
             <td>${formatCount(item.turn)}</td>
-            <td class="mono">${item.action_result?.requested || '-'}</td>
-            <td>${valid ? 'yes' : 'no'}</td>
+            <td>${item.action_result?.requested || '-'}</td>
+            <td>${valid ? '\\u2713' : '\\u2717'}</td>
             <td>${formatSignedScore(item.score_delta?.total || 0)}</td>
             <td>${formatCount(item.cumulative_score)}</td>
             <td>${formatCount(obs.energy)}</td>
@@ -1447,7 +1652,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `;
       }).join('');
 
-      timelineBody.querySelectorAll('tr').forEach((row) => {
+      timelineBody.querySelectorAll('tr').forEach(row => {
         row.addEventListener('click', () => {
           const index = Number(row.getAttribute('data-turn-index'));
           if (!Number.isFinite(index)) return;
@@ -1457,26 +1662,23 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
 
       const selected = timelineBody.querySelector('tr.selected-row');
-      if (selected) {
-        selected.scrollIntoView({ block: 'nearest' });
-      }
+      if (selected) selected.scrollIntoView({ block: 'nearest' });
 
       const frameCount = frames.length;
-      const turnDisplay = frameCount ? `${currentTurnIndex + 1}/${frameCount}` : '0/0';
-      turnMeta.textContent = `Turn ${turnDisplay}`;
+      turnMeta.textContent = frameCount ? `${currentTurnIndex + 1}/${frameCount}` : '0/0';
     }
 
     function renderReplayEmpty() {
-      replayHeader.innerHTML = '<div class="empty-state">Select a run to inspect replay details.</div>';
+      replayHeader.innerHTML = '<div class="empty-state">Select a run to view replay.</div>';
       mapGrid.innerHTML = '';
       mapLegend.textContent = '';
-      turnStatus.innerHTML = '<div class="empty-state">No turn details available.</div>';
+      turnStatus.innerHTML = '';
       stateMeters.innerHTML = '';
       inventoryGrid.innerHTML = '';
       rawOutput.textContent = '-';
       scoreEvents.textContent = '-';
       timelineBody.innerHTML = '';
-      turnMeta.textContent = 'Turn 0/0';
+      turnMeta.textContent = '0/0';
       turnSlider.min = '1';
       turnSlider.max = '1';
       turnSlider.value = '1';
@@ -1484,10 +1686,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderReplay() {
       const run = selectedRun();
-      if (!run) {
-        renderReplayEmpty();
-        return;
-      }
+      if (!run) { renderReplayEmpty(); return; }
 
       const frames = run.replay?.frames || [];
       if (!frames.length) {
@@ -1514,7 +1713,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         window.clearInterval(autoPlayTimer);
         autoPlayTimer = null;
       }
-      playTurnBtn.textContent = '▶ Play';
+      playTurnBtn.innerHTML = '&#9654; Play';
     }
 
     function toggleAutoPlay() {
@@ -1522,20 +1721,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const frames = run?.replay?.frames || [];
       if (frames.length <= 1) return;
 
-      if (autoPlayTimer !== null) {
-        stopAutoPlay();
-        return;
-      }
+      if (autoPlayTimer !== null) { stopAutoPlay(); return; }
 
-      playTurnBtn.textContent = '⏸ Pause';
+      playTurnBtn.innerHTML = '&#9646;&#9646;';
       autoPlayTimer = window.setInterval(() => {
-        if (currentTurnIndex >= frames.length - 1) {
-          stopAutoPlay();
-          return;
-        }
+        if (currentTurnIndex >= frames.length - 1) { stopAutoPlay(); return; }
         currentTurnIndex += 1;
         renderReplay();
-      }, 850);
+      }, 750);
     }
 
     function moveRun(offset) {
@@ -1560,7 +1753,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function bindEvents() {
-      [modelFilter, seedFilter, statusFilter].forEach((node) => {
+      [modelFilter, seedFilter, statusFilter].forEach(node => {
         node.addEventListener('change', () => {
           stopAutoPlay();
           rebuildFilteredRuns();
@@ -1586,32 +1779,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         renderReplay();
       });
 
-      document.addEventListener('keydown', (event) => {
+      document.addEventListener('keydown', event => {
         const tag = String(event.target?.tagName || '').toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault();
-          moveRun(-1);
-          return;
-        }
-
-        if (event.key === 'ArrowRight') {
-          event.preventDefault();
-          moveRun(1);
-          return;
-        }
-
-        if (event.key === 'ArrowUp') {
-          event.preventDefault();
-          moveTurn(-1);
-          return;
-        }
-
-        if (event.key === 'ArrowDown') {
-          event.preventDefault();
-          moveTurn(1);
-        }
+        if (event.key === 'ArrowLeft') { event.preventDefault(); moveRun(-1); return; }
+        if (event.key === 'ArrowRight') { event.preventDefault(); moveRun(1); return; }
+        if (event.key === 'ArrowUp') { event.preventDefault(); moveTurn(-1); return; }
+        if (event.key === 'ArrowDown') { event.preventDefault(); moveTurn(1); }
       });
     }
 

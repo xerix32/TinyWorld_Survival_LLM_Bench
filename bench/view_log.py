@@ -208,131 +208,265 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>""" + safe_title + """</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
     :root {
-      --bg-a: #f5f1e8;
-      --bg-b: #dbe7e4;
-      --panel: #fffdf8;
-      --ink: #1f2928;
-      --muted: #576563;
-      --line: #ccd8d5;
-      --accent: #0f766e;
-      --accent-2: #c2410c;
-      --ok: #1f8f5f;
-      --bad: #b42318;
-      --shadow: 0 10px 30px rgba(16, 42, 51, 0.10);
-      --radius: 16px;
+      --bg: #0a0a0b;
+      --bg-raised: #111113;
+      --bg-card: #161619;
+      --bg-card-hover: #1c1c20;
+      --border: #27272a;
+      --border-bright: #3f3f46;
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #22d3ee;
+      --accent-dim: rgba(34, 211, 238, 0.15);
+      --accent-glow: rgba(34, 211, 238, 0.08);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.15);
+      --red: #f87171;
+      --red-dim: rgba(248, 113, 113, 0.15);
+      --orange: #fb923c;
+      --orange-dim: rgba(251, 146, 60, 0.12);
+      --purple: #a78bfa;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
-      color: var(--ink);
-      background:
-        radial-gradient(circle at 15% 10%, rgba(15, 118, 110, 0.08), transparent 35%),
-        radial-gradient(circle at 80% 20%, rgba(194, 65, 12, 0.08), transparent 32%),
-        repeating-linear-gradient(
-          90deg,
-          rgba(35, 73, 70, 0.03),
-          rgba(35, 73, 70, 0.03) 1px,
-          transparent 1px,
-          transparent 24px
-        ),
-        linear-gradient(180deg, var(--bg-a), var(--bg-b));
-      font-family: "Avenir Next", "Trebuchet MS", "Gill Sans", sans-serif;
-      line-height: 1.4;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
 
     .wrap {
-      max-width: 1280px;
+      max-width: 1320px;
       margin: 0 auto;
-      padding: 20px;
+      padding: 16px 20px;
+      display: grid;
+      gap: 12px;
+    }
+
+    /* ── OUTCOME HEADER ── */
+    .outcome-hero {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
       display: grid;
       gap: 16px;
     }
 
-    .hero {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 16px 18px;
-      box-shadow: var(--shadow);
-      display: grid;
-      gap: 6px;
+    .outcome-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
     }
 
-    .hero h1 {
-      margin: 0;
-      font-size: 1.35rem;
+    .outcome-identity {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .outcome-model {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
       font-weight: 700;
-      letter-spacing: 0.2px;
+      color: var(--accent);
     }
 
-    .hero h1 .title-version {
-      font-size: 0.92rem;
-      color: #0f766e;
+    .outcome-separator {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    .outcome-scenario {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 10px;
+    }
+
+    .outcome-badge {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 5px 14px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .outcome-badge.survived {
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+
+    .outcome-badge.died {
+      background: var(--red-dim);
+      color: var(--red);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+    }
+
+    .outcome-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .outcome-metric {
+      background: var(--bg-raised);
+      padding: 12px 16px;
+      text-align: center;
+    }
+
+    .outcome-metric .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
       font-weight: 800;
-      margin-left: 8px;
-      letter-spacing: 0.02em;
+      color: var(--text);
+      line-height: 1.1;
     }
 
-    .hero p {
-      margin: 0;
-      color: var(--muted);
+    .outcome-metric .metric-value.score-value {
+      color: var(--accent);
+      font-size: 1.8rem;
+    }
+
+    .outcome-metric .metric-value.score-negative {
+      color: var(--red);
+    }
+
+    .outcome-metric .metric-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    .outcome-why {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      border-left: 2px solid var(--border-bright);
+      padding-left: 12px;
+    }
+
+    /* ── TECH ACCORDION ── */
+    .tech-accordion {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--bg-card);
+    }
+
+    .tech-toggle {
+      width: 100%;
+      background: var(--bg-card);
+      border: none;
+      padding: 10px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      transition: color 0.15s;
+    }
+
+    .tech-toggle:hover { color: var(--text-secondary); }
+
+    .tech-body {
+      display: none;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .tech-body.open {
+      display: grid;
+      gap: 10px;
     }
 
     .chip-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 6px;
+      gap: 6px;
     }
 
     .chip {
-      border: 1px solid var(--line);
-      background: #f7faf8;
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 0.84rem;
-      color: var(--ink);
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-secondary);
       white-space: nowrap;
     }
 
     .chip .chip-key {
-      color: #596865;
-      font-weight: 700;
+      color: var(--text-dim);
       margin-right: 4px;
     }
 
     .chip .chip-value {
-      color: #22302e;
-      font-weight: 700;
+      color: var(--text-secondary);
+      font-weight: 600;
     }
 
     .chip.chip-model .chip-value {
-      color: #0f766e;
-      font-weight: 800;
+      color: var(--accent);
+      font-weight: 700;
     }
 
     .chip-btn {
       cursor: pointer;
       font: inherit;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      transition: border-color 0.15s;
     }
 
     .chip-btn:hover {
-      background: #edf7f4;
-      border-color: #bdd6d1;
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     .protocol-panel {
       display: none;
       gap: 10px;
       margin-top: 8px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #f6fbf9;
-      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 12px;
     }
 
     .protocol-panel.open {
@@ -340,205 +474,73 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .protocol-head {
-      font-size: 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
       font-weight: 700;
-      color: #0e5f58;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
 
     .protocol-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(220px, 1fr));
-      gap: 10px;
+      gap: 8px;
     }
 
     .protocol-block {
-      border: 1px solid #d8e7e2;
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 8px 10px;
-      font-size: 0.84rem;
-      color: #31403e;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-secondary);
       display: grid;
-      gap: 3px;
+      gap: 2px;
     }
 
     .protocol-block strong {
-      color: #0f766e;
-      font-size: 0.78rem;
-      letter-spacing: 0.05em;
+      color: var(--accent);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
     .protocol-note {
-      color: #425957;
-      font-size: 0.82rem;
-    }
-
-    .outcome-hero {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 20px 22px;
-      box-shadow: var(--shadow);
-      display: grid;
-      gap: 12px;
-      animation: rise 0.24s ease both;
-    }
-
-    .outcome-context {
-      font-size: 0.92rem;
-      color: var(--muted);
-    }
-
-    .outcome-top {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .outcome-badge {
-      font-size: 1.05rem;
-      font-weight: 800;
-      border-radius: 12px;
-      padding: 8px 18px;
-      letter-spacing: 0.02em;
-    }
-
-    .outcome-badge.survived {
-      background: #dcfce7;
-      color: #0f5132;
-      border: 2px solid #86efac;
-    }
-
-    .outcome-badge.died {
-      background: #fee2e2;
-      color: #7f1d1d;
-      border: 2px solid #fca5a5;
-    }
-
-    .outcome-score {
-      font-size: 2rem;
-      font-weight: 800;
-      color: var(--accent);
-      line-height: 1;
-    }
-
-    .outcome-score .score-label {
-      font-size: 0.78rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      display: block;
-      font-weight: 700;
-    }
-
-    .outcome-stats {
-      display: flex;
-      gap: 24px;
-      flex-wrap: wrap;
-      font-size: 0.95rem;
-      color: var(--ink);
-    }
-
-    .outcome-stats .stat-label {
-      color: var(--muted);
+      color: var(--text-dim);
       font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      font-family: var(--font-mono);
     }
 
-    .outcome-why {
-      font-size: 0.95rem;
-      color: var(--muted);
-      border-left: 3px solid var(--accent-2);
-      padding-left: 12px;
-      font-style: italic;
-    }
-
-    .tech-accordion {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      overflow: hidden;
-      background: var(--panel);
-    }
-
-    .tech-toggle {
-      width: 100%;
-      background: #f7faf8;
-      border: none;
-      padding: 10px 16px;
-      font: inherit;
-      font-size: 0.86rem;
-      font-weight: 700;
-      color: var(--muted);
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      letter-spacing: 0.02em;
-    }
-
-    .tech-toggle:hover { background: #edf7f4; }
-
-    .tech-body {
-      display: none;
-      padding: 12px 16px;
-      background: var(--panel);
-    }
-
-    .tech-body.open {
-      display: grid;
-      gap: 8px;
-    }
-
-    details > summary {
-      cursor: pointer;
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: var(--muted);
-      padding: 4px 0;
-      list-style: none;
-    }
-
-    details > summary::-webkit-details-marker { display: none; }
-
-    details > summary::before {
-      content: "\\25B6  ";
-      font-size: 0.7rem;
-    }
-
-    details[open] > summary::before {
-      content: "\\25BC  ";
-    }
-
-    details > summary:hover { color: var(--ink); }
-
+    /* ── LAYOUT ── */
     .layout {
       display: grid;
       grid-template-columns: 1.6fr 1fr;
-      gap: 14px;
+      gap: 12px;
       align-items: start;
     }
 
     .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 14px;
+      padding: 16px;
       display: grid;
       gap: 12px;
     }
 
     .panel h2 {
       margin: 0;
-      font-size: 1rem;
-      letter-spacing: 0.02em;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--accent);
+      color: var(--text-dim);
+      font-weight: 700;
     }
 
+    /* ── MAP CONTROLS ── */
     .control-bar {
       display: grid;
       grid-template-columns: auto auto auto 1fr auto;
@@ -547,93 +549,104 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .btn {
-      border: 1px solid var(--line);
-      background: #ffffff;
-      color: var(--ink);
-      border-radius: 10px;
-      padding: 6px 10px;
-      font-size: 0.86rem;
+      border: 1px solid var(--border);
+      background: var(--bg-raised);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 600;
       cursor: pointer;
-      transition: transform 0.12s ease, background 0.2s ease;
+      transition: border-color 0.15s, color 0.15s;
     }
 
-    .btn:hover { transform: translateY(-1px); background: #f1f6f4; }
+    .btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
 
-    input[type='range'] { width: 100%; accent-color: var(--accent); }
+    input[type='range'] {
+      width: 100%;
+      accent-color: var(--accent);
+      height: 4px;
+    }
 
     .turn-meta {
-      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
-      font-size: 0.86rem;
-      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-dim);
     }
 
+    /* ── MAP ── */
     .map {
       display: grid;
-      gap: 6px;
-      background: #f2f7f5;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px;
+      gap: 3px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
     }
 
     .tile {
       position: relative;
-      border: 1px solid #d7e3df;
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
       min-height: 52px;
       display: grid;
       place-items: center;
-      font-size: 1.12rem;
-      background: #ffffff;
-      transition: transform 0.15s ease;
+      font-size: 1.1rem;
+      background: var(--bg-card);
+      transition: transform 0.1s ease;
       overflow: hidden;
     }
 
     .tile.path::after {
       content: "";
       position: absolute;
-      inset: 3px;
-      border: 1px dashed rgba(15, 118, 110, 0.45);
-      border-radius: 6px;
+      inset: 2px;
+      border: 1px dashed rgba(34, 211, 238, 0.3);
+      border-radius: 4px;
       pointer-events: none;
     }
 
     .tile.agent {
       transform: scale(1.03);
-      box-shadow: inset 0 0 0 2px rgba(194, 65, 12, 0.65);
+      box-shadow: inset 0 0 0 2px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.15);
     }
 
-    .tile.unknown { background: #e6ecea; color: #7b8d89; }
-    .tile.empty { background: #f8fbfa; }
-    .tile.tree { background: #eef9ef; }
-    .tile.rock { background: #eff3f6; }
-    .tile.food { background: #fff5ec; }
-    .tile.water { background: #eaf8ff; }
+    .tile.unknown { background: #18181b; color: #52525b; }
+    .tile.empty   { background: #1a1a1e; }
+    .tile.tree    { background: #0d1f12; border-color: #1a3a22; }
+    .tile.rock    { background: #1a1a1e; border-color: #2a2a30; }
+    .tile.food    { background: #1f1408; border-color: #3a2810; }
+    .tile.water   { background: #081820; border-color: #103040; }
 
     .coord {
       position: absolute;
-      top: 3px;
-      right: 5px;
-      font-size: 0.62rem;
-      color: #6d7d7a;
-      font-family: "JetBrains Mono", "Fira Code", monospace;
+      top: 2px;
+      right: 4px;
+      font-size: 0.58rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      opacity: 0.6;
     }
 
     .agent-mark {
       position: absolute;
-      left: 3px;
-      right: 3px;
-      bottom: 2px;
+      left: 2px;
+      right: 2px;
+      bottom: 1px;
       display: flex;
       align-items: center;
-      gap: 3px;
-      font-size: 0.62rem;
+      gap: 2px;
+      font-size: 0.58rem;
       line-height: 1;
-      padding: 1px 4px;
-      border-radius: 6px;
-      border: 1px solid rgba(15, 118, 110, 0.25);
-      background: rgba(255, 255, 255, 0.82);
-      color: #144a45;
+      padding: 1px 3px;
+      border-radius: 4px;
+      background: rgba(34, 211, 238, 0.12);
+      border: 1px solid rgba(34, 211, 238, 0.25);
+      color: var(--accent);
       pointer-events: none;
     }
 
@@ -641,60 +654,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-family: "JetBrains Mono", "Fira Code", monospace;
-      font-size: 0.54rem;
+      font-family: var(--font-mono);
+      font-size: 0.5rem;
     }
 
-    .state-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .meter {
-      display: grid;
-      gap: 5px;
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
-
-    .meter .bar {
-      width: 100%;
-      height: 8px;
-      border-radius: 999px;
-      background: #e4ecea;
-      overflow: hidden;
-    }
-
-    .meter .fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent), #2da49a);
-    }
-
-    .meter.warn .fill {
-      background: linear-gradient(90deg, #d97706, #f59e0b);
-    }
-
-    .meter.bad .fill {
-      background: linear-gradient(90deg, #b42318, #ef4444);
-    }
-
-    .inventory {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(100px, 1fr));
-      gap: 8px;
-    }
-
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 6px 8px;
-      font-size: 0.86rem;
-      display: flex;
-      justify-content: space-between;
-      background: #f9fcfb;
-    }
-
+    /* ── TURN DETAILS ── */
     .action-line {
       display: grid;
       gap: 6px;
@@ -708,125 +672,270 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .action-line .score-delta {
+      font-family: var(--font-mono);
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
     }
 
-    .action-line .score-delta.delta-positive { color: var(--ok); }
-    .action-line .score-delta.delta-negative { color: var(--bad); }
+    .action-line .score-delta.delta-positive { color: var(--green); }
+    .action-line .score-delta.delta-negative { color: var(--red); }
 
     .tag-ok,
     .tag-bad {
-      border-radius: 999px;
-      font-size: 0.75rem;
-      padding: 3px 8px;
-      color: white;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 2px 8px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
     }
 
-    .tag-ok { background: var(--ok); }
-    .tag-bad { background: var(--bad); }
+    .tag-ok {
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+
+    .tag-bad {
+      background: var(--red-dim);
+      color: var(--red);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+    }
 
     .cmd-action {
-      color: #0f766e;
-      font-weight: 800;
-      background: #ecf8f5;
-      border: 1px solid #c7e2db;
-      border-radius: 6px;
-      padding: 1px 6px;
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.82rem;
+      background: var(--accent-dim);
+      border: 1px solid rgba(34, 211, 238, 0.2);
+      border-radius: 4px;
+      padding: 1px 8px;
     }
 
+    /* ── METERS ── */
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .meter {
+      display: grid;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    .meter .bar {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .meter .fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 0.3s ease;
+    }
+
+    .meter.warn .fill {
+      background: var(--orange);
+    }
+
+    .meter.bad .fill {
+      background: var(--red);
+    }
+
+    /* ── INVENTORY ── */
+    .inventory {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(100px, 1fr));
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      display: flex;
+      justify-content: space-between;
+      background: var(--bg-raised);
+      color: var(--text-secondary);
+    }
+
+    .pill strong {
+      color: var(--text);
+    }
+
+    /* ── DETAILS / SUMMARY ── */
+    details > summary {
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      padding: 4px 0;
+      list-style: none;
+      transition: color 0.15s;
+    }
+
+    details > summary::-webkit-details-marker { display: none; }
+
+    details > summary::before {
+      content: "\\25B8  ";
+      font-size: 0.65rem;
+      color: var(--text-dim);
+    }
+
+    details[open] > summary::before {
+      content: "\\25BE  ";
+    }
+
+    details > summary:hover { color: var(--text-secondary); }
+
     .mono {
-      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
-      font-size: 0.85rem;
-      background: #f3f7f6;
-      border: 1px solid #dde8e4;
-      border-radius: 8px;
-      padding: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
       overflow-x: auto;
       white-space: pre-wrap;
       word-break: break-word;
+      color: var(--text-secondary);
     }
 
     .mono.raw-command {
-      color: #0f5f58;
-      font-weight: 800;
-      background: #ecf8f5;
-      border-color: #c7e2db;
+      color: var(--accent);
+      font-weight: 600;
+      background: rgba(34, 211, 238, 0.05);
+      border-color: rgba(34, 211, 238, 0.15);
     }
 
+    /* ── TIMELINE ── */
     .timeline {
-      background: var(--panel);
-      border: 1px solid var(--line);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 12px;
+      padding: 16px;
       overflow: hidden;
     }
 
     .timeline h2 {
-      margin: 0 0 10px 0;
-      font-size: 1rem;
-      color: var(--accent);
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.08em;
+      font-weight: 700;
     }
 
     .table-wrap {
       max-height: 300px;
       overflow: auto;
-      border: 1px solid #dfe8e5;
-      border-radius: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+
+    /* Scrollbar styling */
+    .table-wrap::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .table-wrap::-webkit-scrollbar-track {
+      background: var(--bg-raised);
+    }
+    .table-wrap::-webkit-scrollbar-thumb {
+      background: var(--border-bright);
+      border-radius: 3px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
     }
 
     thead {
       position: sticky;
       top: 0;
-      background: #eef4f2;
+      background: var(--bg-raised);
       z-index: 1;
     }
 
-    th, td {
+    th {
       text-align: left;
-      padding: 7px 8px;
-      border-bottom: 1px solid #e6eeeb;
-      font-family: "JetBrains Mono", "Fira Code", monospace;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
       white-space: nowrap;
     }
 
-    tr.active { background: #e9f7f4; }
-    tr:hover { background: #f5fbf9; cursor: pointer; }
-    tr.turn-invalid { background: rgba(180, 35, 24, 0.06); }
-    tr.turn-critical { background: rgba(194, 65, 12, 0.08); }
-    tr.turn-invalid td:nth-child(3) { color: var(--bad); font-weight: 700; }
-    tr.active.turn-invalid { background: #fce8e6; }
-    tr.active.turn-critical { background: #fdf0e6; }
+    td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
 
+    tr { transition: background 0.1s; }
+    tr.active { background: var(--accent-dim); }
+    tr:hover { background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+    tr.turn-invalid { background: var(--red-dim); }
+    tr.turn-critical { background: var(--orange-dim); }
+    tr.turn-invalid td:nth-child(3) { color: var(--red); font-weight: 700; }
+    tr.active.turn-invalid { background: rgba(248, 113, 113, 0.2); }
+    tr.active.turn-critical { background: rgba(251, 146, 60, 0.18); }
+
+    /* ── FOOTER ── */
     .footer {
-      color: var(--muted);
-      font-size: 0.82rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
       display: flex;
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 6px;
+      padding: 4px 0;
     }
 
-    @keyframes rise {
-      from { transform: translateY(6px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+    /* ── CHECKBOX ── */
+    .toggle-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
     }
 
+    .toggle-label input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    /* ── RESPONSIVE ── */
     @media (max-width: 980px) {
-      .outcome-stats { gap: 16px; }
-      .outcome-top { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .outcome-header-row { flex-direction: column; align-items: flex-start; }
+      .outcome-metrics { grid-template-columns: repeat(2, 1fr); }
       .layout { grid-template-columns: 1fr; }
       .state-grid { grid-template-columns: 1fr; }
       .control-bar { grid-template-columns: 1fr 1fr; }
@@ -840,7 +949,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     <section class="tech-accordion">
       <button class="tech-toggle" id="techToggle" type="button">
-        Technical Details <span id="techArrow">&#9654;</span>
+        // technical details <span id="techArrow">&#9654;</span>
       </button>
       <div class="tech-body" id="techBody">
         <div class="chip-row" id="metaChips"></div>
@@ -852,8 +961,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       <article class="panel">
         <h2>Map + Turn Player</h2>
         <div class="control-bar">
-          <button class="btn" id="prevBtn">◀ Prev</button>
-          <button class="btn" id="playBtn">▶ Play</button>
+          <button class="btn" id="prevBtn">&#9664; Prev</button>
+          <button class="btn" id="playBtn">&#9654; Play</button>
           <input type="range" id="turnSlider" min="1" max="1" step="1" value="1" />
           <div class="turn-meta" id="turnMeta"></div>
         </div>
@@ -869,7 +978,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         <div class="action-line" id="actionLine"></div>
         <div class="state-grid" id="stateMeters"></div>
         <div>
-          <strong>Inventory</strong>
+          <strong style="font-family:var(--font-mono);font-size:0.76rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em">Inventory</strong>
           <div class="inventory" id="inventoryGrid"></div>
         </div>
         <details>
@@ -884,21 +993,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     </section>
 
     <section class="timeline">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <h2 style="margin:0">Turn Timeline</h2>
-        <label style="font-size:0.82rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="showImportantOnly" /> Show only important turns
+        <label class="toggle-label">
+          <input type="checkbox" id="showImportantOnly" /> important only
         </label>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Turn</th>
+              <th>#</th>
               <th>Action</th>
               <th>Valid</th>
-              <th>Δ Score</th>
-              <th>Total Score</th>
+              <th>&#916; Score</th>
+              <th>Total</th>
               <th>Energy</th>
               <th>Hunger</th>
               <th>Thirst</th>
@@ -911,7 +1020,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     <div class="footer">
       <span id="sourceLog"></span>
-      <span>Made for humans first, benchmarks second.</span>
+      <span>TinyWorld Survival Bench</span>
     </div>
   </div>
 """
@@ -923,19 +1032,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const DATA = JSON.parse(document.getElementById('viewerData').textContent);
 
     const tileMeta = {
-      unknown: { emoji: '◼️', label: 'unknown' },
-      empty: { emoji: '▫️', label: 'empty' },
-      tree: { emoji: '🌲', label: 'tree' },
-      rock: { emoji: '🪨', label: 'rock' },
-      food: { emoji: '🍎', label: 'food' },
-      water: { emoji: '💧', label: 'water' },
+      unknown: { emoji: '\\u25A0', label: 'unknown' },
+      empty: { emoji: '\\u00B7', label: 'empty' },
+      tree: { emoji: '\\u{1F332}', label: 'tree' },
+      rock: { emoji: '\\u{1FAA8}', label: 'rock' },
+      food: { emoji: '\\u{1F34E}', label: 'food' },
+      water: { emoji: '\\u{1F4A7}', label: 'water' },
     };
 
     const inventoryMeta = {
-      wood: '🪵 wood',
-      stone: '🧱 stone',
-      food: '🍎 food',
-      water: '💧 water',
+      wood: '\\u{1FAB5} wood',
+      stone: '\\u{1F9F1} stone',
+      food: '\\u{1F34E} food',
+      water: '\\u{1F4A7} water',
     };
 
     let currentTurnIndex = 0;
@@ -986,7 +1095,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return 'meter';
     }
 
-    function formatCount(value, fallback = 'not available') {
+    function formatCount(value, fallback = 'n/a') {
       if (value === null || value === undefined || value === '') return fallback;
       const num = Number(value);
       if (!Number.isFinite(num)) return fallback;
@@ -994,16 +1103,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function formatEstimatedCost(value) {
-      if (value === null || value === undefined || value === '') return 'not available';
+      if (value === null || value === undefined || value === '') return 'n/a';
       const num = Number(value);
-      if (!Number.isFinite(num)) return 'not available';
+      if (!Number.isFinite(num)) return 'n/a';
       return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 6 });
     }
 
     function formatDurationFromMs(valueMs) {
-      if (valueMs === null || valueMs === undefined || valueMs === '') return 'not available';
+      if (valueMs === null || valueMs === undefined || valueMs === '') return 'n/a';
       const ms = Number(valueMs);
-      if (!Number.isFinite(ms)) return 'not available';
+      if (!Number.isFinite(ms)) return 'n/a';
 
       if (ms < 10) return `${ms.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ms`;
       if (ms < 1000) return `${ms.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ms`;
@@ -1044,10 +1153,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const reason = String(endReason || '').trim();
       const turns = Number(turnsPlayed ?? 0);
       const max = Number(maxTurns ?? 0);
-      if (reason === 'agent_dead') return `The agent died on turn ${turns}.`;
-      if (reason === 'max_turns_reached') return `Reached the configured turn limit (${max}).`;
+      if (reason === 'agent_dead') return `Agent died on turn ${turns}.`;
+      if (reason === 'max_turns_reached') return `Reached turn limit (${max}).`;
       if (!reason) return 'Run ended.';
-      return `Run ended with status: ${reason}.`;
+      return `Run ended: ${reason}.`;
     }
 
     function inferDeathCause(summary) {
@@ -1063,7 +1172,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (starvation && dehydration) return 'Starvation and dehydration reached critical threshold.';
       if (starvation) return 'Starvation reached critical threshold.';
       if (dehydration) return 'Dehydration reached critical threshold.';
-      return 'Energy was depleted to zero.';
+      return 'Energy depleted to zero.';
     }
 
     function shortHash(value, length = 12) {
@@ -1109,53 +1218,50 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const drinkReduction = numberOr(rules.drink_thirst_reduction, '-');
 
       protocolPanel.innerHTML = `
-        <div class="protocol-head">Protocol ${p.protocol_version || '-'} rules (v0.1 quick guide)</div>
+        <div class="protocol-head">Protocol ${p.protocol_version || '-'}</div>
         <div class="protocol-grid">
           <div class="protocol-block">
             <strong>State Scale</strong>
             <div>Energy: 0..${energyMax}</div>
             <div>Hunger: 0..${hungerMax}</div>
             <div>Thirst: 0..${thirstMax}</div>
-            <div>Viewer meters are shown as current/max.</div>
           </div>
           <div class="protocol-block">
             <strong>Start State</strong>
-            <div>Energy starts at ${startEnergy}/${energyMax}</div>
-            <div>Hunger starts at ${startHunger}/${hungerMax}</div>
-            <div>Thirst starts at ${startThirst}/${thirstMax}</div>
+            <div>Energy ${startEnergy}/${energyMax}</div>
+            <div>Hunger ${startHunger}/${hungerMax}</div>
+            <div>Thirst ${startThirst}/${thirstMax}</div>
           </div>
           <div class="protocol-block">
-            <strong>Passive Every Turn</strong>
+            <strong>Passive / Turn</strong>
             <div>Energy ${formatSignedScore(-passiveEnergyLoss)}</div>
             <div>Hunger +${passiveHungerGain}</div>
             <div>Thirst +${passiveThirstGain}</div>
-            <div>This happens every turn, even with no enemies.</div>
           </div>
           <div class="protocol-block">
             <strong>Critical Thresholds</strong>
-            <div>If hunger reaches ${hungerMax}: extra ${formatSignedScore(-starvationPenalty)} energy</div>
-            <div>If thirst reaches ${thirstMax}: extra ${formatSignedScore(-dehydrationPenalty)} energy</div>
-            <div>Death condition: energy ≤ 0.</div>
+            <div>hunger=${hungerMax}: ${formatSignedScore(-starvationPenalty)} energy</div>
+            <div>thirst=${thirstMax}: ${formatSignedScore(-dehydrationPenalty)} energy</div>
+            <div>death: energy <= 0</div>
           </div>
           <div class="protocol-block">
             <strong>Action Effects</strong>
-            <div>rest: +${restGain} energy (capped by max)</div>
-            <div>eat: -${eatReduction} hunger (requires food in inventory)</div>
-            <div>drink: -${drinkReduction} thirst (requires water in inventory)</div>
-            <div>gather: collect resource from current tile into inventory</div>
+            <div>rest: +${restGain} energy</div>
+            <div>eat: -${eatReduction} hunger</div>
+            <div>drink: -${drinkReduction} thirst</div>
+            <div>gather: collect from tile</div>
           </div>
           <div class="protocol-block">
-            <strong>Scoring + Validation</strong>
-            <div>survive turn: ${formatSignedScore(scoring.survive_turn)}</div>
-            <div>useful gather: ${formatSignedScore(scoring.gather_useful)}</div>
-            <div>useful eat/drink: ${formatSignedScore(scoring.consume_useful)}</div>
-            <div>invalid action: ${formatSignedScore(scoring.invalid_action)} (turn still consumed: ${p.invalid_action_policy || '-'})</div>
+            <strong>Scoring</strong>
+            <div>survive: ${formatSignedScore(scoring.survive_turn)}</div>
+            <div>gather: ${formatSignedScore(scoring.gather_useful)}</div>
+            <div>consume: ${formatSignedScore(scoring.consume_useful)}</div>
+            <div>invalid: ${formatSignedScore(scoring.invalid_action)}</div>
             <div>death: ${formatSignedScore(scoring.death)}</div>
           </div>
         </div>
         <div class="protocol-note">
-          Parser mode: ${p.parser_case_mode || '-'}.
-          Action validity is checked only against that turn's <code>allowed_actions</code>.
+          Parser: ${p.parser_case_mode || '-'} | Invalid policy: ${p.invalid_action_policy || '-'}
         </div>
       `;
     }
@@ -1207,7 +1313,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (Number(inv.water ?? 0) <= 0) {
           const onWater = visibleTiles.some(t => Number(t.x) === Number(pos.x) && Number(t.y) === Number(pos.y) && t.type === 'water');
           return onWater
-            ? 'no water in inventory (you are on water tile: use gather first)'
+            ? 'no water in inventory (on water tile: gather first)'
             : 'no water in inventory (gather water first)';
         }
         if (Number(obs.thirst ?? 0) <= 0) {
@@ -1228,16 +1334,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const tileHere = visibleTiles.find(t => Number(t.x) === Number(pos.x) && Number(t.y) === Number(pos.y));
         const tileType = String(tileHere?.type || 'unknown');
         if (!['tree', 'rock', 'food', 'water'].includes(tileType)) {
-          return `nothing to gather on current tile (${tileType})`;
+          return `nothing to gather on tile (${tileType})`;
         }
       }
 
-      if (requested === 'move north' && Number(pos.y) <= 0) return 'move blocked by north boundary';
-      if (requested === 'move west' && Number(pos.x) <= 0) return 'move blocked by west boundary';
-      if (requested === 'move south' && Number(pos.y) >= (worldHeight - 1)) return 'move blocked by south boundary';
-      if (requested === 'move east' && Number(pos.x) >= (worldWidth - 1)) return 'move blocked by east boundary';
+      if (requested === 'move north' && Number(pos.y) <= 0) return 'blocked by north boundary';
+      if (requested === 'move west' && Number(pos.x) <= 0) return 'blocked by west boundary';
+      if (requested === 'move south' && Number(pos.y) >= (worldHeight - 1)) return 'blocked by south boundary';
+      if (requested === 'move east' && Number(pos.x) >= (worldWidth - 1)) return 'blocked by east boundary';
 
-      return `action not allowed this turn (${requested || 'unknown action'})`;
+      return `not allowed this turn (${requested || '?'})`;
     }
 
     function renderOutcomeHero() {
@@ -1252,56 +1358,75 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const gathered = Number(s.resources_gathered ?? 0);
       const gatherableTotal = Number(DATA.world?.gatherable_total);
       const resourcesText = Number.isFinite(gatherableTotal) && gatherableTotal >= 0
-        ? `${gathered} / ${gatherableTotal}` : `${gathered}`;
+        ? `${gathered}/${gatherableTotal}` : `${gathered}`;
 
       const deathCause = inferDeathCause(s);
       let whyText = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
       if (isDead && deathCause) whyText += ` ${deathCause}`;
 
-      const badgeClass = isDead ? 'died' : (endReason === 'max_turns_reached' ? 'survived' : 'survived');
+      const badgeClass = isDead ? 'died' : 'survived';
       const badgeText = isDead
-        ? `Died on turn ${turnsSurvived}`
-        : (endReason === 'max_turns_reached' ? `Survived all ${maxTurns} turns` : `Completed (${endReason || 'unknown'})`);
+        ? `DIED T${turnsSurvived}`
+        : (endReason === 'max_turns_reached' ? `SURVIVED ${maxTurns}T` : `OK (${endReason || '?'})`);
 
-      const modelName = meta.model || meta.model_profile || 'Unknown model';
-      const scenario = meta.scenario || 'Unknown scenario';
+      const modelName = meta.model || meta.model_profile || '?';
+      const scenario = meta.scenario || '?';
+
+      const finalScore = Number(s.final_score ?? 0);
+      const scoreClass = finalScore < 0 ? 'score-value score-negative' : 'score-value';
 
       outcomeHero.innerHTML = `
-        <div class="outcome-context">${escapeHtml(modelName)} on <strong>${escapeHtml(scenario)}</strong></div>
-        <div class="outcome-top">
-          <div class="outcome-badge ${badgeClass}">${escapeHtml(badgeText)}</div>
-          <div class="outcome-score">
-            <span class="score-label">Final Score</span>
-            ${s.final_score ?? '-'}
+        <div class="outcome-header-row">
+          <div class="outcome-identity">
+            <span class="outcome-model">${escapeHtml(compactModelName())}</span>
+            <span class="outcome-separator">//</span>
+            <span class="outcome-scenario">${escapeHtml(scenario)}</span>
           </div>
+          <div class="outcome-badge ${badgeClass}">${escapeHtml(badgeText)}</div>
         </div>
-        <div class="outcome-stats">
-          <div><div class="stat-label">Turns survived</div><strong>${turnsSurvived} / ${maxTurns || '?'}</strong></div>
-          <div><div class="stat-label">Resources collected</div><strong>${resourcesText}</strong></div>
-          <div><div class="stat-label">Invalid actions</div><strong>${s.invalid_actions ?? 0}</strong></div>
-          <div><div class="stat-label">Turns played</div><strong>${turnsPlayed}</strong></div>
+        <div class="outcome-metrics">
+          <div class="outcome-metric">
+            <div class="metric-value ${scoreClass}">${s.final_score ?? '-'}</div>
+            <div class="metric-label">Final Score</div>
+          </div>
+          <div class="outcome-metric">
+            <div class="metric-value">${turnsSurvived}<span style="color:var(--text-dim);font-size:0.7em">/${maxTurns || '?'}</span></div>
+            <div class="metric-label">Turns Survived</div>
+          </div>
+          <div class="outcome-metric">
+            <div class="metric-value">${resourcesText}</div>
+            <div class="metric-label">Resources</div>
+          </div>
+          <div class="outcome-metric">
+            <div class="metric-value">${s.invalid_actions ?? 0}</div>
+            <div class="metric-label">Invalid</div>
+          </div>
+          <div class="outcome-metric">
+            <div class="metric-value">${turnsPlayed}</div>
+            <div class="metric-label">Turns Played</div>
+          </div>
         </div>
         <div class="outcome-why">${escapeHtml(whyText)}</div>
       `;
 
-      // Technical details chips (inside accordion)
+      // Technical details chips
       const latencyTotal = formatDurationFromMs(s.latency_ms);
       const latencyAvg = turnsPlayed > 0 ? formatDurationFromMs(Number(s.latency_ms ?? 0) / turnsPlayed) : 'n/a';
 
       metaChips.innerHTML = [
-        `<span class="chip"><span class="chip-key">Provider:</span><span class="chip-value">${escapeHtml(meta.provider_id || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Profile:</span><span class="chip-value">${escapeHtml(meta.model_profile || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Model:</span><span class="chip-value">${escapeHtml(meta.model || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Seed:</span><span class="chip-value">${escapeHtml(meta.seed ?? '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Scenario:</span><span class="chip-value">${escapeHtml(meta.scenario || '-')}</span></span>`,
-        `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules">Protocol: ${meta.protocol_version || '-'} (click)</button>`,
-        `<span class="chip"><span class="chip-key">Bench:</span><span class="chip-value">${escapeHtml(meta.bench_version || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Engine:</span><span class="chip-value">${escapeHtml(meta.engine_version || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Prompt set:</span><span class="chip-value">${escapeHtml(shortHash(meta.prompt_set_sha256, 16))}</span></span>`,
-        `<span class="chip"><span class="chip-key">Latency total:</span><span class="chip-value">${latencyTotal}</span></span>`,
-        `<span class="chip"><span class="chip-key">Latency avg:</span><span class="chip-value">${latencyAvg}</span></span>`,
-        `<span class="chip"><span class="chip-key">Tokens:</span><span class="chip-value">${formatCount(s.tokens_used)}</span></span>`,
-        `<span class="chip"><span class="chip-key">Est. cost:</span><span class="chip-value">${formatEstimatedCost(s.estimated_cost)}</span></span>`,
+        `<span class="chip"><span class="chip-key">provider</span> <span class="chip-value">${escapeHtml(meta.provider_id || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">profile</span> <span class="chip-value">${escapeHtml(meta.model_profile || '-')}</span></span>`,
+        `<span class="chip chip-model"><span class="chip-key">model</span> <span class="chip-value">${escapeHtml(meta.model || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">seed</span> <span class="chip-value">${escapeHtml(meta.seed ?? '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">scenario</span> <span class="chip-value">${escapeHtml(meta.scenario || '-')}</span></span>`,
+        `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules"><span class="chip-key">protocol</span> ${meta.protocol_version || '-'}</button>`,
+        `<span class="chip"><span class="chip-key">bench</span> <span class="chip-value">${escapeHtml(meta.bench_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">engine</span> <span class="chip-value">${escapeHtml(meta.engine_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">prompt</span> <span class="chip-value">${escapeHtml(shortHash(meta.prompt_set_sha256, 16))}</span></span>`,
+        `<span class="chip"><span class="chip-key">latency</span> <span class="chip-value">${latencyTotal}</span></span>`,
+        `<span class="chip"><span class="chip-key">avg</span> <span class="chip-value">${latencyAvg}</span></span>`,
+        `<span class="chip"><span class="chip-key">tokens</span> <span class="chip-value">${formatCount(s.tokens_used)}</span></span>`,
+        `<span class="chip"><span class="chip-key">cost</span> <span class="chip-value">${formatEstimatedCost(s.estimated_cost)}</span></span>`,
       ].join('');
 
       const protocolChip = document.getElementById('protocolChip');
@@ -1309,14 +1434,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         protocolChip.addEventListener('click', () => { toggleProtocolPanel(); });
       }
 
-      sourceLog.textContent = `Source log: ${meta.source_log_path || '-'}`;
+      sourceLog.textContent = meta.source_log_path || '-';
       coverageHint.textContent = meta.map_coverage === 'full'
-        ? 'Map coverage: full (from engine snapshot)'
-        : 'Map coverage: partial (unknown tiles = not yet observed)';
+        ? 'full map (engine snapshot)'
+        : 'partial (fog of war)';
 
       const modelTag = compactModelName();
       document.getElementById('mapLegend').textContent =
-        `Legend: 🤖 ${modelTag} (current agent), 👣 visited path, 🌲 tree, 🪨 rock, 🍎 food, 💧 water`;
+        `agent: ${modelTag} | \\u{1F332} tree \\u{1FAA8} rock \\u{1F34E} food \\u{1F4A7} water`;
     }
 
     function renderTimeline() {
@@ -1325,7 +1450,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       timelineBody.innerHTML = frames.map((frame, idx) => {
         const action = frame.action_result?.applied || frame.action_result?.requested || '-';
         const isValid = frame.validation_result?.is_valid;
-        const valid = isValid ? 'yes' : 'no';
+        const valid = isValid ? '\\u2713' : '\\u2717';
         const delta = frame.score_delta?.total ?? 0;
         const obs = frame.observation || {};
 
@@ -1403,7 +1528,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           tile.innerHTML = `
             <span>${meta.emoji}</span>
             <span class="coord">${x},${y}</span>
-            ${isAgent ? `<span class="agent-mark">🤖 <span class="name">${modelTagEscaped}</span></span>` : ''}
+            ${isAgent ? `<span class="agent-mark">\\u{1F916} <span class="name">${modelTagEscaped}</span></span>` : ''}
           `;
           tile.title = `${meta.label} @ (${x},${y})`;
           mapGrid.appendChild(tile);
@@ -1427,13 +1552,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       actionLine.innerHTML = `
         <div class="action-row">
-          <strong>Turn ${frame.turn}</strong>
+          <strong style="font-family:var(--font-mono);font-size:0.85rem">T${frame.turn}</strong>
           ${validTag}
           <code class="cmd-action">${actionDisplay}</code>
         </div>
-        <div style="color:var(--muted);font-size:0.88rem">${messageDisplay}</div>
+        <div style="color:var(--text-dim);font-size:0.78rem;font-family:var(--font-mono)">${messageDisplay}</div>
         <div class="action-row">
-          <span class="score-delta ${deltaClass}">Score: ${frame.cumulative_score ?? '-'} (${formatSignedScore(deltaTotal)} this turn)</span>
+          <span class="score-delta ${deltaClass}">${frame.cumulative_score ?? '-'} (${formatSignedScore(deltaTotal)})</span>
         </div>
       `;
 
@@ -1445,14 +1570,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const thirstMax = statLimit('thirst_max', 100);
 
       stateMeters.innerHTML = [
-        { label: '⚡ Energy', value: energy, max: energyMax, cls: energyMeterClass(energy, energyMax) },
-        { label: '🍽️ Hunger', value: hunger, max: hungerMax, cls: meterClass(hunger, hungerMax) },
-        { label: '🥤 Thirst', value: thirst, max: thirstMax, cls: meterClass(thirst, thirstMax) },
+        { label: 'Energy', value: energy, max: energyMax, cls: energyMeterClass(energy, energyMax) },
+        { label: 'Hunger', value: hunger, max: hungerMax, cls: meterClass(hunger, hungerMax) },
+        { label: 'Thirst', value: thirst, max: thirstMax, cls: meterClass(thirst, thirstMax) },
       ].map(({ label, value, max, cls }) => {
         const pct = max > 0 ? Math.max(0, Math.min(100, (Number(value) / Number(max)) * 100)) : 0;
         return `
         <div class="${cls}">
-          <div>${label}: <strong>${value}/${max}</strong></div>
+          <div>${label} <strong>${value}/${max}</strong></div>
           <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
         </div>
       `}).join('');
@@ -1463,17 +1588,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       rawOutput.textContent = frame.raw_model_output || '(empty)';
       const events = frame.score_delta?.events || [];
-      const deltaTotal = frame.score_delta?.total ?? 0;
       const latency = frame.metrics?.latency_ms;
       const tokens = frame.metrics?.tokens_used;
       const cost = frame.metrics?.estimated_cost;
 
       scoreEvents.textContent = [
-        `Score delta total: ${formatSignedScore(deltaTotal)} points`,
-        `Score events: ${events.length ? events.map(formatScoreEvent).join(', ') : 'none'}`,
-        `Model latency: ${formatDurationFromMs(latency)}`,
-        `Tokens used: ${formatCount(tokens)}`,
-        `Estimated cost: ${formatEstimatedCost(cost)}`,
+        `delta: ${formatSignedScore(deltaTotal)}`,
+        `events: ${events.length ? events.map(formatScoreEvent).join(', ') : 'none'}`,
+        `latency: ${formatDurationFromMs(latency)}`,
+        `tokens: ${formatCount(tokens)}`,
+        `cost: ${formatEstimatedCost(cost)}`,
       ].join('\\n');
     }
 
@@ -1483,7 +1607,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (!frame) return;
 
       turnSlider.value = String(currentTurnIndex + 1);
-      turnMeta.textContent = `turn ${currentTurnIndex + 1}/${frames.length}`;
+      turnMeta.textContent = `${currentTurnIndex + 1}/${frames.length}`;
 
       renderMap(frame);
       renderTurnDetails(frame);
@@ -1495,11 +1619,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (autoPlayTimer) {
         clearInterval(autoPlayTimer);
         autoPlayTimer = null;
-        playBtn.textContent = '▶ Play';
+        playBtn.innerHTML = '&#9654; Play';
         return;
       }
 
-      playBtn.textContent = '⏸ Pause';
+      playBtn.innerHTML = '&#9646;&#9646; Pause';
       autoPlayTimer = setInterval(() => {
         if (currentTurnIndex >= frames.length - 1) {
           togglePlay();
@@ -1539,7 +1663,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const nextBtn = document.createElement('button');
       nextBtn.className = 'btn';
       nextBtn.id = 'nextBtn';
-      nextBtn.textContent = 'Next ▶';
+      nextBtn.innerHTML = 'Next &#9654;';
       prevBtn.parentElement.insertBefore(nextBtn, turnSlider);
       nextBtn.addEventListener('click', () => {
         setTurn(currentTurnIndex + 1);
@@ -1551,7 +1675,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }
 
       if (!frames.length) {
-        turnMeta.textContent = 'no turns in this log';
+        turnMeta.textContent = 'no turns';
         actionLine.innerHTML = '<span class="tag-bad">empty run</span>';
         return;
       }
@@ -1599,15 +1723,10 @@ def main() -> None:
     if args.output:
         output_path = Path(args.output)
     else:
-        output_path = Path("artifacts/replays") / (log_path.stem + "_dashboard.html")
+        output_path = log_path.with_suffix(".html")
 
-    if not output_path.is_absolute():
-        output_path = Path.cwd() / output_path
-    if not log_path.is_absolute():
-        log_path = Path.cwd() / log_path
-
-    result_path = generate_viewer(log_path=log_path, output_path=output_path, title=args.title)
-    print(f"Viewer generated: {result_path}")
+    result = generate_viewer(log_path=log_path, output_path=output_path, title=args.title)
+    print(f"Viewer generated: {result}")
 
 
 if __name__ == "__main__":
