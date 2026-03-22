@@ -556,6 +556,164 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       color: var(--muted);
     }
 
+    .compare-summary {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .compare-winner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .winner-badge {
+      font-size: 1.05rem;
+      font-weight: 800;
+      background: #dcfce7;
+      color: #0f5132;
+      border: 2px solid #86efac;
+      border-radius: 12px;
+      padding: 8px 18px;
+    }
+
+    .compare-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .compare-stat-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 3px;
+    }
+
+    .compare-stat-card .label {
+      font-size: 0.74rem;
+    }
+
+    .compare-stat-card .value {
+      font-weight: 800;
+      font-size: 1rem;
+    }
+
+    .tech-accordion {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+
+    .tech-toggle {
+      width: 100%;
+      background: #f7faf8;
+      border: none;
+      padding: 10px 16px;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .tech-toggle:hover { background: #edf7f4; }
+
+    .tech-body {
+      display: none;
+      padding: 12px 16px;
+      background: var(--panel);
+    }
+
+    .tech-body.open {
+      display: grid;
+      gap: 8px;
+    }
+
+    .seed-pair {
+      border: 1px solid #d7e4e0;
+      border-radius: 10px;
+      padding: 10px;
+      background: #ffffff;
+      cursor: pointer;
+      display: grid;
+      gap: 6px;
+    }
+
+    .seed-pair:hover { border-color: #8db5ad; background: #f7fcfa; }
+    .seed-pair.active { border-color: var(--accent); background: #edf8f4; }
+
+    .seed-pair-header {
+      font-weight: 800;
+      font-size: 0.90rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .seed-pair-row {
+      display: grid;
+      grid-template-columns: 1fr auto 60px;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.84rem;
+    }
+
+    .seed-delta {
+      font-weight: 800;
+      font-size: 0.82rem;
+    }
+
+    .seed-delta.positive { color: var(--ok); }
+    .seed-delta.negative { color: var(--bad); }
+
+    .model-switch {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .model-switch .muted-label {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    details > summary {
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--muted);
+      padding: 4px 0;
+      list-style: none;
+    }
+
+    details > summary::-webkit-details-marker { display: none; }
+
+    details > summary::before {
+      content: "\\25B6  ";
+      font-size: 0.68rem;
+    }
+
+    details[open] > summary::before {
+      content: "\\25BC  ";
+    }
+
+    details > summary:hover { color: var(--ink); }
+
     @media (max-width: 1320px) {
       .grid {
         grid-template-columns: 1fr;
@@ -575,9 +733,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 <body>
   <div class=\"wrap\">
     <section class=\"hero\">
-      <h1>🧭 TinyWorld Compare Dashboard</h1>
+      <h1>TinyWorld Compare Dashboard</h1>
       <p>Paired-seed model comparison with drill-down replay for each run.</p>
-      <div class=\"chip-row\" id=\"metaChips\"></div>
+    </section>
+
+    <section class=\"compare-summary\" id=\"compareSummary\"></section>
+
+    <section class=\"tech-accordion\">
+      <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
+        Technical Details <span id=\"techArrow\">&#9654;</span>
+      </button>
+      <div class=\"tech-body\" id=\"techBody\">
+        <div class=\"chip-row\" id=\"metaChips\"></div>
+      </div>
     </section>
 
     <div class=\"grid\">
@@ -668,15 +836,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class=\"inv-grid\" id=\"inventoryGrid\"></div>
             </div>
 
-            <div>
-              <div class=\"label\">Raw model output</div>
+            <details>
+              <summary>Raw model output</summary>
               <div class=\"code-block\" id=\"rawOutput\"></div>
-            </div>
+            </details>
 
-            <div>
-              <div class=\"label\">Score events</div>
+            <details>
+              <summary>Score events</summary>
               <div class=\"code-block\" id=\"scoreEvents\"></div>
-            </div>
+            </details>
           </div>
         </div>
 
@@ -868,6 +1036,41 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       metaChips.innerHTML = chips.map((item) => `<span class=\"chip\">${item}</span>`).join('');
     }
 
+    function renderCompareSummary() {
+      const el = document.getElementById('compareSummary');
+      if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
+
+      const winner = models[0];
+      const loser = models.length > 1 ? models[1] : null;
+      const h2h = pairwise.length ? pairwise[0] : null;
+
+      const cards = [
+        { label: 'Avg Score', value: formatFloat(winner.avg_final_score, 2) },
+        { label: 'Survival Rate', value: `${formatFloat(100 - winner.death_rate_pct, 1)}%` },
+        { label: 'Avg Invalid', value: formatFloat(winner.avg_invalid_actions, 2) },
+      ];
+
+      if (loser) {
+        cards.push({ label: `${loser.model_profile} Avg Score`, value: formatFloat(loser.avg_final_score, 2) });
+        if (h2h) {
+          const wr = h2h.win_rate_a_vs_b !== null && h2h.win_rate_a_vs_b !== undefined
+            ? `${formatFloat(h2h.win_rate_a_vs_b, 1)}%` : 'n/a';
+          cards.push({ label: 'Win Rate (H2H)', value: wr });
+          cards.push({ label: 'W / L / T', value: `${h2h.wins_a} / ${h2h.wins_b} / ${h2h.ties}` });
+        }
+      }
+
+      el.innerHTML = `
+        <div class="compare-winner">
+          <div class="winner-badge">1st: ${winner.model_profile}</div>
+          ${loser ? `<span style="color:var(--muted)">vs</span><span style="font-weight:700">${loser.model_profile}</span>` : ''}
+        </div>
+        <div class="compare-stats-grid">
+          ${cards.map(c => `<div class="compare-stat-card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
+        </div>
+      `;
+    }
+
     function renderRanking() {
       if (!models.length) {
         rankingBody.innerHTML = '<tr><td colspan="6" class="muted">No model stats available.</td></tr>';
@@ -950,56 +1153,92 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }
     }
 
+    function buildSeedPairs() {
+      const bySeed = {};
+      filteredRunIndexes.forEach((idx) => {
+        const run = runs[idx];
+        const seedKey = String(run.seed);
+        if (!bySeed[seedKey]) bySeed[seedKey] = [];
+        bySeed[seedKey].push({ run, idx });
+      });
+      return Object.entries(bySeed).map(([seed, entries]) => ({ seed, entries }));
+    }
+
     function renderRunList() {
-      if (!filteredRunIndexes.length) {
+      const seedPairs = buildSeedPairs();
+
+      if (!seedPairs.length) {
         runList.innerHTML = '<div class="empty-state">No runs match the current filters.</div>';
         runCount.textContent = '0 runs';
         renderReplayEmpty();
         return;
       }
 
-      runCount.textContent = `${filteredRunIndexes.length} run(s) shown`;
+      runCount.textContent = `${seedPairs.length} seed pair(s), ${filteredRunIndexes.length} run(s)`;
 
-      let lastModel = null;
-      const chunks = [];
-      filteredRunIndexes.forEach((idx) => {
-        const run = runs[idx];
-        const summary = run.summary || {};
-        const status = getRunStatus(summary);
-        const survived = Number(summary.turns_survived || 0);
-        const maxTurns = Number(summary.max_turns || 0);
+      runList.innerHTML = seedPairs.map((pair) => {
+        const isActive = pair.entries.some(e => e.idx === selectedRunIndex);
 
-        if (lastModel !== run.model_profile) {
-          chunks.push(`<div class="run-group">${run.model_profile}</div>`);
-          lastModel = run.model_profile;
+        const rows = pair.entries.map(entry => {
+          const s = entry.run.summary || {};
+          const status = getRunStatus(s);
+          const score = formatCount(s.final_score);
+          const isSelected = entry.idx === selectedRunIndex;
+          return `<div class="seed-pair-row" data-run-index="${entry.idx}" style="${isSelected ? 'font-weight:800' : ''}">
+            <span>${entry.run.model_profile}</span>
+            <span class="badge ${status.className}" style="font-size:0.7rem">${status.label}</span>
+            <span style="font-weight:700;text-align:right">${score} pts</span>
+          </div>`;
+        });
+
+        let deltaHtml = '';
+        if (pair.entries.length === 2) {
+          const scoreA = Number(pair.entries[0].run.summary?.final_score ?? 0);
+          const scoreB = Number(pair.entries[1].run.summary?.final_score ?? 0);
+          const delta = scoreA - scoreB;
+          const deltaClass = delta > 0 ? 'positive' : (delta < 0 ? 'negative' : '');
+          deltaHtml = `<span class="seed-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta}</span>`;
         }
 
-        chunks.push(`
-          <div class="run-item ${idx === selectedRunIndex ? 'active' : ''}" data-run-index="${idx}">
-            <div class="run-title">
-              <span>Seed ${run.seed} · score ${formatCount(summary.final_score)}</span>
-              <span class="badge ${status.className}">${status.label}</span>
-            </div>
-            <div class="run-sub">${survived}/${maxTurns} turns survived · invalid ${formatCount(summary.invalid_actions)}</div>
-            <div class="run-sub mono">${run.model}</div>
+        return `<div class="seed-pair ${isActive ? 'active' : ''}" data-seed="${pair.seed}">
+          <div class="seed-pair-header">
+            <span>Seed ${pair.seed}</span>
+            ${deltaHtml}
           </div>
-        `);
-      });
+          ${rows.join('')}
+        </div>`;
+      }).join('');
 
-      runList.innerHTML = chunks.join('');
-      runList.querySelectorAll('.run-item').forEach((node) => {
-        node.addEventListener('click', () => {
-          const nextIndex = Number(node.getAttribute('data-run-index'));
-          if (!Number.isFinite(nextIndex)) return;
-          selectedRunIndex = nextIndex;
-          currentTurnIndex = 0;
-          stopAutoPlay();
-          renderRunList();
-          renderReplay();
+      // Click on seed pair header selects first run of that seed
+      runList.querySelectorAll('.seed-pair').forEach((node) => {
+        node.addEventListener('click', (e) => {
+          // Check if a specific row was clicked
+          const rowEl = e.target.closest('.seed-pair-row');
+          if (rowEl) {
+            const idx = Number(rowEl.getAttribute('data-run-index'));
+            if (Number.isFinite(idx)) {
+              selectedRunIndex = idx;
+              currentTurnIndex = 0;
+              stopAutoPlay();
+              renderRunList();
+              renderReplay();
+              return;
+            }
+          }
+          // Otherwise select first run of this seed
+          const seed = node.getAttribute('data-seed');
+          const pair = seedPairs.find(p => p.seed === seed);
+          if (pair && pair.entries.length) {
+            selectedRunIndex = pair.entries[0].idx;
+            currentTurnIndex = 0;
+            stopAutoPlay();
+            renderRunList();
+            renderReplay();
+          }
         });
       });
 
-      const active = runList.querySelector('.run-item.active');
+      const active = runList.querySelector('.seed-pair.active');
       if (active) {
         active.scrollIntoView({ block: 'nearest' });
       }
@@ -1048,6 +1287,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: 'Tokens used', value: formatCount(summary.tokens_used) },
       ];
 
+      // Find other runs on same seed for model switcher
+      const sameSeedRuns = runs
+        .map((r, i) => ({ r, i }))
+        .filter(item => String(item.r.seed) === String(run.seed) && item.i !== selectedRunIndex);
+
+      let switcherHtml = '';
+      if (sameSeedRuns.length > 0) {
+        switcherHtml = `<div class="model-switch">
+          <span class="muted-label">Switch model on this seed:</span>
+          ${sameSeedRuns.map(item => `<button type="button" data-switch-run="${item.i}" style="font-size:0.82rem;padding:4px 10px">${item.r.model_profile}</button>`).join('')}
+        </div>`;
+      }
+
       replayHeader.innerHTML = `
         <div class="replay-title">
           <span>${run.model_profile} · seed ${run.seed}</span>
@@ -1058,7 +1310,20 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         <div class="summary-cards">
           ${cards.map((card) => `<div class="card"><div class="label">${card.label}</div><div class="value">${card.value}</div></div>`).join('')}
         </div>
+        ${switcherHtml}
       `;
+
+      // Bind model switch buttons
+      replayHeader.querySelectorAll('[data-switch-run]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectedRunIndex = Number(btn.getAttribute('data-switch-run'));
+          currentTurnIndex = 0;
+          stopAutoPlay();
+          renderRunList();
+          renderReplay();
+        });
+      });
     }
 
     function renderMap(run, frame) {
@@ -1351,6 +1616,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function boot() {
+      renderCompareSummary();
       renderMetaChips();
       renderRanking();
       renderPairwise();
@@ -1359,6 +1625,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderRunList();
       renderReplay();
       bindEvents();
+
+      document.getElementById('techToggle').addEventListener('click', () => {
+        const body = document.getElementById('techBody');
+        const arrow = document.getElementById('techArrow');
+        const isOpen = body.classList.toggle('open');
+        arrow.innerHTML = isOpen ? '&#9660;' : '&#9654;';
+      });
     }
 
     boot();

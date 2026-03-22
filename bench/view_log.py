@@ -374,46 +374,149 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-size: 0.82rem;
     }
 
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(120px, 1fr));
-      gap: 12px;
-    }
-
-    .card {
+    .outcome-hero {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 10px 12px;
+      border-radius: var(--radius);
+      padding: 20px 22px;
       box-shadow: var(--shadow);
+      display: grid;
+      gap: 12px;
       animation: rise 0.24s ease both;
     }
 
-    .card .label {
-      font-size: 0.75rem;
+    .outcome-context {
+      font-size: 0.92rem;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
     }
 
-    .card .value {
-      margin-top: 4px;
-      font-size: 1.18rem;
+    .outcome-top {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .outcome-badge {
+      font-size: 1.05rem;
+      font-weight: 800;
+      border-radius: 12px;
+      padding: 8px 18px;
+      letter-spacing: 0.02em;
+    }
+
+    .outcome-badge.survived {
+      background: #dcfce7;
+      color: #0f5132;
+      border: 2px solid #86efac;
+    }
+
+    .outcome-badge.died {
+      background: #fee2e2;
+      color: #7f1d1d;
+      border: 2px solid #fca5a5;
+    }
+
+    .outcome-score {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .outcome-score .score-label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: block;
       font-weight: 700;
     }
 
-    .card .value.value-compact {
-      font-size: 1.00rem;
-      line-height: 1.25;
+    .outcome-stats {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      font-size: 0.95rem;
+      color: var(--ink);
     }
 
-    .card .value.status-ok { color: var(--ok); }
-    .card .value.status-bad { color: var(--bad); }
-    .card .value.status-neutral { color: #a16207; }
+    .outcome-stats .stat-label {
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .outcome-why {
+      font-size: 0.95rem;
+      color: var(--muted);
+      border-left: 3px solid var(--accent-2);
+      padding-left: 12px;
+      font-style: italic;
+    }
+
+    .tech-accordion {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+
+    .tech-toggle {
+      width: 100%;
+      background: #f7faf8;
+      border: none;
+      padding: 10px 16px;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      letter-spacing: 0.02em;
+    }
+
+    .tech-toggle:hover { background: #edf7f4; }
+
+    .tech-body {
+      display: none;
+      padding: 12px 16px;
+      background: var(--panel);
+    }
+
+    .tech-body.open {
+      display: grid;
+      gap: 8px;
+    }
+
+    details > summary {
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--muted);
+      padding: 4px 0;
+      list-style: none;
+    }
+
+    details > summary::-webkit-details-marker { display: none; }
+
+    details > summary::before {
+      content: "\\25B6  ";
+      font-size: 0.7rem;
+    }
+
+    details[open] > summary::before {
+      content: "\\25BC  ";
+    }
+
+    details > summary:hover { color: var(--ink); }
 
     .layout {
       display: grid;
-      grid-template-columns: 1.35fr 1fr;
+      grid-template-columns: 1.6fr 1fr;
       gap: 14px;
       align-items: start;
     }
@@ -593,11 +696,24 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .action-line {
+      display: grid;
+      gap: 6px;
+    }
+
+    .action-line .action-row {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
     }
+
+    .action-line .score-delta {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .action-line .score-delta.delta-positive { color: var(--ok); }
+    .action-line .score-delta.delta-negative { color: var(--bad); }
 
     .tag-ok,
     .tag-bad {
@@ -688,6 +804,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     tr.active { background: #e9f7f4; }
     tr:hover { background: #f5fbf9; cursor: pointer; }
+    tr.turn-invalid { background: rgba(180, 35, 24, 0.06); }
+    tr.turn-critical { background: rgba(194, 65, 12, 0.08); }
+    tr.turn-invalid td:nth-child(3) { color: var(--bad); font-weight: 700; }
+    tr.active.turn-invalid { background: #fce8e6; }
+    tr.active.turn-critical { background: #fdf0e6; }
 
     .footer {
       color: var(--muted);
@@ -704,7 +825,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     @media (max-width: 980px) {
-      .cards { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .outcome-stats { gap: 16px; }
+      .outcome-top { flex-direction: column; align-items: flex-start; gap: 10px; }
       .layout { grid-template-columns: 1fr; }
       .state-grid { grid-template-columns: 1fr; }
       .control-bar { grid-template-columns: 1fr 1fr; }
@@ -714,14 +836,17 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 </head>
 <body>
   <div class="wrap">
-    <section class="hero">
-      <h1 id="dashboardTitle">🧭 TinyWorld Run Dashboard</h1>
-      <p>Readable replay of one benchmark run: what the agent did, where it moved, and why the score changed.</p>
-      <div class="chip-row" id="metaChips"></div>
-      <div class="protocol-panel" id="protocolPanel"></div>
-    </section>
+    <section class="outcome-hero" id="outcomeHero"></section>
 
-    <section class="cards" id="summaryCards"></section>
+    <section class="tech-accordion">
+      <button class="tech-toggle" id="techToggle" type="button">
+        Technical Details <span id="techArrow">&#9654;</span>
+      </button>
+      <div class="tech-body" id="techBody">
+        <div class="chip-row" id="metaChips"></div>
+        <div class="protocol-panel" id="protocolPanel"></div>
+      </div>
+    </section>
 
     <section class="layout">
       <article class="panel">
@@ -747,19 +872,24 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <strong>Inventory</strong>
           <div class="inventory" id="inventoryGrid"></div>
         </div>
-        <div>
-          <strong>Raw model output</strong>
+        <details>
+          <summary>Raw model output</summary>
           <div class="mono raw-command" id="rawOutput"></div>
-        </div>
-        <div>
-          <strong>Score events</strong>
+        </details>
+        <details>
+          <summary>Score events</summary>
           <div class="mono" id="scoreEvents"></div>
-        </div>
+        </details>
       </article>
     </section>
 
     <section class="timeline">
-      <h2>📜 Turn Timeline (click any row)</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">Turn Timeline</h2>
+        <label style="font-size:0.82rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="showImportantOnly" /> Show only important turns
+        </label>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -811,7 +941,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     let currentTurnIndex = 0;
     let autoPlayTimer = null;
 
-    const summaryCards = document.getElementById('summaryCards');
+    const outcomeHero = document.getElementById('outcomeHero');
     const metaChips = document.getElementById('metaChips');
     const protocolPanel = document.getElementById('protocolPanel');
     const mapGrid = document.getElementById('mapGrid');
@@ -825,7 +955,6 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const timelineBody = document.getElementById('timelineBody');
     const sourceLog = document.getElementById('sourceLog');
     const coverageHint = document.getElementById('coverageHint');
-    const dashboardTitle = document.getElementById('dashboardTitle');
 
     const prevBtn = document.getElementById('prevBtn');
     const playBtn = document.getElementById('playBtn');
@@ -833,12 +962,6 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const frames = DATA.frames || [];
     const worldWidth = DATA.world.width;
     const worldHeight = DATA.world.height;
-
-    function card(label, value, valueClass = '') {
-      const cls = String(valueClass || '').trim();
-      const clsAttr = cls ? ` ${cls}` : '';
-      return `<div class="card"><div class="label">${label}</div><div class="value${clsAttr}">${value}</div></div>`;
-    }
 
     function clampTurnIndex(index) {
       if (!frames.length) return 0;
@@ -1117,72 +1240,77 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return `action not allowed this turn (${requested || 'unknown action'})`;
     }
 
-    function renderSummary() {
+    function renderOutcomeHero() {
       const s = DATA.summary || {};
-      const latencyTotal = formatDurationFromMs(s.latency_ms);
+      const meta = DATA.meta || {};
       const turnsPlayed = Number(s.turns_played ?? 0);
-      const latencyAvg = turnsPlayed > 0 ? formatDurationFromMs(Number(s.latency_ms ?? 0) / turnsPlayed) : 'not available';
-      const tokensUsed = formatCount(s.tokens_used);
-      const estimatedCost = formatEstimatedCost(s.estimated_cost);
       const maxTurns = Number(s.max_turns ?? 0);
       const turnsSurvived = Number(s.turns_survived ?? 0);
-      const turnsSurvivedText = maxTurns > 0
-        ? `${turnsSurvived}/${maxTurns} (${((turnsSurvived / maxTurns) * 100).toFixed(1)}%)`
-        : `${turnsSurvived}`;
+      const endReason = String(s.end_reason || '');
+      const isDead = endReason === 'agent_dead';
 
       const gathered = Number(s.resources_gathered ?? 0);
       const gatherableTotal = Number(DATA.world?.gatherable_total);
       const resourcesText = Number.isFinite(gatherableTotal) && gatherableTotal >= 0
-        ? `${gathered}/${gatherableTotal}`
-        : `${gathered}`;
+        ? `${gathered} / ${gatherableTotal}` : `${gathered}`;
 
       const deathCause = inferDeathCause(s);
-      let runStatus = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
-      if (String(s.end_reason || '') === 'agent_dead' && deathCause) {
-        runStatus = `${runStatus} Cause: ${deathCause}`;
-      }
-      const runStatusClass = String(s.end_reason || '') === 'agent_dead'
-        ? 'status-bad value-compact'
-        : (String(s.end_reason || '') === 'max_turns_reached' ? 'status-ok value-compact' : 'status-neutral value-compact');
-      summaryCards.innerHTML = [
-        card('Final Score', s.final_score ?? '-'),
-        card('Turns Survived', turnsSurvivedText),
-        card('Turns Played', s.turns_played ?? '-'),
-        card('Invalid Actions', s.invalid_actions ?? '-'),
-        card('Resources Gathered', resourcesText),
-        card('Run Status', runStatus, runStatusClass),
-        card('Model Latency Total', latencyTotal),
-        card('Model Latency Avg', latencyAvg),
-        card('Tokens Used', tokensUsed),
-        card('Estimated Cost', estimatedCost),
-      ].join('');
+      let whyText = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
+      if (isDead && deathCause) whyText += ` ${deathCause}`;
 
-      const viewerVersion = String(DATA.meta.bench_version || DATA.meta.engine_version || '-').trim();
-      if (dashboardTitle) {
-        dashboardTitle.innerHTML = `🧭 TinyWorld Run Dashboard <span class="title-version">v${escapeHtml(viewerVersion)}</span>`;
-      }
+      const badgeClass = isDead ? 'died' : (endReason === 'max_turns_reached' ? 'survived' : 'survived');
+      const badgeText = isDead
+        ? `Died on turn ${turnsSurvived}`
+        : (endReason === 'max_turns_reached' ? `Survived all ${maxTurns} turns` : `Completed (${endReason || 'unknown'})`);
+
+      const modelName = meta.model || meta.model_profile || 'Unknown model';
+      const scenario = meta.scenario || 'Unknown scenario';
+
+      outcomeHero.innerHTML = `
+        <div class="outcome-context">${escapeHtml(modelName)} on <strong>${escapeHtml(scenario)}</strong></div>
+        <div class="outcome-top">
+          <div class="outcome-badge ${badgeClass}">${escapeHtml(badgeText)}</div>
+          <div class="outcome-score">
+            <span class="score-label">Final Score</span>
+            ${s.final_score ?? '-'}
+          </div>
+        </div>
+        <div class="outcome-stats">
+          <div><div class="stat-label">Turns survived</div><strong>${turnsSurvived} / ${maxTurns || '?'}</strong></div>
+          <div><div class="stat-label">Resources collected</div><strong>${resourcesText}</strong></div>
+          <div><div class="stat-label">Invalid actions</div><strong>${s.invalid_actions ?? 0}</strong></div>
+          <div><div class="stat-label">Turns played</div><strong>${turnsPlayed}</strong></div>
+        </div>
+        <div class="outcome-why">${escapeHtml(whyText)}</div>
+      `;
+
+      // Technical details chips (inside accordion)
+      const latencyTotal = formatDurationFromMs(s.latency_ms);
+      const latencyAvg = turnsPlayed > 0 ? formatDurationFromMs(Number(s.latency_ms ?? 0) / turnsPlayed) : 'n/a';
 
       metaChips.innerHTML = [
-        `<span class="chip chip-model"><span class="chip-key">Model:</span><span class="chip-value">${escapeHtml(DATA.meta.model || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Profile:</span><span class="chip-value">${escapeHtml(DATA.meta.model_profile || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Provider:</span><span class="chip-value">${escapeHtml(DATA.meta.provider_id || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Seed:</span><span class="chip-value">${escapeHtml(DATA.meta.seed ?? '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Scenario:</span><span class="chip-value">${escapeHtml(DATA.meta.scenario || '-')}</span></span>`,
-        `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules">Protocol: ${DATA.meta.protocol_version || '-'} (click)</button>`,
-        `<span class="chip"><span class="chip-key">Bench:</span><span class="chip-value">${escapeHtml(DATA.meta.bench_version || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Engine:</span><span class="chip-value">${escapeHtml(DATA.meta.engine_version || '-')}</span></span>`,
-        `<span class="chip"><span class="chip-key">Prompt set:</span><span class="chip-value">${escapeHtml(shortHash(DATA.meta.prompt_set_sha256, 16))}</span></span>`,
+        `<span class="chip"><span class="chip-key">Provider:</span><span class="chip-value">${escapeHtml(meta.provider_id || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Profile:</span><span class="chip-value">${escapeHtml(meta.model_profile || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Model:</span><span class="chip-value">${escapeHtml(meta.model || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Seed:</span><span class="chip-value">${escapeHtml(meta.seed ?? '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Scenario:</span><span class="chip-value">${escapeHtml(meta.scenario || '-')}</span></span>`,
+        `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules">Protocol: ${meta.protocol_version || '-'} (click)</button>`,
+        `<span class="chip"><span class="chip-key">Bench:</span><span class="chip-value">${escapeHtml(meta.bench_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Engine:</span><span class="chip-value">${escapeHtml(meta.engine_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Prompt set:</span><span class="chip-value">${escapeHtml(shortHash(meta.prompt_set_sha256, 16))}</span></span>`,
+        `<span class="chip"><span class="chip-key">Latency total:</span><span class="chip-value">${latencyTotal}</span></span>`,
+        `<span class="chip"><span class="chip-key">Latency avg:</span><span class="chip-value">${latencyAvg}</span></span>`,
+        `<span class="chip"><span class="chip-key">Tokens:</span><span class="chip-value">${formatCount(s.tokens_used)}</span></span>`,
+        `<span class="chip"><span class="chip-key">Est. cost:</span><span class="chip-value">${formatEstimatedCost(s.estimated_cost)}</span></span>`,
       ].join('');
 
       const protocolChip = document.getElementById('protocolChip');
       if (protocolChip) {
-        protocolChip.addEventListener('click', () => {
-          toggleProtocolPanel();
-        });
+        protocolChip.addEventListener('click', () => { toggleProtocolPanel(); });
       }
 
-      sourceLog.textContent = `Source log: ${DATA.meta.source_log_path || '-'}`;
-      coverageHint.textContent = DATA.meta.map_coverage === 'full'
+      sourceLog.textContent = `Source log: ${meta.source_log_path || '-'}`;
+      coverageHint.textContent = meta.map_coverage === 'full'
         ? 'Map coverage: full (from engine snapshot)'
         : 'Map coverage: partial (unknown tiles = not yet observed)';
 
@@ -1192,14 +1320,29 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function renderTimeline() {
+      const importantOnly = document.getElementById('showImportantOnly')?.checked;
+
       timelineBody.innerHTML = frames.map((frame, idx) => {
         const action = frame.action_result?.applied || frame.action_result?.requested || '-';
-        const valid = frame.validation_result?.is_valid ? 'yes' : 'no';
+        const isValid = frame.validation_result?.is_valid;
+        const valid = isValid ? 'yes' : 'no';
         const delta = frame.score_delta?.total ?? 0;
         const obs = frame.observation || {};
-        const rowClass = idx === currentTurnIndex ? 'active' : '';
+
+        const isInvalid = !isValid;
+        const isCritical = delta <= -5 || idx === frames.length - 1;
+        const isImportant = isInvalid || isCritical || delta >= 3;
+
+        if (importantOnly && !isImportant) return '';
+
+        const classes = [
+          idx === currentTurnIndex ? 'active' : '',
+          isInvalid ? 'turn-invalid' : '',
+          isCritical ? 'turn-critical' : '',
+        ].filter(Boolean).join(' ');
+
         return `
-          <tr data-idx="${idx}" class="${rowClass}">
+          <tr data-idx="${idx}" class="${classes}">
             <td>${frame.turn}</td>
             <td>${action}</td>
             <td>${valid}</td>
@@ -1279,12 +1422,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const actionDisplay = escapeHtml(actionApplied);
       const messageDisplay = escapeHtml(message);
 
+      const deltaTotal = frame.score_delta?.total ?? 0;
+      const deltaClass = deltaTotal < 0 ? 'delta-negative' : (deltaTotal > 0 ? 'delta-positive' : '');
+
       actionLine.innerHTML = `
-        ${validTag}
-        <strong>Turn ${frame.turn}</strong>
-        <span>Action: <code class="cmd-action">${actionDisplay}</code></span>
-        <span>Result: ${messageDisplay}</span>
-        <span>Score total: ${frame.cumulative_score ?? '-'}</span>
+        <div class="action-row">
+          <strong>Turn ${frame.turn}</strong>
+          ${validTag}
+          <code class="cmd-action">${actionDisplay}</code>
+        </div>
+        <div style="color:var(--muted);font-size:0.88rem">${messageDisplay}</div>
+        <div class="action-row">
+          <span class="score-delta ${deltaClass}">Score: ${frame.cumulative_score ?? '-'} (${formatSignedScore(deltaTotal)} this turn)</span>
+        </div>
       `;
 
       const energy = Number(obs.energy ?? 0);
@@ -1361,7 +1511,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function init() {
       renderProtocolPanel();
-      renderSummary();
+      renderOutcomeHero();
+
+      document.getElementById('techToggle').addEventListener('click', () => {
+        const body = document.getElementById('techBody');
+        const arrow = document.getElementById('techArrow');
+        const isOpen = body.classList.toggle('open');
+        arrow.innerHTML = isOpen ? '&#9660;' : '&#9654;';
+      });
 
       turnSlider.min = '1';
       turnSlider.max = String(Math.max(1, frames.length));
@@ -1387,6 +1544,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       nextBtn.addEventListener('click', () => {
         setTurn(currentTurnIndex + 1);
       });
+
+      const importantToggle = document.getElementById('showImportantOnly');
+      if (importantToggle) {
+        importantToggle.addEventListener('change', () => renderTimeline());
+      }
 
       if (!frames.length) {
         turnMeta.textContent = 'no turns in this log';
