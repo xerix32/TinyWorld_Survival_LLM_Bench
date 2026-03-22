@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **0.1.11**
+Version: **0.1.15**
 
 TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
 
@@ -95,6 +95,31 @@ python -m bench.run_suite --seeds 1,2,3 --model dummy_v0_1
 
 This writes one JSON log per run and a summary CSV under `artifacts/results/`.
 
+## Run multi-run / multi-model compare (paired seeds)
+```bash
+python -m bench.run_compare
+```
+
+`run_compare` defaults:
+- `--models dummy_v0_1`
+- `--num-runs 5`
+- `--seed-start 1`
+- `--providers-config configs/providers.yaml`
+
+Example model-vs-model compare:
+```bash
+python -m bench.run_compare \
+  --models local_gpt_oss_20b,groq_gpt_oss_120b \
+  --num-runs 10 \
+  --seed-start 7 \
+  --providers-config configs/providers.local.yaml
+```
+
+Explicit seed list (overrides `--num-runs/--seed-start`):
+```bash
+python -m bench.run_compare --models dummy_v0_1,local_gpt_oss_20b --seeds 1,2,3,4
+```
+
 ## Aggregate existing logs into CSV
 ```bash
 python -m bench.aggregate --logs-glob 'artifacts/logs/*.json'
@@ -116,6 +141,15 @@ The viewer includes:
 - clickable turn timeline
 - per-turn action/state/metrics details
 
+## Generate graphical HTML viewer from compare JSON
+```bash
+python -m bench.view_compare --compare artifacts/results/<compare_json>.json
+```
+
+Optional flags:
+- `--output artifacts/replays/<compare_dashboard>.html`
+- `--title \"My TinyWorld Compare\"`
+
 ## Play manually (human CLI)
 ```bash
 python -m bench.play_human --seed 7
@@ -125,8 +159,8 @@ Use only the command protocol actions listed above. Stop with `Ctrl+C`.
 
 ## Artifact locations
 - Logs: `artifacts/logs/`
-- Suite/Aggregate CSV: `artifacts/results/`
-- Human replay logs: `artifacts/replays/`
+- Suite/Aggregate/Compare CSV + Compare JSON: `artifacts/results/`
+- Replay dashboards (single run + compare): `artifacts/replays/`
 
 ## Reproducibility metadata in run JSON
 Each run log includes benchmark identity metadata for fair comparisons:

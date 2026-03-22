@@ -21,3 +21,5 @@ def test_generate_viewer_html_from_run_log(tmp_path: Path) -> None:
     assert "Viewer Test" in rendered
     assert "dummy_v0_1" in rendered
     assert "agent_position_after" in rendered
+    assert "protocolPanel" in rendered
+    assert "Protocol:" in rendered

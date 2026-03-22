@@ -32,6 +32,8 @@ SUITE_FIELDS = [
     "alive",
     "end_reason",
     "end_reason_human",
+    "death_cause",
+    "death_cause_human",
     "tokens_used",
     "latency_ms",
     "estimated_cost",

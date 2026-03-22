@@ -226,6 +226,22 @@ def _human_end_reason(end_reason: str, turns_played: int, max_turns: int) -> str
     return f"Run ended with status: {end_reason}."
 
 
+def _death_cause_from_survival(update: Any | None) -> tuple[str | None, str | None]:
+    if update is None:
+        return None, None
+
+    starvation_triggered = bool(getattr(update, "starvation_triggered", False))
+    dehydration_triggered = bool(getattr(update, "dehydration_triggered", False))
+
+    if starvation_triggered and dehydration_triggered:
+        return "starvation_and_dehydration", "Starvation and dehydration reached critical threshold."
+    if starvation_triggered:
+        return "starvation", "Starvation reached critical threshold."
+    if dehydration_triggered:
+        return "dehydration", "Dehydration reached critical threshold."
+    return "energy_depletion", "Energy was depleted to zero."
+
+
 def _emit_progress(
     progress_callback: Callable[[dict[str, Any]], None] | None,
     payload: dict[str, Any],
@@ -309,6 +325,7 @@ def run_match_once(
     cost_sum = 0.0
     cost_seen = False
     latency_sum_ms = 0.0
+    last_survival_update: Any | None = None
 
     for turn in range(1, run_max_turns + 1):
         agent = world.agents[DEFAULT_AGENT_ID]
@@ -382,6 +399,7 @@ def run_match_once(
             action_score_delta, action_score_events = score_action(False, None, scoring_cfg)
 
         survival_update = apply_end_of_turn(world=world, agent_id=DEFAULT_AGENT_ID, rules_cfg=rules_cfg)
+        last_survival_update = survival_update
         survival_score_delta, survival_score_events = score_survival(survival_update.alive_after, scoring_cfg)
 
         if survival_update.alive_after:
@@ -460,6 +478,10 @@ def run_match_once(
 
     final_agent = world.agents[DEFAULT_AGENT_ID]
     end_reason = "agent_dead" if not final_agent.alive else "max_turns_reached"
+    death_cause: str | None = None
+    death_cause_human: str | None = None
+    if not final_agent.alive:
+        death_cause, death_cause_human = _death_cause_from_survival(last_survival_update)
 
     run_summary = {
         "version": __version__,
@@ -481,6 +503,8 @@ def run_match_once(
         "alive": final_agent.alive,
         "end_reason": end_reason,
         "end_reason_human": _human_end_reason(end_reason, len(turn_logs), run_max_turns),
+        "death_cause": death_cause,
+        "death_cause_human": death_cause_human,
         "tokens_used": int(tokens_sum) if tokens_seen else None,
         "latency_ms": round(latency_sum_ms, 3),
         "estimated_cost": round(cost_sum, 6) if cost_seen else None,

@@ -1,4 +1,4 @@
-version: 0.1.11
+version: 0.1.15
 protocol_version: AIB-0.1
 default_scenario: v0_1_basic
 max_turns: 50

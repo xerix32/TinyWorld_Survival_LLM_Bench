@@ -34,3 +34,5 @@ def test_run_match_is_reproducible_for_fixed_seed(tmp_path: Path) -> None:
 
     assert summary_a.get("end_reason_human")
     assert summary_a.get("prompt_set_sha256") == identity_a.get("prompt_set_sha256")
+    assert summary_a.get("death_cause") is not None
+    assert summary_a.get("death_cause_human") is not None

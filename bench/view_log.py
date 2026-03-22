@@ -135,12 +135,32 @@ def _build_frames(run_log: dict[str, Any], width: int, height: int) -> tuple[lis
     return frames, map_coverage
 
 
+def _initial_gatherable_totals(run_log: dict[str, Any], width: int, height: int) -> tuple[int | None, dict[str, int] | None]:
+    snapshots = run_log.get("world_snapshots", {})
+    initial_tiles = snapshots.get("initial_tiles")
+    if not _valid_map_shape(initial_tiles, width, height):
+        return None, None
+
+    counts = {"tree": 0, "rock": 0, "food": 0, "water": 0}
+    for row in initial_tiles:
+        for tile in row:
+            tile_name = str(tile)
+            if tile_name in counts:
+                counts[tile_name] += 1
+
+    total = counts["tree"] + counts["rock"] + counts["food"] + counts["water"]
+    return total, counts
+
+
 def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict[str, Any]:
     width, height = _extract_dimensions(run_log)
     frames, map_coverage = _build_frames(run_log, width, height)
+    gatherable_total, gatherable_breakdown = _initial_gatherable_totals(run_log, width, height)
     summary = run_log.get("run_summary", {})
     identity = run_log.get("benchmark_identity", {})
     prompt_versions = run_log.get("prompt_versions", {})
+    benchmark_cfg = run_log.get("config_snapshot", {}).get("benchmark", {})
+    parser_cfg = benchmark_cfg.get("parser", {})
 
     return {
         "meta": {
@@ -161,6 +181,15 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
         "world": {
             "width": width,
             "height": height,
+            "gatherable_total": gatherable_total,
+            "gatherable_breakdown": gatherable_breakdown,
+        },
+        "protocol": {
+            "protocol_version": run_log.get("protocol_version"),
+            "invalid_action_policy": benchmark_cfg.get("invalid_action_policy"),
+            "parser_case_mode": parser_cfg.get("case_mode"),
+            "rules": benchmark_cfg.get("rules", {}),
+            "scoring": benchmark_cfg.get("scoring", {}),
         },
         "frames": frames,
     }
@@ -262,6 +291,65 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       white-space: nowrap;
     }
 
+    .chip-btn {
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .chip-btn:hover {
+      background: #edf7f4;
+      border-color: #bdd6d1;
+    }
+
+    .protocol-panel {
+      display: none;
+      gap: 10px;
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f6fbf9;
+      padding: 10px 12px;
+    }
+
+    .protocol-panel.open {
+      display: grid;
+    }
+
+    .protocol-head {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0e5f58;
+    }
+
+    .protocol-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .protocol-block {
+      border: 1px solid #d8e7e2;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 8px 10px;
+      font-size: 0.84rem;
+      color: #31403e;
+      display: grid;
+      gap: 3px;
+    }
+
+    .protocol-block strong {
+      color: #0f766e;
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .protocol-note {
+      color: #425957;
+      font-size: 0.82rem;
+    }
+
     .cards {
       display: grid;
       grid-template-columns: repeat(6, minmax(120px, 1fr));
@@ -289,6 +377,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-size: 1.18rem;
       font-weight: 700;
     }
+
+    .card .value.value-compact {
+      font-size: 1.00rem;
+      line-height: 1.25;
+    }
+
+    .card .value.status-ok { color: var(--ok); }
+    .card .value.status-bad { color: var(--bad); }
+    .card .value.status-neutral { color: #a16207; }
 
     .layout {
       display: grid;
@@ -571,6 +668,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       .layout { grid-template-columns: 1fr; }
       .state-grid { grid-template-columns: 1fr; }
       .control-bar { grid-template-columns: 1fr 1fr; }
+      .protocol-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -580,6 +678,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       <h1>🧭 TinyWorld Run Dashboard</h1>
       <p>Readable replay of one benchmark run: what the agent did, where it moved, and why the score changed.</p>
       <div class="chip-row" id="metaChips"></div>
+      <div class="protocol-panel" id="protocolPanel"></div>
     </section>
 
     <section class="cards" id="summaryCards"></section>
@@ -674,6 +773,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     const summaryCards = document.getElementById('summaryCards');
     const metaChips = document.getElementById('metaChips');
+    const protocolPanel = document.getElementById('protocolPanel');
     const mapGrid = document.getElementById('mapGrid');
     const turnSlider = document.getElementById('turnSlider');
     const turnMeta = document.getElementById('turnMeta');
@@ -693,8 +793,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const worldWidth = DATA.world.width;
     const worldHeight = DATA.world.height;
 
-    function card(label, value) {
-      return `<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    function card(label, value, valueClass = '') {
+      const cls = String(valueClass || '').trim();
+      const clsAttr = cls ? ` ${cls}` : '';
+      return `<div class="card"><div class="label">${label}</div><div class="value${clsAttr}">${value}</div></div>`;
     }
 
     function clampTurnIndex(index) {
@@ -702,9 +804,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return Math.max(0, Math.min(frames.length - 1, index));
     }
 
-    function meterClass(value) {
-      if (value >= 80) return 'meter bad';
-      if (value >= 60) return 'meter warn';
+    function meterClass(value, maxValue = 100) {
+      const max = numberOr(maxValue, 100);
+      const current = numberOr(value, 0);
+      const pct = max > 0 ? (current / max) * 100 : 0;
+      if (pct >= 80) return 'meter bad';
+      if (pct >= 60) return 'meter warn';
+      return 'meter';
+    }
+
+    function energyMeterClass(value, maxValue = 100) {
+      const max = numberOr(maxValue, 100);
+      const current = numberOr(value, 0);
+      const pct = max > 0 ? (current / max) * 100 : 0;
+      if (pct <= 30) return 'meter bad';
+      if (pct <= 50) return 'meter warn';
       return 'meter';
     }
 
@@ -772,10 +886,121 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return `Run ended with status: ${reason}.`;
     }
 
+    function inferDeathCause(summary) {
+      const explicit = String(summary?.death_cause_human || '').trim();
+      if (explicit) return explicit;
+
+      if (String(summary?.end_reason || '') !== 'agent_dead') return '';
+      const lastFrame = frames.length ? frames[frames.length - 1] : null;
+      const survival = lastFrame?.survival_delta || {};
+      const starvation = Boolean(survival.starvation_triggered);
+      const dehydration = Boolean(survival.dehydration_triggered);
+
+      if (starvation && dehydration) return 'Starvation and dehydration reached critical threshold.';
+      if (starvation) return 'Starvation reached critical threshold.';
+      if (dehydration) return 'Dehydration reached critical threshold.';
+      return 'Energy was depleted to zero.';
+    }
+
     function shortHash(value, length = 12) {
       const raw = String(value || '').trim();
       if (!raw) return '-';
       return raw.length <= length ? raw : raw.slice(0, length);
+    }
+
+    function numberOr(value, fallback) {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    }
+
+    function statLimit(ruleKey, fallback = 100) {
+      const rules = DATA.protocol?.rules || {};
+      const parsed = numberOr(rules[ruleKey], fallback);
+      return parsed > 0 ? parsed : fallback;
+    }
+
+    function renderProtocolPanel() {
+      if (!protocolPanel) return;
+      const p = DATA.protocol || {};
+      const rules = p.rules || {};
+      const scoring = p.scoring || {};
+
+      const energyMax = statLimit('energy_max', 100);
+      const hungerMax = statLimit('hunger_max', 100);
+      const thirstMax = statLimit('thirst_max', 100);
+
+      const startEnergy = numberOr(rules.start_energy, '-');
+      const startHunger = numberOr(rules.start_hunger, '-');
+      const startThirst = numberOr(rules.start_thirst, '-');
+
+      const passiveEnergyLoss = numberOr(rules.passive_energy_loss, '-');
+      const passiveHungerGain = numberOr(rules.passive_hunger_gain, '-');
+      const passiveThirstGain = numberOr(rules.passive_thirst_gain, '-');
+
+      const starvationPenalty = numberOr(rules.starvation_energy_penalty, '-');
+      const dehydrationPenalty = numberOr(rules.dehydration_energy_penalty, '-');
+
+      const restGain = numberOr(rules.rest_energy_gain, '-');
+      const eatReduction = numberOr(rules.eat_hunger_reduction, '-');
+      const drinkReduction = numberOr(rules.drink_thirst_reduction, '-');
+
+      protocolPanel.innerHTML = `
+        <div class="protocol-head">Protocol ${p.protocol_version || '-'} rules (v0.1 quick guide)</div>
+        <div class="protocol-grid">
+          <div class="protocol-block">
+            <strong>State Scale</strong>
+            <div>Energy: 0..${energyMax}</div>
+            <div>Hunger: 0..${hungerMax}</div>
+            <div>Thirst: 0..${thirstMax}</div>
+            <div>Viewer meters are shown as current/max.</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Start State</strong>
+            <div>Energy starts at ${startEnergy}/${energyMax}</div>
+            <div>Hunger starts at ${startHunger}/${hungerMax}</div>
+            <div>Thirst starts at ${startThirst}/${thirstMax}</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Passive Every Turn</strong>
+            <div>Energy ${formatSignedScore(-passiveEnergyLoss)}</div>
+            <div>Hunger +${passiveHungerGain}</div>
+            <div>Thirst +${passiveThirstGain}</div>
+            <div>This happens every turn, even with no enemies.</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Critical Thresholds</strong>
+            <div>If hunger reaches ${hungerMax}: extra ${formatSignedScore(-starvationPenalty)} energy</div>
+            <div>If thirst reaches ${thirstMax}: extra ${formatSignedScore(-dehydrationPenalty)} energy</div>
+            <div>Death condition: energy ≤ 0.</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Action Effects</strong>
+            <div>rest: +${restGain} energy (capped by max)</div>
+            <div>eat: -${eatReduction} hunger (requires food in inventory)</div>
+            <div>drink: -${drinkReduction} thirst (requires water in inventory)</div>
+            <div>gather: collect resource from current tile into inventory</div>
+          </div>
+          <div class="protocol-block">
+            <strong>Scoring + Validation</strong>
+            <div>survive turn: ${formatSignedScore(scoring.survive_turn)}</div>
+            <div>useful gather: ${formatSignedScore(scoring.gather_useful)}</div>
+            <div>useful eat/drink: ${formatSignedScore(scoring.consume_useful)}</div>
+            <div>invalid action: ${formatSignedScore(scoring.invalid_action)} (turn still consumed: ${p.invalid_action_policy || '-'})</div>
+            <div>death: ${formatSignedScore(scoring.death)}</div>
+          </div>
+        </div>
+        <div class="protocol-note">
+          Parser mode: ${p.parser_case_mode || '-'}.
+          Action validity is checked only against that turn's <code>allowed_actions</code>.
+        </div>
+      `;
+    }
+
+    function toggleProtocolPanel() {
+      if (!protocolPanel) return;
+      const isOpen = protocolPanel.classList.toggle('open');
+      const chip = document.getElementById('protocolChip');
+      if (chip) chip.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
 
     function escapeHtml(value) {
@@ -858,14 +1083,33 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const latencyAvg = turnsPlayed > 0 ? formatDurationFromMs(Number(s.latency_ms ?? 0) / turnsPlayed) : 'not available';
       const tokensUsed = formatCount(s.tokens_used);
       const estimatedCost = formatEstimatedCost(s.estimated_cost);
-      const runStatus = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
+      const maxTurns = Number(s.max_turns ?? 0);
+      const turnsSurvived = Number(s.turns_survived ?? 0);
+      const turnsSurvivedText = maxTurns > 0
+        ? `${turnsSurvived}/${maxTurns} (${((turnsSurvived / maxTurns) * 100).toFixed(1)}%)`
+        : `${turnsSurvived}`;
+
+      const gathered = Number(s.resources_gathered ?? 0);
+      const gatherableTotal = Number(DATA.world?.gatherable_total);
+      const resourcesText = Number.isFinite(gatherableTotal) && gatherableTotal >= 0
+        ? `${gathered}/${gatherableTotal}`
+        : `${gathered}`;
+
+      const deathCause = inferDeathCause(s);
+      let runStatus = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
+      if (String(s.end_reason || '') === 'agent_dead' && deathCause) {
+        runStatus = `${runStatus} Cause: ${deathCause}`;
+      }
+      const runStatusClass = String(s.end_reason || '') === 'agent_dead'
+        ? 'status-bad value-compact'
+        : (String(s.end_reason || '') === 'max_turns_reached' ? 'status-ok value-compact' : 'status-neutral value-compact');
       summaryCards.innerHTML = [
         card('Final Score', s.final_score ?? '-'),
-        card('Turns Survived', s.turns_survived ?? '-'),
+        card('Turns Survived', turnsSurvivedText),
         card('Turns Played', s.turns_played ?? '-'),
         card('Invalid Actions', s.invalid_actions ?? '-'),
-        card('Resources Gathered', s.resources_gathered ?? '-'),
-        card('Run Status', runStatus),
+        card('Resources Gathered', resourcesText),
+        card('Run Status', runStatus, runStatusClass),
         card('Model Latency Total', latencyTotal),
         card('Model Latency Avg', latencyAvg),
         card('Tokens Used', tokensUsed),
@@ -878,11 +1122,18 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `<span class="chip">Provider: ${DATA.meta.provider_id || '-'}</span>`,
         `<span class="chip">Seed: ${DATA.meta.seed ?? '-'}</span>`,
         `<span class="chip">Scenario: ${DATA.meta.scenario || '-'}</span>`,
-        `<span class="chip">Protocol: ${DATA.meta.protocol_version || '-'}</span>`,
+        `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules">Protocol: ${DATA.meta.protocol_version || '-'} (click)</button>`,
         `<span class="chip">Bench: ${DATA.meta.bench_version || '-'}</span>`,
         `<span class="chip">Engine: ${DATA.meta.engine_version || '-'}</span>`,
         `<span class="chip">Prompt set: ${shortHash(DATA.meta.prompt_set_sha256, 16)}</span>`,
       ].join('');
+
+      const protocolChip = document.getElementById('protocolChip');
+      if (protocolChip) {
+        protocolChip.addEventListener('click', () => {
+          toggleProtocolPanel();
+        });
+      }
 
       sourceLog.textContent = `Source log: ${DATA.meta.source_log_path || '-'}`;
       coverageHint.textContent = DATA.meta.map_coverage === 'full'
@@ -991,17 +1242,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const energy = Number(obs.energy ?? 0);
       const hunger = Number(obs.hunger ?? 0);
       const thirst = Number(obs.thirst ?? 0);
+      const energyMax = statLimit('energy_max', 100);
+      const hungerMax = statLimit('hunger_max', 100);
+      const thirstMax = statLimit('thirst_max', 100);
 
       stateMeters.innerHTML = [
-        { label: '⚡ Energy', value: energy, cls: energy <= 30 ? 'meter bad' : energy <= 50 ? 'meter warn' : 'meter' },
-        { label: '🍽️ Hunger', value: hunger, cls: meterClass(hunger) },
-        { label: '🥤 Thirst', value: thirst, cls: meterClass(thirst) },
-      ].map(({ label, value, cls }) => `
+        { label: '⚡ Energy', value: energy, max: energyMax, cls: energyMeterClass(energy, energyMax) },
+        { label: '🍽️ Hunger', value: hunger, max: hungerMax, cls: meterClass(hunger, hungerMax) },
+        { label: '🥤 Thirst', value: thirst, max: thirstMax, cls: meterClass(thirst, thirstMax) },
+      ].map(({ label, value, max, cls }) => {
+        const pct = max > 0 ? Math.max(0, Math.min(100, (Number(value) / Number(max)) * 100)) : 0;
+        return `
         <div class="${cls}">
-          <div>${label}: <strong>${value}</strong></div>
-          <div class="bar"><div class="fill" style="width:${Math.max(0, Math.min(100, value))}%"></div></div>
+          <div>${label}: <strong>${value}/${max}</strong></div>
+          <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
         </div>
-      `).join('');
+      `}).join('');
 
       inventoryGrid.innerHTML = Object.entries(inventoryMeta).map(([key, label]) => {
         return `<div class="pill"><span>${label}</span><strong>${inv[key] ?? 0}</strong></div>`;
@@ -1056,6 +1312,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function init() {
+      renderProtocolPanel();
       renderSummary();
 
       turnSlider.min = '1';
