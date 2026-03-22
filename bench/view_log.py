@@ -269,6 +269,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       letter-spacing: 0.2px;
     }
 
+    .hero h1 .title-version {
+      font-size: 0.92rem;
+      color: #0f766e;
+      font-weight: 800;
+      margin-left: 8px;
+      letter-spacing: 0.02em;
+    }
+
     .hero p {
       margin: 0;
       color: var(--muted);
@@ -289,6 +297,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-size: 0.84rem;
       color: var(--ink);
       white-space: nowrap;
+    }
+
+    .chip .chip-key {
+      color: #596865;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .chip .chip-value {
+      color: #22302e;
+      font-weight: 700;
+    }
+
+    .chip.chip-model .chip-value {
+      color: #0f766e;
+      font-weight: 800;
     }
 
     .chip-btn {
@@ -589,6 +613,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .tag-ok { background: var(--ok); }
     .tag-bad { background: var(--bad); }
 
+    .cmd-action {
+      color: #0f766e;
+      font-weight: 800;
+      background: #ecf8f5;
+      border: 1px solid #c7e2db;
+      border-radius: 6px;
+      padding: 1px 6px;
+    }
+
     .mono {
       font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
       font-size: 0.85rem;
@@ -599,6 +632,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       overflow-x: auto;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .mono.raw-command {
+      color: #0f5f58;
+      font-weight: 800;
+      background: #ecf8f5;
+      border-color: #c7e2db;
     }
 
     .timeline {
@@ -675,7 +715,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 <body>
   <div class="wrap">
     <section class="hero">
-      <h1>🧭 TinyWorld Run Dashboard</h1>
+      <h1 id="dashboardTitle">🧭 TinyWorld Run Dashboard</h1>
       <p>Readable replay of one benchmark run: what the agent did, where it moved, and why the score changed.</p>
       <div class="chip-row" id="metaChips"></div>
       <div class="protocol-panel" id="protocolPanel"></div>
@@ -709,7 +749,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         </div>
         <div>
           <strong>Raw model output</strong>
-          <div class="mono" id="rawOutput"></div>
+          <div class="mono raw-command" id="rawOutput"></div>
         </div>
         <div>
           <strong>Score events</strong>
@@ -785,6 +825,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const timelineBody = document.getElementById('timelineBody');
     const sourceLog = document.getElementById('sourceLog');
     const coverageHint = document.getElementById('coverageHint');
+    const dashboardTitle = document.getElementById('dashboardTitle');
 
     const prevBtn = document.getElementById('prevBtn');
     const playBtn = document.getElementById('playBtn');
@@ -1116,16 +1157,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         card('Estimated Cost', estimatedCost),
       ].join('');
 
+      const viewerVersion = String(DATA.meta.bench_version || DATA.meta.engine_version || '-').trim();
+      if (dashboardTitle) {
+        dashboardTitle.innerHTML = `🧭 TinyWorld Run Dashboard <span class="title-version">v${escapeHtml(viewerVersion)}</span>`;
+      }
+
       metaChips.innerHTML = [
-        `<span class="chip">Model: ${DATA.meta.model || '-'}</span>`,
-        `<span class="chip">Profile: ${DATA.meta.model_profile || '-'}</span>`,
-        `<span class="chip">Provider: ${DATA.meta.provider_id || '-'}</span>`,
-        `<span class="chip">Seed: ${DATA.meta.seed ?? '-'}</span>`,
-        `<span class="chip">Scenario: ${DATA.meta.scenario || '-'}</span>`,
+        `<span class="chip chip-model"><span class="chip-key">Model:</span><span class="chip-value">${escapeHtml(DATA.meta.model || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Profile:</span><span class="chip-value">${escapeHtml(DATA.meta.model_profile || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Provider:</span><span class="chip-value">${escapeHtml(DATA.meta.provider_id || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Seed:</span><span class="chip-value">${escapeHtml(DATA.meta.seed ?? '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Scenario:</span><span class="chip-value">${escapeHtml(DATA.meta.scenario || '-')}</span></span>`,
         `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules">Protocol: ${DATA.meta.protocol_version || '-'} (click)</button>`,
-        `<span class="chip">Bench: ${DATA.meta.bench_version || '-'}</span>`,
-        `<span class="chip">Engine: ${DATA.meta.engine_version || '-'}</span>`,
-        `<span class="chip">Prompt set: ${shortHash(DATA.meta.prompt_set_sha256, 16)}</span>`,
+        `<span class="chip"><span class="chip-key">Bench:</span><span class="chip-value">${escapeHtml(DATA.meta.bench_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Engine:</span><span class="chip-value">${escapeHtml(DATA.meta.engine_version || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">Prompt set:</span><span class="chip-value">${escapeHtml(shortHash(DATA.meta.prompt_set_sha256, 16))}</span></span>`,
       ].join('');
 
       const protocolChip = document.getElementById('protocolChip');
@@ -1230,12 +1276,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const validTag = valid ? '<span class="tag-ok">valid</span>' : '<span class="tag-bad">invalid</span>';
       const baseMessage = frame.action_result?.message || '-';
       const message = valid ? baseMessage : inferInvalidReason(frame);
+      const actionDisplay = escapeHtml(actionApplied);
+      const messageDisplay = escapeHtml(message);
 
       actionLine.innerHTML = `
         ${validTag}
         <strong>Turn ${frame.turn}</strong>
-        <span>Action: <code>${actionApplied}</code></span>
-        <span>Result: ${message}</span>
+        <span>Action: <code class="cmd-action">${actionDisplay}</code></span>
+        <span>Result: ${messageDisplay}</span>
         <span>Score total: ${frame.cumulative_score ?? '-'}</span>
       `;
 

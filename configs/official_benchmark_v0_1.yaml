@@ -1,4 +1,4 @@
-version: 0.1.15
+version: 0.1.16
 official_benchmark:
   id: tinyworld_v0_1
   scenario: v0_1_basic

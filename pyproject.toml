@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tinyworld-survival-bench"
-version = "0.1.15"
+version = "0.1.16"
 description = "TinyWorld LLM Survival Bench v0.1"
 readme = "README.md"
 requires-python = ">=3.10"
