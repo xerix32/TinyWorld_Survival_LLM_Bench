@@ -90,51 +90,72 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       color: var(--accent);
     }
 
-    /* ── SUMMARY BAR ── */
-    .summary-bar {
+    /* ── PODIUM CARDS ── */
+    .podium-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .podium-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 20px 24px;
+      padding: 16px 20px;
       display: grid;
-      gap: 16px;
+      gap: 12px;
+      transition: border-color 0.15s;
     }
 
-    .summary-header {
+    .podium-card.first {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .podium-card-header {
       display: flex;
       align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      gap: 10px;
     }
 
-    .winner-badge {
+    .podium-rank {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 800;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    .podium-card.first .podium-rank {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: rgba(34, 211, 238, 0.3);
+    }
+
+    .podium-model-name {
       font-family: var(--font-mono);
       font-size: 0.82rem;
       font-weight: 700;
-      background: var(--green-dim);
-      color: var(--green);
-      border: 1px solid rgba(74, 222, 128, 0.3);
-      border-radius: 6px;
-      padding: 5px 14px;
-      letter-spacing: 0.04em;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .summary-vs {
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
+    .podium-card.first .podium-model-name {
+      color: var(--accent);
     }
 
-    .summary-model {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-    }
-
-    .summary-metrics {
+    .podium-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -142,29 +163,101 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       overflow: hidden;
     }
 
-    .summary-metric {
+    .podium-stat {
       background: var(--bg-raised);
-      padding: 12px 16px;
+      padding: 8px 10px;
       text-align: center;
     }
 
-    .summary-metric .s-value {
+    .podium-stat .ps-value {
       font-family: var(--font-mono);
-      font-size: 1.4rem;
+      font-size: 1rem;
       font-weight: 800;
       color: var(--text);
       line-height: 1.1;
     }
 
-    .summary-metric .s-value.highlight { color: var(--accent); }
+    .podium-card.first .podium-stat:first-child .ps-value {
+      color: var(--accent);
+    }
 
-    .summary-metric .s-label {
-      font-size: 0.68rem;
+    .podium-stat .ps-label {
+      font-size: 0.6rem;
       font-weight: 600;
       color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       margin-top: 2px;
+    }
+
+    /* ── SCORE BAR CHART ── */
+    .score-chart {
+      display: grid;
+      gap: 10px;
+    }
+
+    .chart-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .chart-model {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .chart-bar-bg {
+      height: 28px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .chart-bar-fill {
+      height: 100%;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+      min-width: 60px;
+    }
+
+    .chart-bar-fill.rank-1 { background: var(--accent); }
+    .chart-bar-fill.rank-2 { background: var(--green); }
+    .chart-bar-fill.rank-3 { background: var(--orange); }
+    .chart-bar-fill.rank-other { background: var(--purple); }
+
+    .chart-bar-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--bg);
+      white-space: nowrap;
+    }
+
+    .chart-range {
+      position: absolute;
+      top: 0;
+      right: 8px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      gap: 4px;
+      pointer-events: none;
     }
 
     /* ── TAB BAR ── */
@@ -572,7 +665,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .summary-cards {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      grid-template-columns: repeat(7, 1fr);
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -582,24 +675,26 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .card {
       background: var(--bg-raised);
-      padding: 10px 14px;
+      padding: 8px 10px;
     }
 
     .card .label {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       font-weight: 600;
       color: var(--text-dim);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       font-family: var(--font-mono);
+      white-space: nowrap;
     }
 
     .card .value {
       font-family: var(--font-mono);
       font-weight: 800;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
       color: var(--text);
       margin-top: 2px;
+      white-space: nowrap;
     }
 
     .model-switch {
@@ -1019,7 +1114,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     @media (max-width: 1100px) {
       .explorer-layout { grid-template-columns: 1fr; }
       .replay-grid { grid-template-columns: 1fr; }
-      .summary-cards { grid-template-columns: repeat(2, 1fr); }
+      .summary-cards { grid-template-columns: repeat(4, 1fr); }
       .filter-row { grid-template-columns: 1fr; }
       .sidebar { max-height: none; }
     }
@@ -1029,10 +1124,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
   <button class=\"theme-toggle\" id=\"themeToggle\" type=\"button\"></button>
   <div class=\"wrap\">
     <div class=\"page-header\">
-      <div class=\"page-title\"><span>TinyWorld</span> Compare Dashboard</div>
+      <div class=\"page-title\"><span>TinyWorld</span> Compare Dashboard <span id=\"dashVersion\"></span></div>
     </div>
 
-    <section class=\"summary-bar\" id=\"compareSummary\"></section>
+    <section id=\"compareSummary\"></section>
 
     <section class=\"tech-accordion\">
       <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
@@ -1051,6 +1146,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     <!-- TAB 1: LEADERBOARD -->
     <div class=\"tab-panel active\" id=\"tab-leaderboard\">
       <div class=\"panel\">
+        <div class=\"panel-title\">Score Comparison</div>
+        <div id=\"scoreChart\" class=\"score-chart\"></div>
+      </div>
+
+      <div class=\"panel\">
         <div class=\"panel-title\">Model Ranking</div>
         <div class=\"table-wrap\">
           <table>
@@ -1059,9 +1159,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th>#</th>
                 <th>Model</th>
                 <th>Avg Score</th>
+                <th>Best</th>
+                <th>Worst</th>
                 <th>Avg Survived</th>
-                <th>Avg Invalid</th>
+                <th>Best Survived</th>
                 <th>Death Rate</th>
+                <th>Avg Invalid</th>
+                <th>Avg Latency / call</th>
+                <th>Total Tokens</th>
               </tr>
             </thead>
             <tbody id=\"rankingBody\"></tbody>
@@ -1075,11 +1180,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <table>
             <thead>
               <tr>
-                <th>Pair</th>
-                <th>Paired Runs</th>
-                <th>Win Rate A</th>
-                <th>Avg Delta (A-B)</th>
-                <th>W / L / T</th>
+                <th>Model A</th>
+                <th>vs</th>
+                <th>Runs</th>
+                <th>A wins</th>
+                <th>B wins</th>
+                <th>Ties</th>
+                <th>A Win Rate</th>
+                <th>Avg Score Delta</th>
               </tr>
             </thead>
             <tbody id=\"h2hBody\"></tbody>
@@ -1369,62 +1477,109 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       metaChips.innerHTML = chips.map(c => `<span class="chip">${c}</span>`).join('');
     }
 
+    function enrichModelsFromRuns() {
+      models.forEach(m => {
+        const modelRuns = runs.filter(r => String(r.model_profile) === String(m.model_profile));
+        if (!modelRuns.length) return;
+        const scores = modelRuns.map(r => Number(r.summary?.final_score ?? 0));
+        const survived = modelRuns.map(r => Number(r.summary?.turns_survived ?? 0));
+        if (m.best_final_score == null) m.best_final_score = Math.max(...scores);
+        if (m.worst_final_score == null) m.worst_final_score = Math.min(...scores);
+        if (m.max_turns_survived == null) m.max_turns_survived = Math.max(...survived);
+        if (m.tokens_used_total == null) {
+          const tokens = modelRuns.map(r => Number(r.summary?.tokens_used ?? 0));
+          m.tokens_used_total = tokens.reduce((a, b) => a + b, 0);
+        }
+      });
+    }
+
+    function modelLatencyPerTurn(m) {
+      if (m.latency_ms_per_turn != null) return m.latency_ms_per_turn;
+      const avgTurns = Number(m.avg_turns_survived ?? 0);
+      if (avgTurns > 0 && m.latency_ms_avg != null) return Number(m.latency_ms_avg) / avgTurns;
+      return null;
+    }
+
     function renderCompareSummary() {
       const el = document.getElementById('compareSummary');
       if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
 
-      const winner = models[0];
-      const loser = models.length > 1 ? models[1] : null;
-      const h2h = pairwise.length ? pairwise[0] : null;
+      el.innerHTML = `<div class="podium-grid">
+        ${models.map((m, i) => {
+          const isFirst = i === 0;
+          const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
+          const avgLatencyPerCall = formatDurationFromMs(modelLatencyPerTurn(m));
+          return `<div class="podium-card ${isFirst ? 'first' : ''}">
+            <div class="podium-card-header">
+              <div class="podium-rank">${m.rank}</div>
+              <div class="podium-model-name">${m.model_profile}</div>
+            </div>
+            <div class="podium-stats">
+              <div class="podium-stat"><div class="ps-value">${formatFloat(m.avg_final_score, 2)}</div><div class="ps-label">Avg Score</div></div>
+              <div class="podium-stat"><div class="ps-value">${survivalRate}%</div><div class="ps-label">Survival</div></div>
+              <div class="podium-stat"><div class="ps-value">${avgLatencyPerCall}</div><div class="ps-label">Avg Latency</div></div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
 
-      const cards = [
-        { label: 'Avg Score', value: formatFloat(winner.avg_final_score, 2), highlight: true },
-        { label: 'Survival Rate', value: `${formatFloat(100 - winner.death_rate_pct, 1)}%` },
-        { label: 'Avg Invalid', value: formatFloat(winner.avg_invalid_actions, 2) },
-      ];
+    function renderScoreChart() {
+      const el = document.getElementById('scoreChart');
+      if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
 
-      if (loser) {
-        cards.push({ label: `${shortProfile(loser.model_profile)} Score`, value: formatFloat(loser.avg_final_score, 2) });
-        if (h2h) {
-          const wr = h2h.win_rate_a_vs_b !== null && h2h.win_rate_a_vs_b !== undefined
-            ? `${formatFloat(h2h.win_rate_a_vs_b, 1)}%` : 'n/a';
-          cards.push({ label: 'H2H Win Rate', value: wr });
-          cards.push({ label: 'W / L / T', value: `${h2h.wins_a} / ${h2h.wins_b} / ${h2h.ties}` });
-        }
-      }
+      const maxScore = Math.max(...models.map(m => Number(m.best_final_score ?? m.avg_final_score ?? 0)));
+      const chartMax = Math.max(1, maxScore * 1.1);
 
-      el.innerHTML = `
-        <div class="summary-header">
-          <div class="winner-badge">#1 ${winner.model_profile}</div>
-          ${loser ? `<span class="summary-vs">//</span><span class="summary-model">${loser.model_profile}</span>` : ''}
-        </div>
-        <div class="summary-metrics">
-          ${cards.map(c => `<div class="summary-metric"><div class="s-value ${c.highlight ? 'highlight' : ''}">${c.value}</div><div class="s-label">${c.label}</div></div>`).join('')}
-        </div>
-      `;
+      el.innerHTML = models.map((m, i) => {
+        const avg = Number(m.avg_final_score ?? 0);
+        const best = Number(m.best_final_score ?? avg);
+        const worst = Number(m.worst_final_score ?? avg);
+        const avgPct = Math.max(8, (avg / chartMax) * 100);
+        const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
+        const rangeText = best !== worst ? `${formatFloat(worst, 0)}–${formatFloat(best, 0)}` : '';
+
+        return `<div class="chart-row">
+          <div class="chart-model">${m.model_profile}</div>
+          <div class="chart-bar-bg">
+            <div class="chart-bar-fill ${rankClass}" style="width:${avgPct.toFixed(1)}%">
+              <span class="chart-bar-label">${formatFloat(avg, 1)}</span>
+            </div>
+            ${rangeText ? `<div class="chart-range">${rangeText}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
     }
 
     function renderRanking() {
       if (!models.length) {
-        rankingBody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No model stats.</td></tr>';
+        rankingBody.innerHTML = '<tr><td colspan="11" style="color:var(--text-dim)">No model stats.</td></tr>';
         return;
       }
 
-      rankingBody.innerHTML = models.map(row => `
+      rankingBody.innerHTML = models.map(row => {
+        const avgLatencyPerCall = formatDurationFromMs(modelLatencyPerTurn(row));
+
+        return `
         <tr>
           <td>${formatCount(row.rank)}</td>
           <td style="color:var(--accent);font-weight:700">${row.model_profile}</td>
           <td style="font-weight:700">${formatFloat(row.avg_final_score, 2)}</td>
+          <td>${formatCount(row.best_final_score)}</td>
+          <td>${formatCount(row.worst_final_score)}</td>
           <td>${formatFloat(row.avg_turns_survived, 2)} / ${formatCount(row.max_turns_avg || 0)}</td>
-          <td>${formatFloat(row.avg_invalid_actions, 2)}</td>
+          <td>${formatCount(row.max_turns_survived)}</td>
           <td>${formatFloat(row.death_rate_pct, 1)}%</td>
-        </tr>
-      `).join('');
+          <td>${formatFloat(row.avg_invalid_actions, 2)}</td>
+          <td>${avgLatencyPerCall}</td>
+          <td>${formatCount(row.tokens_used_total)}</td>
+        </tr>`;
+      }).join('');
     }
 
     function renderPairwise() {
       if (!pairwise.length) {
-        h2hBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-dim)">Need 2+ models for H2H.</td></tr>';
+        h2hBody.innerHTML = '<tr><td colspan="8" style="color:var(--text-dim)">Need 2+ models for H2H.</td></tr>';
         return;
       }
 
@@ -1436,11 +1591,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
         return `
           <tr>
-            <td>${row.model_a_profile} vs ${row.model_b_profile}</td>
+            <td style="font-weight:600">${row.model_a_profile}</td>
+            <td style="color:var(--text-dim);">${row.model_b_profile}</td>
             <td>${formatCount(row.paired_runs)}</td>
-            <td>${wr}</td>
+            <td style="color:var(--green);font-weight:600">${formatCount(row.wins_a)}</td>
+            <td style="color:var(--red);font-weight:600">${formatCount(row.wins_b)}</td>
+            <td style="color:var(--text-dim)">${formatCount(row.ties)}</td>
+            <td style="font-weight:700">${wr}</td>
             <td>${delta}</td>
-            <td>${formatCount(row.wins_a)} / ${formatCount(row.wins_b)} / ${formatCount(row.ties)}</td>
           </tr>
         `;
       }).join('');
@@ -1490,7 +1648,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (!bySeed[seedKey]) bySeed[seedKey] = [];
         bySeed[seedKey].push({ run, idx });
       });
-      return Object.entries(bySeed).map(([seed, entries]) => ({ seed, entries }));
+      return Object.entries(bySeed).map(([seed, entries]) => {
+        entries.sort((a, b) => {
+          const sa = Number(a.run.summary?.final_score ?? 0);
+          const sb = Number(b.run.summary?.final_score ?? 0);
+          return sb - sa;
+        });
+        return { seed, entries };
+      });
     }
 
     function renderRunList() {
@@ -1607,7 +1772,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)}` },
         { label: 'Invalid', value: formatCount(summary.invalid_actions) },
         { label: 'Resources', value: gatheredLabel },
-        { label: 'Latency', value: formatDurationFromMs(summary.latency_ms) },
+        { label: 'Latency (total)', value: formatDurationFromMs(summary.latency_ms) },
+        { label: 'Latency (avg)', value: (() => {
+          const turns = Number(summary.turns_survived ?? 0);
+          const total = Number(summary.latency_ms ?? 0);
+          return turns > 0 ? formatDurationFromMs(total / turns) : 'n/a';
+        })() },
         { label: 'Tokens', value: formatCount(summary.tokens_used) },
       ];
 
@@ -1932,8 +2102,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     initTheme();
 
     function boot() {
+      const vEl = document.getElementById('dashVersion');
+      if (vEl) vEl.textContent = `v${meta.bench_version || meta.version || '?'}`;
+      enrichModelsFromRuns();
       renderCompareSummary();
       renderMetaChips();
+      renderScoreChart();
       renderRanking();
       renderPairwise();
       initFilters();

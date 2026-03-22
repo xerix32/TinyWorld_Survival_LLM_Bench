@@ -72,6 +72,10 @@ MODEL_SUMMARY_FIELDS = [
     "death_rate_pct",
     "latency_ms_total",
     "latency_ms_avg",
+    "latency_ms_per_turn",
+    "best_final_score",
+    "worst_final_score",
+    "max_turns_survived",
     "tokens_used_total",
     "estimated_cost_total",
     "max_turns_avg",
@@ -286,8 +290,12 @@ def build_model_summaries(run_rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "avg_invalid_actions": round(mean(invalid_actions), 4),
                 "avg_resources_gathered": round(mean(resources), 4),
                 "death_rate_pct": round(death_rate_pct, 4),
+                "best_final_score": max(scores) if scores else None,
+                "worst_final_score": min(scores) if scores else None,
+                "max_turns_survived": max(turns_survived) if turns_survived else None,
                 "latency_ms_total": round(latency_total, 6) if latency_total is not None else None,
                 "latency_ms_avg": round(latency_avg, 6) if latency_avg is not None else None,
+                "latency_ms_per_turn": round(latency_total / sum(turns_survived), 6) if (latency_total is not None and sum(turns_survived) > 0) else None,
                 "tokens_used_total": int(tokens_total) if tokens_total is not None else None,
                 "estimated_cost_total": round(cost_total, 6) if cost_total is not None else None,
                 "max_turns_avg": round(mean(max_turns), 4) if max_turns else None,
@@ -391,6 +399,34 @@ def _parse_port(value: str) -> int:
     return port
 
 
+def _render_pct(pct: float, *, color_enabled: bool) -> str:
+    if not color_enabled:
+        return f"[{pct:5.1f}%]"
+    left = colorize("[", "1;97", color_enabled)
+    value = colorize(f"{pct:5.1f}%", "1;35", color_enabled)
+    right = colorize("]", "1;97", color_enabled)
+    return f"{left}{value}{right}"
+
+
+def _render_progress_ratio(
+    label: str,
+    current: int,
+    total: int,
+    *,
+    color_enabled: bool,
+    done_color: str = "1;96",
+) -> str:
+    if not color_enabled:
+        return f"{label} {current}/{total}"
+
+    label_text = colorize(label, "0;37", color_enabled)
+    current_color = done_color if current >= total else "1;97"
+    current_text = colorize(str(current), current_color, color_enabled)
+    slash_text = colorize("/", "0;37", color_enabled)
+    total_text = colorize(str(total), done_color, color_enabled)
+    return f"{label_text} {current_text}{slash_text}{total_text}"
+
+
 def _render_turn_progress_line(
     *,
     pct: float,
@@ -418,9 +454,9 @@ def _render_turn_progress_line(
         effect_text = "no-op"
 
     if color_enabled:
-        pct_text = colorize(f"[{pct:5.1f}%]", "1;35", color_enabled)
-        job_text = colorize(f"job {job_index}/{job_total}", "1;96", color_enabled)
-        turn_text = colorize(f"turn {turn}/{max_turns}", "1;97", color_enabled)
+        pct_text = _render_pct(pct, color_enabled=color_enabled)
+        job_text = _render_progress_ratio("job", job_index, job_total, color_enabled=color_enabled)
+        turn_text = _render_progress_ratio("turn", turn, max_turns, color_enabled=color_enabled)
         model_label = colorize("model:", "0;37", color_enabled)
         model_text = colorize(model_profile, "1;95", color_enabled)
         seed_label = colorize("seed:", "0;37", color_enabled)
@@ -473,8 +509,8 @@ def _render_job_done_line(
     color_enabled: bool,
 ) -> str:
     if color_enabled:
-        pct_text = colorize(f"[{pct:5.1f}%]", "1;35", color_enabled)
-        job_text = colorize(f"job {job_index}/{job_total}", "1;96", color_enabled)
+        pct_text = _render_pct(pct, color_enabled=color_enabled)
+        job_text = _render_progress_ratio("job", job_index, job_total, color_enabled=color_enabled)
         model_text = colorize(model_profile, "1;95", color_enabled)
         seed_text = colorize(str(seed), "1;33", color_enabled)
         score_text = colorize(f"{score:>4}", "1;93", color_enabled)
