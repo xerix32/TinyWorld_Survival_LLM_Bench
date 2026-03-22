@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import quote
 import webbrowser
 
-from bench.cli_ui import StatusLine, colorize, use_color
+from bench.cli_ui import StatusLine, colorize, format_eta, use_color
 from bench.common import load_yaml_file, run_match_once
 from bench.view_log import generate_viewer
 from engine.version import __version__
@@ -299,13 +299,16 @@ def main() -> None:
 
     color_enabled = use_color(disable_color=args.no_color)
     status_line = StatusLine(enabled=True)
+    run_started_at: float | None = None
 
     print(colorize(f"TinyWorld Survival Bench CLI v{__version__}", "1;36", color_enabled))
 
     def on_progress(event: dict[str, Any]) -> None:
+        nonlocal run_started_at
         event_type = event.get("event")
 
         if event_type == "run_started":
+            run_started_at = time.monotonic()
             protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1")), "1;96", color_enabled)
             model_value = colorize(str(event["model"]), "1;97", color_enabled)
             profile_value = colorize(str(event["model_profile"]), "1;95", color_enabled)
@@ -322,7 +325,7 @@ def main() -> None:
 
             line = (
                 f"[  0.0%] Initializing | turn 0/{event['max_turns']} | "
-                f"provider: {event['provider_id']} | profile: {event['model_profile']}"
+                f"provider: {event['provider_id']} | profile: {event['model_profile']} | eta: --"
             )
             status_line.write(colorize(line, "36", color_enabled))
             return
@@ -337,6 +340,13 @@ def main() -> None:
             score = int(event.get("cumulative_score", 0))
             invalid = int(event.get("invalid_actions", 0))
             alive = bool(event.get("alive", True))
+            eta_text = "--"
+            if run_started_at is not None and max_turns > 0 and turn > 0:
+                elapsed = max(0.0, time.monotonic() - run_started_at)
+                progress = turn / max_turns
+                if progress > 0:
+                    remaining = max(0.0, (elapsed / progress) - elapsed)
+                    eta_text = format_eta(remaining)
 
             protocol_text = "ok" if protocol_valid else "bad"
             if not protocol_valid:
@@ -361,6 +371,8 @@ def main() -> None:
                 invalid_text = colorize(f"{invalid:>3}", invalid_color, color_enabled)
                 alive_color = "1;32" if alive else "1;31"
                 alive_text = colorize("yes" if alive else "no", alive_color, color_enabled)
+                eta_label = colorize("eta:", "0;37", color_enabled)
+                eta_value = colorize(eta_text, "1;97", color_enabled)
 
                 line = (
                     f"{pct_text} {turn_text} | "
@@ -369,35 +381,53 @@ def main() -> None:
                     f"effect: {colorize(effect_text, effect_color, color_enabled)} | "
                     f"score: {score_text} | "
                     f"invalid: {invalid_text} | "
-                    f"alive: {alive_text}"
+                    f"alive: {alive_text} | {eta_label} {eta_value}"
                 )
                 status_line.write(line)
             else:
                 line = (
                     f"[{pct:5.1f}%] Turn {turn}/{max_turns} | action: {action[:22]:<22} | "
                     f"protocol: {protocol_text:<3} | effect: {effect_text:<7} | "
-                    f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'}"
+                    f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'} | eta: {eta_text}"
                 )
-                should_print = (turn == 1) or (turn == max_turns) or (turn % 10 == 0) or (not alive)
-                if should_print:
-                    print(line)
+                status_line.write(line)
             return
 
         if event_type == "run_completed":
             status_line.finish(colorize("[100.0%] Run completed", "36", color_enabled))
 
-    run_log = run_match_once(
-        seed=args.seed,
-        model_name=args.model,
-        scenario_name=args.scenario,
-        max_turns=args.max_turns,
-        benchmark_config_path=args.benchmark_config,
-        scenarios_config_path=args.scenarios_config,
-        providers_config_path=args.providers_config,
-        prompts_dir=args.prompts_dir,
-        output_path=args.output,
-        progress_callback=on_progress,
-    )
+    try:
+        run_log = run_match_once(
+            seed=args.seed,
+            model_name=args.model,
+            scenario_name=args.scenario,
+            max_turns=args.max_turns,
+            benchmark_config_path=args.benchmark_config,
+            scenarios_config_path=args.scenarios_config,
+            providers_config_path=args.providers_config,
+            prompts_dir=args.prompts_dir,
+            output_path=args.output,
+            progress_callback=on_progress,
+        )
+    except KeyboardInterrupt:
+        status_line.finish(colorize("[interrupted] Run canceled by user", "1;93", color_enabled))
+        print(colorize("Run canceled (Ctrl+C). Exiting cleanly.", "1;93", color_enabled))
+        raise SystemExit(130)
+    except Exception as exc:
+        status_line.finish(colorize("[failed] Run failed", "1;91", color_enabled))
+        error_text = str(exc).strip() or exc.__class__.__name__
+        print(colorize(f"Run failed: {error_text}", "1;91", color_enabled))
+        lowered = error_text.casefold()
+        if "insufficient system resources" in lowered or "failed to load model" in lowered:
+            print(
+                colorize(
+                    "Hint: local model could not be loaded (RAM/VRAM guardrails). "
+                    "Use a smaller model or free resources in LM Studio.",
+                    "1;93",
+                    color_enabled,
+                )
+            )
+        raise SystemExit(1)
 
     summary = run_log["run_summary"]
 

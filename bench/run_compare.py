@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import quote
 import webbrowser
 
-from bench.cli_ui import StatusLine, colorize, use_color
+from bench.cli_ui import StatusLine, colorize, format_eta, use_color
 from bench.common import load_yaml_file, resolve_artifact_dirs, run_match_once
 from bench.view_compare import generate_compare_viewer
 from bench.view_log import build_viewer_payload
@@ -406,6 +406,7 @@ def _render_turn_progress_line(
     score: int,
     invalid: int,
     alive: bool,
+    eta_text: str,
     color_enabled: bool,
 ) -> str:
     protocol_text = "ok" if protocol_valid else "bad"
@@ -439,6 +440,8 @@ def _render_turn_progress_line(
         invalid_text = colorize(f"{invalid:>3}", invalid_color, color_enabled)
         alive_color = "1;32" if alive else "1;31"
         alive_text = colorize("yes" if alive else "no", alive_color, color_enabled)
+        eta_label = colorize("eta:", "0;37", color_enabled)
+        eta_value = colorize(eta_text, "1;97", color_enabled)
 
         return (
             f"{pct_text} {job_text} | {turn_text} | "
@@ -446,14 +449,14 @@ def _render_turn_progress_line(
             f"{action_label} {action_text} | "
             f"protocol: {colorize(protocol_text, protocol_color, color_enabled)} | "
             f"effect: {colorize(effect_text, effect_color, color_enabled)} | "
-            f"score: {score_text} | invalid: {invalid_text} | alive: {alive_text}"
+            f"score: {score_text} | invalid: {invalid_text} | alive: {alive_text} | {eta_label} {eta_value}"
         )
 
     return (
         f"[{pct:5.1f}%] job {job_index}/{job_total} | turn {turn}/{max_turns} | "
         f"model: {model_profile} | seed: {seed} | action: {action[:22]:<22} | "
         f"protocol: {protocol_text:<3} | effect: {effect_text:<7} | "
-        f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'}"
+        f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'} | eta: {eta_text}"
     )
 
 
@@ -466,6 +469,7 @@ def _render_job_done_line(
     seed: int,
     score: int,
     status: str,
+    eta_text: str,
     color_enabled: bool,
 ) -> str:
     if color_enabled:
@@ -476,14 +480,16 @@ def _render_job_done_line(
         score_text = colorize(f"{score:>4}", "1;93", color_enabled)
         status_color = "1;31" if status == "dead" else "1;32"
         status_text = colorize(status, status_color, color_enabled)
+        eta_label = colorize("eta:", "0;37", color_enabled)
+        eta_value = colorize(eta_text, "1;97", color_enabled)
         return (
             f"{pct_text} {job_text} | model: {model_text} | seed: {seed_text} | "
-            f"score: {score_text} | status: {status_text}"
+            f"score: {score_text} | status: {status_text} | {eta_label} {eta_value}"
         )
 
     return (
         f"[{pct:5.1f}%] job {job_index}/{job_total} | model: {model_profile} | "
-        f"seed: {seed} | score: {score:>4} | status: {status}"
+        f"seed: {seed} | score: {score:>4} | status: {status} | eta: {eta_text}"
     )
 
 
@@ -584,6 +590,7 @@ def main() -> None:
 
     total_jobs = len(model_profiles) * len(seed_list)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    compare_started_at = time.monotonic()
 
     run_rows: list[dict[str, Any]] = []
     run_payloads: list[dict[str, Any]] = []
@@ -617,6 +624,7 @@ def main() -> None:
                             score=0,
                             invalid=0,
                             alive=True,
+                            eta_text="--",
                             color_enabled=color_enabled,
                         )
                     )
@@ -629,7 +637,13 @@ def main() -> None:
                 max_turns = int(event.get("max_turns", run_progress["max_turns"]))
                 run_progress["max_turns"] = max_turns
                 run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
-                pct = ((current_job - 1) + run_fraction) / total_jobs * 100.0
+                overall_fraction = ((current_job - 1) + run_fraction) / total_jobs
+                pct = overall_fraction * 100.0
+                eta_text = "--"
+                if overall_fraction > 0:
+                    elapsed = max(0.0, time.monotonic() - compare_started_at)
+                    remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
+                    eta_text = format_eta(remaining)
 
                 line = _render_turn_progress_line(
                     pct=pct,
@@ -645,30 +659,61 @@ def main() -> None:
                     score=int(event.get("cumulative_score", 0)),
                     invalid=int(event.get("invalid_actions", 0)),
                     alive=bool(event.get("alive", True)),
+                    eta_text=eta_text,
                     color_enabled=color_enabled,
                 )
+                status_line.write(line)
 
-                if status_line.enabled:
-                    status_line.write(line)
-                    return
-
-                alive = bool(event.get("alive", True))
-                should_print = (turn == 1) or (turn == max_turns) or (turn % 10 == 0) or (not alive)
-                if should_print:
-                    print(line)
-
-            run_log = run_match_once(
-                seed=seed,
-                model_name=model_profile,
-                scenario_name=args.scenario,
-                max_turns=args.max_turns,
-                benchmark_config_path=args.benchmark_config,
-                scenarios_config_path=args.scenarios_config,
-                providers_config_path=args.providers_config,
-                prompts_dir=args.prompts_dir,
-                output_path=None,
-                progress_callback=on_progress,
-            )
+            try:
+                run_log = run_match_once(
+                    seed=seed,
+                    model_name=model_profile,
+                    scenario_name=args.scenario,
+                    max_turns=args.max_turns,
+                    benchmark_config_path=args.benchmark_config,
+                    scenarios_config_path=args.scenarios_config,
+                    providers_config_path=args.providers_config,
+                    prompts_dir=args.prompts_dir,
+                    output_path=None,
+                    progress_callback=on_progress,
+                )
+            except KeyboardInterrupt:
+                status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
+                print(
+                    colorize(
+                        (
+                            f"Compare canceled (Ctrl+C) during job {current_job}/{total_jobs} "
+                            f"(model={model_profile}, seed={seed}). Exiting cleanly."
+                        ),
+                        "1;93",
+                        color_enabled,
+                    )
+                )
+                raise SystemExit(130)
+            except Exception as exc:
+                status_line.finish(colorize("[failed] Compare failed", "1;91", color_enabled))
+                error_text = str(exc).strip() or exc.__class__.__name__
+                print(
+                    colorize(
+                        (
+                            f"Compare failed during job {current_job}/{total_jobs} "
+                            f"(model={model_profile}, seed={seed}): {error_text}"
+                        ),
+                        "1;91",
+                        color_enabled,
+                    )
+                )
+                lowered = error_text.casefold()
+                if "insufficient system resources" in lowered or "failed to load model" in lowered:
+                    print(
+                        colorize(
+                            "Hint: local model could not be loaded (RAM/VRAM guardrails). "
+                            "Use a smaller model or free resources in LM Studio.",
+                            "1;93",
+                            color_enabled,
+                        )
+                    )
+                raise SystemExit(1)
             run_logs.append(run_log)
             summary = dict(run_log["run_summary"])
 
@@ -699,6 +744,12 @@ def main() -> None:
 
             pct_after = (current_job / total_jobs) * 100.0
             status = "dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"
+            eta_text = "--"
+            if current_job < total_jobs:
+                overall_fraction = current_job / total_jobs
+                elapsed = max(0.0, time.monotonic() - compare_started_at)
+                remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
+                eta_text = format_eta(remaining)
             status_line.write(
                 _render_job_done_line(
                     pct=pct_after,
@@ -708,6 +759,7 @@ def main() -> None:
                     seed=seed,
                     score=int(summary["final_score"]),
                     status=status,
+                    eta_text=eta_text,
                     color_enabled=color_enabled,
                 )
             )

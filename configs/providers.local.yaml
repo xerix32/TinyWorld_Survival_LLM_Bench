@@ -1,4 +1,4 @@
-version: 0.1.17
+version: 0.1.19
 
 default_model_profile: dummy_v0_1
 
@@ -62,5 +62,11 @@ model_profiles:
   local_gpt_oss_20b:
     provider: local_lmstudio
     model: openai/gpt-oss-20b
+    temperature: 0.2
+    max_tokens: 6000
+
+  local_phi35_mini_instruct:
+    provider: local_lmstudio
+    model: phi-3.5-mini-instruct
     temperature: 0.2
     max_tokens: 6000

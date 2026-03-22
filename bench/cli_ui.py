@@ -21,9 +21,25 @@ def colorize(text: str, ansi_code: str, enabled: bool) -> str:
     return f"\x1b[{ansi_code}m{text}\x1b[0m"
 
 
+def format_eta(seconds: float | None) -> str:
+    if seconds is None:
+        return "--"
+
+    total_seconds = max(0, int(round(seconds)))
+    if total_seconds < 60:
+        return f"{total_seconds} sec"
+
+    minutes, secs = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes} min {secs} sec"
+
+    hours, mins = divmod(minutes, 60)
+    return f"{hours} hour {mins} min {secs} sec"
+
+
 class StatusLine:
     def __init__(self, enabled: bool = True) -> None:
-        self.enabled = enabled and sys.stdout.isatty()
+        self.enabled = enabled
         self._active = False
         self._last_visible_len = 0
 

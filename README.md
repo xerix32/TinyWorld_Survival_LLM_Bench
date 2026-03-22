@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **0.1.17**
+Version: **0.1.19**
 
 TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
 

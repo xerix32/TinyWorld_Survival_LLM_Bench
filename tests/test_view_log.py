@@ -17,7 +17,7 @@ def test_generate_viewer_html_from_run_log(tmp_path: Path) -> None:
     assert output_html.exists()
 
     rendered = output_html.read_text(encoding="utf-8")
-    assert "TinyWorld Run Dashboard" in rendered
+    assert "outcomeHero" in rendered
     assert "Viewer Test" in rendered
     assert "dummy_v0_1" in rendered
     assert "agent_position_after" in rendered
