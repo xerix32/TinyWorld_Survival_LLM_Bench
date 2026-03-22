@@ -1,0 +1,22 @@
+.DS_Store
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environments
+.venv/
+tinyworld_survival_bench.egg-info/
+
+# Benchmark-generated artifacts
+artifacts/logs/*
+!artifacts/logs/.gitkeep
+
+artifacts/replays/*
+!artifacts/replays/.gitkeep
+
+artifacts/results/*
+!artifacts/results/.gitkeep
+!artifacts/results/baselines/
+!artifacts/results/baselines/**

@@ -1,0 +1,40 @@
+version: 0.1.11
+protocol_version: AIB-0.1
+default_scenario: v0_1_basic
+max_turns: 50
+invalid_action_policy: waste_turn
+
+parser:
+  case_mode: case_insensitive
+
+logging:
+  log_full_prompts: true
+  logs_dir: artifacts/logs
+  results_dir: artifacts/results
+  replays_dir: artifacts/replays
+
+metrics:
+  usage_fallback: null
+
+rules:
+  energy_max: 100
+  hunger_max: 100
+  thirst_max: 100
+  start_energy: 80
+  start_hunger: 20
+  start_thirst: 20
+  passive_energy_loss: 2
+  passive_hunger_gain: 4
+  passive_thirst_gain: 5
+  starvation_energy_penalty: 8
+  dehydration_energy_penalty: 10
+  rest_energy_gain: 12
+  eat_hunger_reduction: 25
+  drink_thirst_reduction: 25
+
+scoring:
+  survive_turn: 1
+  gather_useful: 3
+  consume_useful: 2
+  invalid_action: -2
+  death: -10

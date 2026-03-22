@@ -1,0 +1,66 @@
+version: 0.1.11
+
+default_model_profile: dummy_v0_1
+
+providers:
+  dummy_provider:
+    type: dummy
+
+  vercel_gateway:
+    type: openai_compatible
+    api_base: https://ai-gateway.vercel.sh/v1/chat/completions
+    api_key: YOUR_VERCEL_AI_GATEWAY_API_KEY
+    requests_per_minute: 30
+    max_retries: 3
+    retry_base_seconds: 2.0
+    retry_max_seconds: 20.0
+    request_timeout_seconds: 60.0
+
+  groq_gateway:
+    type: openai_compatible
+    api_base: https://api.groq.com/openai/v1/chat/completions
+    api_key: YOUR_GROQ_API_KEY
+    requests_per_minute: 30
+    max_retries: 3
+    retry_base_seconds: 2.0
+    retry_max_seconds: 20.0
+    request_timeout_seconds: 30.0
+
+  local_lmstudio:
+    type: openai_compatible
+    api_base: http://localhost:1234/v1/chat/completions
+    api_key: lm-studio
+    requests_per_minute: 30
+    max_retries: 3
+    retry_base_seconds: 2.0
+    retry_max_seconds: 20.0
+    request_timeout_seconds: 300.0
+
+model_profiles:
+  dummy_v0_1:
+    provider: dummy_provider
+    model_name: dummy_random_v0_1
+
+  vercel_gpt_oss_120b:
+    provider: vercel_gateway
+    model: openai/gpt-oss-120b
+    temperature: 0.2
+    max_tokens: 6000
+
+  groq_gpt_oss_120b:
+    provider: groq_gateway
+    model: openai/gpt-oss-120b
+    temperature: 0.2
+    max_tokens: 6000
+
+  local_qwen35_9b_mlx:
+    provider: local_lmstudio
+    model: qwen3.5-9b-mlx
+    temperature: 0.2
+    max_tokens: 6000
+
+  local_gpt_oss_20b:
+    provider: local_lmstudio
+    model: openai/gpt-oss-20b
+    temperature: 0.2
+    max_tokens: 6000

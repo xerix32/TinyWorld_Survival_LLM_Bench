@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinyworld-survival-bench"
+version = "0.1.11"
+description = "TinyWorld LLM Survival Bench v0.1"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Jinja2>=3.1,<4",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+twsb-run-match = "bench.run_match:main"
+twsb-run-suite = "bench.run_suite:main"
+twsb-aggregate = "bench.aggregate:main"
+twsb-play-human = "bench.play_human:main"
+twsb-view-log = "bench.view_log:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["engine*", "renderers*", "models*", "bench*", "memory*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
