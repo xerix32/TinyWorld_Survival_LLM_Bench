@@ -9,6 +9,7 @@ providers:
   vercel_gateway:
     type: openai_compatible
     api_base: https://ai-gateway.vercel.sh/v1/chat/completions
+    api_key: YOUR_VERCEL_AI_GATEWAY_API_KEY
     api_key_env: VERCEL_AI_GATEWAY_API_KEY
     requests_per_minute: 30
     max_retries: 3
@@ -19,6 +20,7 @@ providers:
   groq_gateway:
     type: openai_compatible
     api_base: https://api.groq.com/openai/v1/chat/completions
+    api_key: YOUR_GROQ_API_KEY
     api_key_env: GROQ_API_KEY
     requests_per_minute: 30
     max_retries: 3
