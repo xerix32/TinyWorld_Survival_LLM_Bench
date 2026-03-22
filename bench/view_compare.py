@@ -924,6 +924,97 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       padding: 4px 0;
     }
 
+    /* ── LIGHT THEME ── */
+    [data-theme="light"] {
+      --bg: #f5f5f5;
+      --bg-raised: #ebebeb;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f8f8f8;
+      --border: #d4d4d8;
+      --border-bright: #a1a1aa;
+      --text: #18181b;
+      --text-secondary: #3f3f46;
+      --text-dim: #71717a;
+      --accent: #0891b2;
+      --accent-dim: rgba(8, 145, 178, 0.1);
+      --accent-glow: rgba(8, 145, 178, 0.06);
+      --green: #16a34a;
+      --green-dim: rgba(22, 163, 74, 0.1);
+      --red: #dc2626;
+      --red-dim: rgba(220, 38, 38, 0.08);
+      --orange: #ea580c;
+      --orange-dim: rgba(234, 88, 12, 0.08);
+    }
+
+    [data-theme="light"] .tile.unknown { background: #e4e4e7; }
+    [data-theme="light"] .tile.empty   { background: #f4f4f5; border-color: #d4d4d8; }
+    [data-theme="light"] .tile.tree    { background: #dcfce7; border-color: #86efac; }
+    [data-theme="light"] .tile.rock    { background: #f0f0f4; border-color: #c4c4cc; }
+    [data-theme="light"] .tile.food    { background: #fff7ed; border-color: #fdba74; }
+    [data-theme="light"] .tile.water   { background: #e0f2fe; border-color: #7dd3fc; }
+
+    [data-theme="light"] .tile-main { filter: none; }
+    [data-theme="light"] .tile .tile-type { font-weight: 700; }
+    [data-theme="light"] .tile.tree .tile-type  { color: #15803d; }
+    [data-theme="light"] .tile.rock .tile-type  { color: #6b7280; }
+    [data-theme="light"] .tile.food .tile-type  { color: #c2410c; }
+    [data-theme="light"] .tile.water .tile-type { color: #0369a1; }
+    [data-theme="light"] .tile.empty .tile-type { color: #a1a1aa; }
+    [data-theme="light"] .tile.unknown .tile-type { color: #a1a1aa; }
+    [data-theme="light"] .coord { color: #a1a1aa; }
+
+    [data-theme="light"] .tile.current {
+      box-shadow: inset 0 0 0 2px rgba(8, 145, 178, 0.6), 0 0 12px rgba(8, 145, 178, 0.15);
+    }
+
+    [data-theme="light"] .agent-mark {
+      background: rgba(8, 145, 178, 0.12);
+      border-color: rgba(8, 145, 178, 0.35);
+    }
+
+    [data-theme="light"] .tile.visited::after {
+      border-color: rgba(8, 145, 178, 0.35);
+    }
+
+    [data-theme="light"] .code-block.raw-cmd {
+      background: rgba(8, 145, 178, 0.06);
+      border-color: rgba(8, 145, 178, 0.2);
+    }
+
+    [data-theme="light"] .tab-btn.active {
+      background: rgba(8, 145, 178, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.2);
+    }
+
+    [data-theme="light"] .seed-pair.active {
+      border-color: rgba(8, 145, 178, 0.4);
+      background: rgba(8, 145, 178, 0.05);
+    }
+
+    /* ── THEME TOGGLE ── */
+    .theme-toggle {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      z-index: 100;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-dim);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      letter-spacing: 0.04em;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 1100px) {
       .explorer-layout { grid-template-columns: 1fr; }
@@ -935,6 +1026,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
   </style>
 </head>
 <body>
+  <button class=\"theme-toggle\" id=\"themeToggle\" type=\"button\"></button>
   <div class=\"wrap\">
     <div class=\"page-header\">
       <div class=\"page-title\"><span>TinyWorld</span> Compare Dashboard</div>
@@ -1815,6 +1907,29 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (event.key === 'ArrowDown') { event.preventDefault(); moveTurn(1); }
       });
     }
+
+    /* ── THEME ── */
+    const THEME_KEY = 'tinyworld-theme';
+    const themeToggle = document.getElementById('themeToggle');
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      themeToggle.textContent = theme === 'dark' ? '// light' : '// dark';
+      try { localStorage.setItem(THEME_KEY, theme); } catch(e) {}
+    }
+
+    function initTheme() {
+      let saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch(e) {}
+      applyTheme(saved || 'dark');
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    initTheme();
 
     function boot() {
       renderCompareSummary();
