@@ -666,72 +666,97 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .tile {
       border: 1px solid var(--border);
       border-radius: 6px;
-      min-height: 56px;
+      min-height: 60px;
       padding: 4px;
       background: var(--bg-card);
       display: grid;
-      align-content: space-between;
+      align-content: center;
+      justify-items: center;
       gap: 2px;
       position: relative;
       overflow: hidden;
     }
 
-    .tile.empty   { background: #1a1a1e; }
-    .tile.tree    { background: #0d1f12; border-color: #1a3a22; }
-    .tile.rock    { background: #1a1a1e; border-color: #2a2a30; }
-    .tile.food    { background: #1f1408; border-color: #3a2810; }
-    .tile.water   { background: #081820; border-color: #103040; }
-    .tile.unknown { background: #18181b; color: #52525b; }
+    .tile .tile-type {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.52rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .tile.unknown .tile-type { color: #555; }
+    .tile.empty .tile-type   { color: #444; }
+    .tile.tree .tile-type    { color: #4ade80; }
+    .tile.rock .tile-type    { color: #9ca3af; }
+    .tile.food .tile-type    { color: #fb923c; }
+    .tile.water .tile-type   { color: #38bdf8; }
+
+    .tile.empty   { background: #1e1e22; border-color: #2a2a2e; }
+    .tile.tree    { background: #132b18; border-color: #245a30; }
+    .tile.rock    { background: #22222a; border-color: #3a3a44; }
+    .tile.food    { background: #2a1c0a; border-color: #4a3018; }
+    .tile.water   { background: #0c2030; border-color: #184060; }
+    .tile.unknown { background: #1c1c20; }
 
     .tile.visited::after {
       content: '';
       position: absolute;
       inset: 2px;
-      border: 1px dashed rgba(34, 211, 238, 0.3);
+      border: 1px dashed rgba(34, 211, 238, 0.35);
       border-radius: 4px;
       pointer-events: none;
     }
 
     .tile.current {
-      box-shadow: inset 0 0 0 2px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.15);
+      box-shadow:
+        inset 0 0 0 2px rgba(34, 211, 238, 0.7),
+        0 0 16px rgba(34, 211, 238, 0.25),
+        0 0 32px rgba(34, 211, 238, 0.08);
+      z-index: 1;
     }
 
     .coord {
       position: absolute;
       top: 2px;
       right: 4px;
-      color: var(--text-dim);
+      color: #888;
       font-size: 0.56rem;
       font-family: var(--font-mono);
-      opacity: 0.5;
     }
 
     .tile-main {
-      font-size: 1.2rem;
+      font-size: 1.35rem;
       text-align: center;
       line-height: 1;
-      margin-top: 12px;
+      margin-top: 10px;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
     }
 
     .agent-mark {
       position: absolute;
       bottom: 2px;
-      left: 3px;
-      right: 3px;
+      left: 2px;
+      right: 2px;
       display: inline-flex;
       align-items: center;
-      gap: 2px;
-      border: 1px solid rgba(34, 211, 238, 0.25);
+      gap: 3px;
+      border: 1px solid rgba(34, 211, 238, 0.45);
       border-radius: 4px;
-      padding: 1px 4px;
-      background: rgba(34, 211, 238, 0.1);
+      padding: 2px 4px;
+      background: rgba(34, 211, 238, 0.2);
       color: var(--accent);
       font-family: var(--font-mono);
-      font-size: 0.52rem;
+      font-size: 0.54rem;
       font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      backdrop-filter: blur(4px);
     }
 
     .map-legend {
@@ -1083,12 +1108,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const DATA = JSON.parse(document.getElementById('compareData').textContent || '{}');
 
     const tileMeta = {
-      empty: { emoji: '\\u00B7', label: 'empty' },
+      empty: { emoji: '\\u25AB', label: '' },
       tree: { emoji: '\\u{1F332}', label: 'tree' },
       rock: { emoji: '\\u{1FAA8}', label: 'rock' },
       food: { emoji: '\\u{1F34E}', label: 'food' },
       water: { emoji: '\\u{1F4A7}', label: 'water' },
-      unknown: { emoji: '\\u25A0', label: 'unknown' },
+      unknown: { emoji: '\\u2588', label: '?' },
     };
 
     const inventoryMeta = {
@@ -1560,6 +1585,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
           cells.push(`
             <div class="${classes.join(' ')}">
+              <div class="tile-type">${metaEntry.label}</div>
               <div class="coord">${x},${y}</div>
               <div class="tile-main">${metaEntry.emoji}</div>
               ${isCurrent ? `<div class="agent-mark">\\u{1F916} ${shortProfile(run.model_profile)}</div>` : ''}

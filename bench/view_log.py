@@ -592,62 +592,91 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       position: relative;
       border: 1px solid var(--border);
       border-radius: 6px;
-      min-height: 52px;
+      min-height: 60px;
       display: grid;
       place-items: center;
-      font-size: 1.1rem;
+      font-size: 1.35rem;
       background: var(--bg-card);
       transition: transform 0.1s ease;
       overflow: hidden;
     }
 
+    .tile .tile-emoji {
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+      line-height: 1;
+    }
+
+    .tile .tile-type {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.52rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .tile.unknown .tile-type { color: #555; }
+    .tile.empty .tile-type   { color: #444; }
+    .tile.tree .tile-type    { color: #4ade80; }
+    .tile.rock .tile-type    { color: #9ca3af; }
+    .tile.food .tile-type    { color: #fb923c; }
+    .tile.water .tile-type   { color: #38bdf8; }
+
     .tile.path::after {
       content: "";
       position: absolute;
       inset: 2px;
-      border: 1px dashed rgba(34, 211, 238, 0.3);
+      border: 1px dashed rgba(34, 211, 238, 0.35);
       border-radius: 4px;
       pointer-events: none;
     }
 
     .tile.agent {
-      transform: scale(1.03);
-      box-shadow: inset 0 0 0 2px rgba(34, 211, 238, 0.6), 0 0 12px rgba(34, 211, 238, 0.15);
+      transform: scale(1.04);
+      box-shadow:
+        inset 0 0 0 2px rgba(34, 211, 238, 0.7),
+        0 0 16px rgba(34, 211, 238, 0.25),
+        0 0 32px rgba(34, 211, 238, 0.08);
+      z-index: 1;
     }
 
-    .tile.unknown { background: #18181b; color: #52525b; }
-    .tile.empty   { background: #1a1a1e; }
-    .tile.tree    { background: #0d1f12; border-color: #1a3a22; }
-    .tile.rock    { background: #1a1a1e; border-color: #2a2a30; }
-    .tile.food    { background: #1f1408; border-color: #3a2810; }
-    .tile.water   { background: #081820; border-color: #103040; }
+    .tile.unknown { background: #1c1c20; }
+    .tile.empty   { background: #1e1e22; border-color: #2a2a2e; }
+    .tile.tree    { background: #132b18; border-color: #245a30; }
+    .tile.rock    { background: #22222a; border-color: #3a3a44; }
+    .tile.food    { background: #2a1c0a; border-color: #4a3018; }
+    .tile.water   { background: #0c2030; border-color: #184060; }
 
     .coord {
       position: absolute;
       top: 2px;
       right: 4px;
-      font-size: 0.58rem;
-      color: var(--text-dim);
+      font-size: 0.56rem;
+      color: #888;
       font-family: var(--font-mono);
-      opacity: 0.6;
     }
 
     .agent-mark {
       position: absolute;
       left: 2px;
       right: 2px;
-      bottom: 1px;
+      bottom: 2px;
       display: flex;
       align-items: center;
-      gap: 2px;
-      font-size: 0.58rem;
+      gap: 3px;
+      font-size: 0.6rem;
       line-height: 1;
-      padding: 1px 3px;
+      padding: 2px 4px;
       border-radius: 4px;
-      background: rgba(34, 211, 238, 0.12);
-      border: 1px solid rgba(34, 211, 238, 0.25);
+      background: rgba(34, 211, 238, 0.2);
+      border: 1px solid rgba(34, 211, 238, 0.45);
       color: var(--accent);
       pointer-events: none;
+      font-weight: 700;
+      backdrop-filter: blur(4px);
     }
 
     .agent-mark .name {
@@ -655,7 +684,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       text-overflow: ellipsis;
       white-space: nowrap;
       font-family: var(--font-mono);
-      font-size: 0.5rem;
+      font-size: 0.54rem;
     }
 
     /* ── TURN DETAILS ── */
@@ -1032,8 +1061,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const DATA = JSON.parse(document.getElementById('viewerData').textContent);
 
     const tileMeta = {
-      unknown: { emoji: '\\u25A0', label: 'unknown' },
-      empty: { emoji: '\\u00B7', label: 'empty' },
+      unknown: { emoji: '\\u2588', label: '?' },
+      empty: { emoji: '\\u25AB', label: '' },
       tree: { emoji: '\\u{1F332}', label: 'tree' },
       rock: { emoji: '\\u{1FAA8}', label: 'rock' },
       food: { emoji: '\\u{1F34E}', label: 'food' },
@@ -1526,7 +1555,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const tile = document.createElement('div');
           tile.className = `tile ${type} ${isAgent ? 'agent' : ''} ${isPath ? 'path' : ''}`;
           tile.innerHTML = `
-            <span>${meta.emoji}</span>
+            <span class="tile-type">${meta.label}</span>
+            <span class="tile-emoji">${meta.emoji}</span>
             <span class="coord">${x},${y}</span>
             ${isAgent ? `<span class="agent-mark">\\u{1F916} <span class="name">${modelTagEscaped}</span></span>` : ''}
           `;
