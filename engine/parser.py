@@ -3,6 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+
+
+_REASONING_BLOCK_PATTERNS = (
+    re.compile(r"(?is)<thinking>.*?</thinking>"),
+    re.compile(r"(?is)<think>.*?</think>"),
+)
+_REASONING_TAG_PATTERN = re.compile(r"(?i)</?(thinking|think)>")
+_CHAT_TOKEN_PATTERN = re.compile(r"<\|[^>\n]{1,128}\|>")
 
 
 @dataclass
@@ -14,12 +23,24 @@ class ParseResult:
     error: str | None = None
 
 
+def sanitize_model_output(raw_output: str) -> str:
+    normalized = raw_output.replace("\r\n", "\n").replace("\r", "\n")
+
+    for pattern in _REASONING_BLOCK_PATTERNS:
+        normalized = pattern.sub("", normalized)
+
+    normalized = _REASONING_TAG_PATTERN.sub("", normalized)
+    normalized = _CHAT_TOKEN_PATTERN.sub("", normalized)
+
+    return normalized.strip()
+
+
 def parse_action(
     raw_output: str,
     allowed_actions: list[str],
     case_mode: str = "case_sensitive",
 ) -> ParseResult:
-    normalized = raw_output.replace("\r\n", "\n").replace("\r", "\n").strip()
+    normalized = sanitize_model_output(raw_output)
 
     if not normalized:
         return ParseResult(
