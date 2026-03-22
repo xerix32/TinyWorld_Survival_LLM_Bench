@@ -7,6 +7,7 @@ import html
 import json
 from pathlib import Path
 from typing import Any
+import webbrowser
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -1847,6 +1848,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log", type=str, required=True, help="Path to run JSON log")
     parser.add_argument("--output", type=str, default=None, help="Output HTML path")
     parser.add_argument("--title", type=str, default=None, help="Optional page title")
+    parser.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the generated dashboard in your default browser.",
+    )
     return parser
 
 
@@ -1864,6 +1870,12 @@ def main() -> None:
 
     result = generate_viewer(log_path=log_path, output_path=output_path, title=args.title)
     print(f"Viewer generated: {result}")
+    if args.open_browser:
+        opened = webbrowser.open(result.resolve().as_uri())
+        if opened:
+            print("Browser: opened in your default browser")
+        else:
+            print("Browser: generated, but failed to auto-open")
 
 
 if __name__ == "__main__":

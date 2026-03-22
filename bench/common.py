@@ -114,17 +114,24 @@ def _create_openai_compatible_wrapper(
             f"provider '{provider_id}' missing API key: set api_key or api_key_env"
         )
 
+    def _resolve_numeric(key: str, default: Any) -> Any:
+        if key in profile_cfg:
+            return profile_cfg[key]
+        if key in provider_cfg:
+            return provider_cfg[key]
+        return default
+
     return OpenAIWrapper(
         model_name=str(model_name),
         api_base=str(api_base),
         api_key=api_key,
-        temperature=float(profile_cfg.get("temperature", provider_cfg.get("temperature", 0.2))),
-        max_tokens=int(profile_cfg.get("max_tokens", provider_cfg.get("max_tokens", 1024))),
-        requests_per_minute=int(provider_cfg.get("requests_per_minute", 30)),
-        max_retries=int(provider_cfg.get("max_retries", 3)),
-        retry_base_seconds=float(provider_cfg.get("retry_base_seconds", 2.0)),
-        retry_max_seconds=float(provider_cfg.get("retry_max_seconds", 20.0)),
-        request_timeout_seconds=float(provider_cfg.get("request_timeout_seconds", 60.0)),
+        temperature=float(_resolve_numeric("temperature", 0.2)),
+        max_tokens=int(_resolve_numeric("max_tokens", 1024)),
+        requests_per_minute=int(_resolve_numeric("requests_per_minute", 30)),
+        max_retries=int(_resolve_numeric("max_retries", 3)),
+        retry_base_seconds=float(_resolve_numeric("retry_base_seconds", 2.0)),
+        retry_max_seconds=float(_resolve_numeric("retry_max_seconds", 20.0)),
+        request_timeout_seconds=float(_resolve_numeric("request_timeout_seconds", 60.0)),
         provider_id=provider_id,
         profile_name=profile_name,
     )

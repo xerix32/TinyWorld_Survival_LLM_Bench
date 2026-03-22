@@ -382,11 +382,184 @@ def resolved_model_profiles(run_rows: list[dict[str, Any]]) -> list[str]:
 
 def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
             writer.writerow({field: row.get(field) for field in fieldnames})
+    tmp_path.replace(path)
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=True, indent=2, sort_keys=True)
+    tmp_path.replace(path)
+
+
+def _compare_paths(dirs: dict[str, Path], compare_id: str) -> dict[str, Path]:
+    return {
+        "runs_csv": dirs["results"] / f"compare_runs_{compare_id}.csv",
+        "models_csv": dirs["results"] / f"compare_models_{compare_id}.csv",
+        "h2h_csv": dirs["results"] / f"compare_h2h_{compare_id}.csv",
+        "compare_json": dirs["results"] / f"compare_{compare_id}.json",
+        "checkpoint_json": dirs["results"] / f"compare_state_{compare_id}.json",
+    }
+
+
+def _build_compare_payload(
+    *,
+    compare_id: str,
+    run_rows: list[dict[str, Any]],
+    run_payloads: list[dict[str, Any]],
+    requested_models: list[str],
+    seed_list: list[int],
+    scenario: str,
+    protocol_version: str,
+    status: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    model_summaries = build_model_summaries(run_rows) if run_rows else []
+    resolved_profiles = resolved_model_profiles(run_rows)
+    pairwise_rows = build_pairwise_summary(run_rows, model_profiles=resolved_profiles, seed_list=seed_list)
+
+    prompt_hashes = sorted({str(row.get("prompt_set_sha256")) for row in run_rows if row.get("prompt_set_sha256")})
+    prompt_hash = prompt_hashes[0] if len(prompt_hashes) == 1 else ("mixed" if prompt_hashes else "not_available")
+
+    compare_payload = {
+        "meta": {
+            "compare_id": compare_id,
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "version": __version__,
+            "bench_version": __version__,
+            "engine_version": __version__,
+            "protocol_version": protocol_version,
+            "scenario": scenario,
+            "seed_list": seed_list,
+            "models": resolved_profiles,
+            "requested_models": requested_models,
+            "runs_per_model": len(seed_list),
+            "total_runs_expected": len(requested_models) * len(seed_list),
+            "total_runs": len(run_rows),
+            "paired_seeds": True,
+            "prompt_set_sha256": prompt_hash,
+            "status": status,
+        },
+        "models": model_summaries,
+        "pairwise": pairwise_rows,
+        "runs": run_payloads,
+    }
+    return compare_payload, model_summaries, pairwise_rows, resolved_profiles
+
+
+def _persist_compare_outputs(
+    *,
+    paths: dict[str, Path],
+    compare_id: str,
+    requested_models: list[str],
+    seed_list: list[int],
+    scenario: str,
+    protocol_version: str,
+    status: str,
+    run_rows: list[dict[str, Any]],
+    run_payloads: list[dict[str, Any]],
+    resume_context: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    compare_payload, model_summaries, pairwise_rows, resolved_profiles = _build_compare_payload(
+        compare_id=compare_id,
+        run_rows=run_rows,
+        run_payloads=run_payloads,
+        requested_models=requested_models,
+        seed_list=seed_list,
+        scenario=scenario,
+        protocol_version=protocol_version,
+        status=status,
+    )
+
+    _write_csv(paths["runs_csv"], COMPARE_RUN_FIELDS, run_rows)
+    _write_csv(paths["models_csv"], MODEL_SUMMARY_FIELDS, model_summaries)
+    _write_csv(paths["h2h_csv"], H2H_FIELDS, pairwise_rows)
+    _write_json(paths["compare_json"], compare_payload)
+
+    checkpoint_payload = {
+        "schema": "tinyworld_compare_state_v1",
+        "status": status,
+        "compare_id": compare_id,
+        "requested_models": requested_models,
+        "seed_list": seed_list,
+        "scenario": scenario,
+        "protocol_version": protocol_version,
+        "paths": {key: str(value) for key, value in paths.items()},
+        "resume_context": resume_context,
+        "run_rows": run_rows,
+        "run_payloads": run_payloads,
+    }
+    _write_json(paths["checkpoint_json"], checkpoint_payload)
+    return compare_payload, model_summaries, pairwise_rows, resolved_profiles
+
+
+def _build_from_logs(
+    *,
+    compare_id: str,
+    log_paths: list[Path],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[int], str, str]:
+    run_rows: list[dict[str, Any]] = []
+    run_payloads: list[dict[str, Any]] = []
+
+    profile_order: dict[str, int] = {}
+    seed_order: dict[int, int] = {}
+    protocol_version = "AIB-0.1"
+    scenario = "-"
+
+    for index, log_path in enumerate(log_paths, start=1):
+        with log_path.open("r", encoding="utf-8") as handle:
+            run_log = json.load(handle)
+
+        summary = dict(run_log.get("run_summary", {}))
+        if not summary:
+            continue
+
+        profile = str(summary.get("model_profile", "unknown_profile"))
+        seed = int(summary.get("seed", 0))
+
+        if profile not in profile_order:
+            profile_order[profile] = len(profile_order) + 1
+        if seed not in seed_order:
+            seed_order[seed] = len(seed_order) + 1
+
+        run_id = f"{_safe_slug(profile)}__seed{seed}__log{index}"
+        run_rows.append(
+            {
+                "compare_id": compare_id,
+                "run_id": run_id,
+                "job_index": index,
+                "job_total": len(log_paths),
+                "model_order": profile_order[profile],
+                "seed_order": seed_order[seed],
+                **summary,
+            }
+        )
+
+        replay_payload = build_viewer_payload(run_log=run_log, source_log_path=log_path)
+        run_payloads.append(
+            {
+                "run_id": run_id,
+                "model_profile": summary.get("model_profile"),
+                "provider_id": summary.get("provider_id"),
+                "model": summary.get("model"),
+                "seed": summary.get("seed"),
+                "summary": summary,
+                "replay": replay_payload,
+            }
+        )
+
+        protocol_version = str(run_log.get("protocol_version", protocol_version))
+        scenario = str(run_log.get("scenario", summary.get("scenario", scenario)))
+
+    ordered_models = sorted(profile_order.keys(), key=lambda p: profile_order[p])
+    ordered_seeds = sorted(seed_order.keys(), key=lambda s: seed_order[s])
+    return run_rows, run_payloads, ordered_models, ordered_seeds, scenario, protocol_version
 
 
 def _parse_port(value: str) -> int:
@@ -586,10 +759,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Providers + model profiles file.",
     )
     parser.add_argument("--prompts-dir", type=str, default="prompts", help="Prompt templates directory.")
+    parser.add_argument(
+        "--from-logs-glob",
+        type=str,
+        default=None,
+        help="Build compare artifacts from existing run logs (glob pattern), without executing model calls.",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume a previously interrupted compare run from checkpoint JSON.",
+    )
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in terminal output.")
     parser.add_argument("--no-viewer", action="store_true", help="Skip compare HTML generation.")
     parser.add_argument("--viewer-output", type=str, default=None, help="Output path for generated compare HTML report.")
     parser.add_argument("--viewer-title", type=str, default=None, help="Custom title for compare HTML report.")
+    parser.add_argument("--open-browser", action="store_true", help="Open compare HTML in browser explicitly.")
     parser.add_argument("--no-open-viewer", action="store_true", help="Generate compare HTML but do not open browser.")
     parser.add_argument(
         "--serve",
@@ -612,9 +798,10 @@ def main() -> None:
 
     if args.serve is not None and args.no_viewer:
         parser.error("--serve requires viewer generation; remove --no-viewer.")
-
-    model_profiles = parse_models(args.models)
-    seed_list = resolve_seed_list(args.seeds, args.num_runs, args.seed_start)
+    if args.open_browser and args.no_open_viewer:
+        parser.error("--open-browser and --no-open-viewer are mutually exclusive.")
+    if args.resume and args.from_logs_glob:
+        parser.error("--resume and --from-logs-glob are mutually exclusive.")
 
     color_enabled = use_color(disable_color=args.no_color)
     status_line = StatusLine(enabled=True)
@@ -623,229 +810,379 @@ def main() -> None:
 
     benchmark_cfg = load_yaml_file(args.benchmark_config)
     dirs = resolve_artifact_dirs(benchmark_cfg, Path.cwd())
-
-    total_jobs = len(model_profiles) * len(seed_list)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     compare_started_at = time.monotonic()
 
     run_rows: list[dict[str, Any]] = []
     run_payloads: list[dict[str, Any]] = []
-    run_logs: list[dict[str, Any]] = []
+    model_profiles: list[str] = []
+    seed_list: list[int] = []
+    scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1"))
+    compare_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    paths = _compare_paths(dirs, compare_id)
+    resume_context: dict[str, Any] = {
+        "benchmark_config": str(Path(args.benchmark_config).resolve()),
+        "scenarios_config": str(Path(args.scenarios_config).resolve()),
+        "providers_config": str(Path(args.providers_config).resolve()),
+        "prompts_dir": str(Path(args.prompts_dir).resolve()),
+        "scenario_arg": args.scenario,
+        "max_turns": args.max_turns,
+    }
 
-    current_job = 0
-    for model_order, model_profile in enumerate(model_profiles, start=1):
-        for seed_order, seed in enumerate(seed_list, start=1):
-            current_job += 1
-            run_progress = {
-                "max_turns": int(args.max_turns if args.max_turns is not None else benchmark_cfg.get("max_turns", 50)),
-            }
+    if args.from_logs_glob:
+        log_paths = sorted(Path.cwd().glob(args.from_logs_glob))
+        if not log_paths:
+            raise SystemExit(f"No logs matched pattern: {args.from_logs_glob}")
 
-            def on_progress(event: dict[str, Any]) -> None:
-                event_type = str(event.get("event", ""))
-                if event_type == "run_started":
-                    run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
-                    pct = ((current_job - 1) / total_jobs) * 100.0
-                    status_line.write(
-                        _render_turn_progress_line(
-                            pct=pct,
-                            job_index=current_job,
-                            job_total=total_jobs,
-                            turn=0,
-                            max_turns=run_progress["max_turns"],
-                            model_profile=model_profile,
-                            seed=seed,
-                            action="(initializing)",
-                            protocol_valid=True,
-                            effect_applied=False,
-                            score=0,
-                            invalid=0,
-                            alive=True,
-                            eta_text="--",
-                            color_enabled=color_enabled,
+        (
+            run_rows,
+            run_payloads,
+            model_profiles,
+            seed_list,
+            scenario,
+            protocol_version,
+        ) = _build_from_logs(compare_id=compare_id, log_paths=log_paths)
+
+        if not run_rows:
+            raise SystemExit("Matched logs do not contain valid run_summary entries.")
+
+        for idx, row in enumerate(run_rows, start=1):
+            row["job_index"] = idx
+            row["job_total"] = len(run_rows)
+
+        requested_models = list(model_profiles)
+        resume_context["from_logs_glob"] = args.from_logs_glob
+        _, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
+            paths=paths,
+            compare_id=compare_id,
+            requested_models=requested_models,
+            seed_list=seed_list,
+            scenario=scenario,
+            protocol_version=protocol_version,
+            status="completed",
+            run_rows=run_rows,
+            run_payloads=run_payloads,
+            resume_context=resume_context,
+        )
+    else:
+        completed_keys: set[tuple[str, int]] = set()
+        existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+
+        if args.resume:
+            resume_path = Path(args.resume)
+            if not resume_path.is_absolute():
+                resume_path = (Path.cwd() / resume_path).resolve()
+            if not resume_path.exists():
+                raise SystemExit(f"Resume checkpoint not found: {resume_path}")
+
+            with resume_path.open("r", encoding="utf-8") as handle:
+                checkpoint = json.load(handle)
+
+            if checkpoint.get("schema") != "tinyworld_compare_state_v1":
+                raise SystemExit(f"Unsupported resume checkpoint schema in {resume_path}")
+
+            compare_id = str(checkpoint.get("compare_id", compare_id))
+            paths = _compare_paths(dirs, compare_id)
+            model_profiles = [str(item) for item in checkpoint.get("requested_models", [])]
+            seed_list = [int(item) for item in checkpoint.get("seed_list", [])]
+            scenario = str(checkpoint.get("scenario", scenario))
+            protocol_version = str(checkpoint.get("protocol_version", protocol_version))
+            run_rows = list(checkpoint.get("run_rows", []))
+            run_payloads = list(checkpoint.get("run_payloads", []))
+            checkpoint_paths = checkpoint.get("paths", {})
+            if checkpoint_paths:
+                paths = {key: Path(str(value)) for key, value in checkpoint_paths.items()}
+            resume_context = dict(checkpoint.get("resume_context", resume_context))
+            resume_context["resumed_from"] = str(resume_path)
+
+            for row in run_rows:
+                key = (str(row.get("model_profile", "")), int(row.get("seed", 0)))
+                completed_keys.add(key)
+                existing_by_key[key] = row
+
+            print(
+                colorize(
+                    f"Resuming compare {compare_id}: completed {len(run_rows)} runs, remaining runs will continue.",
+                    "1;93",
+                    color_enabled,
+                )
+            )
+            requested_models = list(model_profiles)
+        else:
+            model_profiles = parse_models(args.models)
+            seed_list = resolve_seed_list(args.seeds, args.num_runs, args.seed_start)
+            requested_models = list(model_profiles)
+            _, _, _, _ = _persist_compare_outputs(
+                paths=paths,
+                compare_id=compare_id,
+                requested_models=requested_models,
+                seed_list=seed_list,
+                scenario=scenario,
+                protocol_version=protocol_version,
+                status="running",
+                run_rows=run_rows,
+                run_payloads=run_payloads,
+                resume_context=resume_context,
+            )
+
+        if not model_profiles:
+            raise SystemExit("No model profiles available for compare execution.")
+        if not seed_list:
+            raise SystemExit("No seeds available for compare execution.")
+
+        total_jobs = len(model_profiles) * len(seed_list)
+        current_job = 0
+        for model_order, model_profile in enumerate(model_profiles, start=1):
+            for seed_order, seed in enumerate(seed_list, start=1):
+                current_job += 1
+                key = (model_profile, seed)
+
+                if key in completed_keys:
+                    existing = existing_by_key.get(key)
+                    if existing is not None:
+                        pct_after = (current_job / total_jobs) * 100.0
+                        status = "dead" if str(existing.get("end_reason")) == "agent_dead" else "finished"
+                        status_line.write(
+                            _render_job_done_line(
+                                pct=pct_after,
+                                job_index=current_job,
+                                job_total=total_jobs,
+                                model_profile=model_profile,
+                                seed=seed,
+                                score=int(existing.get("final_score", 0)),
+                                status=status,
+                                eta_text="--",
+                                color_enabled=color_enabled,
+                            )
                         )
+                    continue
+
+                run_progress = {
+                    "max_turns": int(args.max_turns if args.max_turns is not None else benchmark_cfg.get("max_turns", 50)),
+                }
+
+                def on_progress(event: dict[str, Any]) -> None:
+                    event_type = str(event.get("event", ""))
+                    if event_type == "run_started":
+                        run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
+                        pct = ((current_job - 1) / total_jobs) * 100.0
+                        status_line.write(
+                            _render_turn_progress_line(
+                                pct=pct,
+                                job_index=current_job,
+                                job_total=total_jobs,
+                                turn=0,
+                                max_turns=run_progress["max_turns"],
+                                model_profile=model_profile,
+                                seed=seed,
+                                action="(initializing)",
+                                protocol_valid=True,
+                                effect_applied=False,
+                                score=0,
+                                invalid=0,
+                                alive=True,
+                                eta_text="--",
+                                color_enabled=color_enabled,
+                            )
+                        )
+                        return
+
+                    if event_type != "turn_completed":
+                        return
+
+                    turn = int(event.get("turn", 0))
+                    max_turns = int(event.get("max_turns", run_progress["max_turns"]))
+                    run_progress["max_turns"] = max_turns
+                    run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
+                    overall_fraction = ((current_job - 1) + run_fraction) / total_jobs
+                    pct = overall_fraction * 100.0
+                    eta_text = "--"
+                    if overall_fraction > 0:
+                        elapsed = max(0.0, time.monotonic() - compare_started_at)
+                        remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
+                        eta_text = format_eta(remaining)
+
+                    line = _render_turn_progress_line(
+                        pct=pct,
+                        job_index=current_job,
+                        job_total=total_jobs,
+                        turn=turn,
+                        max_turns=max_turns,
+                        model_profile=model_profile,
+                        seed=seed,
+                        action=str(event.get("action") or "-"),
+                        protocol_valid=bool(event.get("protocol_valid", False)),
+                        effect_applied=bool(event.get("action_effect_applied", False)),
+                        score=int(event.get("cumulative_score", 0)),
+                        invalid=int(event.get("invalid_actions", 0)),
+                        alive=bool(event.get("alive", True)),
+                        eta_text=eta_text,
+                        color_enabled=color_enabled,
                     )
-                    return
+                    status_line.write(line)
 
-                if event_type != "turn_completed":
-                    return
-
-                turn = int(event.get("turn", 0))
-                max_turns = int(event.get("max_turns", run_progress["max_turns"]))
-                run_progress["max_turns"] = max_turns
-                run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
-                overall_fraction = ((current_job - 1) + run_fraction) / total_jobs
-                pct = overall_fraction * 100.0
-                eta_text = "--"
-                if overall_fraction > 0:
-                    elapsed = max(0.0, time.monotonic() - compare_started_at)
-                    remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
-                    eta_text = format_eta(remaining)
-
-                line = _render_turn_progress_line(
-                    pct=pct,
-                    job_index=current_job,
-                    job_total=total_jobs,
-                    turn=turn,
-                    max_turns=max_turns,
-                    model_profile=model_profile,
-                    seed=seed,
-                    action=str(event.get("action") or "-"),
-                    protocol_valid=bool(event.get("protocol_valid", False)),
-                    effect_applied=bool(event.get("action_effect_applied", False)),
-                    score=int(event.get("cumulative_score", 0)),
-                    invalid=int(event.get("invalid_actions", 0)),
-                    alive=bool(event.get("alive", True)),
-                    eta_text=eta_text,
-                    color_enabled=color_enabled,
-                )
-                status_line.write(line)
-
-            try:
-                run_log = run_match_once(
-                    seed=seed,
-                    model_name=model_profile,
-                    scenario_name=args.scenario,
-                    max_turns=args.max_turns,
-                    benchmark_config_path=args.benchmark_config,
-                    scenarios_config_path=args.scenarios_config,
-                    providers_config_path=args.providers_config,
-                    prompts_dir=args.prompts_dir,
-                    output_path=None,
-                    progress_callback=on_progress,
-                )
-            except KeyboardInterrupt:
-                status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
-                print(
-                    colorize(
-                        (
-                            f"Compare canceled (Ctrl+C) during job {current_job}/{total_jobs} "
-                            f"(model={model_profile}, seed={seed}). Exiting cleanly."
-                        ),
-                        "1;93",
-                        color_enabled,
+                try:
+                    run_log = run_match_once(
+                        seed=seed,
+                        model_name=model_profile,
+                        scenario_name=(None if scenario in {"", "-"} else scenario),
+                        max_turns=args.max_turns,
+                        benchmark_config_path=args.benchmark_config,
+                        scenarios_config_path=args.scenarios_config,
+                        providers_config_path=args.providers_config,
+                        prompts_dir=args.prompts_dir,
+                        output_path=None,
+                        progress_callback=on_progress,
                     )
-                )
-                raise SystemExit(130)
-            except Exception as exc:
-                status_line.finish(colorize("[failed] Compare failed", "1;91", color_enabled))
-                error_text = str(exc).strip() or exc.__class__.__name__
-                print(
-                    colorize(
-                        (
-                            f"Compare failed during job {current_job}/{total_jobs} "
-                            f"(model={model_profile}, seed={seed}): {error_text}"
-                        ),
-                        "1;91",
-                        color_enabled,
+                except KeyboardInterrupt:
+                    _persist_compare_outputs(
+                        paths=paths,
+                        compare_id=compare_id,
+                        requested_models=requested_models,
+                        seed_list=seed_list,
+                        scenario=scenario,
+                        protocol_version=protocol_version,
+                        status="interrupted",
+                        run_rows=run_rows,
+                        run_payloads=run_payloads,
+                        resume_context=resume_context,
                     )
-                )
-                lowered = error_text.casefold()
-                if "insufficient system resources" in lowered or "failed to load model" in lowered:
+                    status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
                     print(
                         colorize(
-                            "Hint: local model could not be loaded (RAM/VRAM guardrails). "
-                            "Use a smaller model or free resources in LM Studio.",
+                            (
+                                f"Compare canceled (Ctrl+C) during job {current_job}/{total_jobs} "
+                                f"(model={model_profile}, seed={seed})."
+                            ),
                             "1;93",
                             color_enabled,
                         )
                     )
-                raise SystemExit(1)
-            run_logs.append(run_log)
-            summary = dict(run_log["run_summary"])
+                    print(colorize(f"Resume: python -m bench.run_compare --resume {paths['checkpoint_json']}", "1;93", color_enabled))
+                    raise SystemExit(130)
+                except Exception as exc:
+                    _persist_compare_outputs(
+                        paths=paths,
+                        compare_id=compare_id,
+                        requested_models=requested_models,
+                        seed_list=seed_list,
+                        scenario=scenario,
+                        protocol_version=protocol_version,
+                        status="failed",
+                        run_rows=run_rows,
+                        run_payloads=run_payloads,
+                        resume_context=resume_context,
+                    )
+                    status_line.finish(colorize("[failed] Compare failed", "1;91", color_enabled))
+                    error_text = str(exc).strip() or exc.__class__.__name__
+                    print(
+                        colorize(
+                            (
+                                f"Compare failed during job {current_job}/{total_jobs} "
+                                f"(model={model_profile}, seed={seed}): {error_text}"
+                            ),
+                            "1;91",
+                            color_enabled,
+                        )
+                    )
+                    print(colorize(f"Partial compare JSON: {_short_path(paths['compare_json'])}", "1;93", color_enabled))
+                    print(colorize(f"Resume: python -m bench.run_compare --resume {paths['checkpoint_json']}", "1;93", color_enabled))
+                    lowered = error_text.casefold()
+                    if "insufficient system resources" in lowered or "failed to load model" in lowered:
+                        print(
+                            colorize(
+                                "Hint: local model could not be loaded (RAM/VRAM guardrails). "
+                                "Use a smaller model or free resources in LM Studio.",
+                                "1;93",
+                                color_enabled,
+                            )
+                        )
+                    raise SystemExit(1)
 
-            run_id = f"{_safe_slug(model_profile)}__seed{seed}"
-            run_row = {
-                "compare_id": timestamp,
-                "run_id": run_id,
-                "job_index": current_job,
-                "job_total": total_jobs,
-                "model_order": model_order,
-                "seed_order": seed_order,
-                **summary,
-            }
-            run_rows.append(run_row)
+                summary = dict(run_log["run_summary"])
+                scenario = str(run_log.get("scenario", scenario))
+                protocol_version = str(run_log.get("protocol_version", protocol_version))
 
-            replay_payload = build_viewer_payload(run_log=run_log, source_log_path=Path(str(summary["log_path"])))
-            run_payloads.append(
-                {
+                run_id = f"{_safe_slug(model_profile)}__seed{seed}"
+                run_row = {
+                    "compare_id": compare_id,
                     "run_id": run_id,
-                    "model_profile": summary["model_profile"],
-                    "provider_id": summary["provider_id"],
-                    "model": summary["model"],
-                    "seed": summary["seed"],
-                    "summary": summary,
-                    "replay": replay_payload,
+                    "job_index": current_job,
+                    "job_total": total_jobs,
+                    "model_order": model_order,
+                    "seed_order": seed_order,
+                    **summary,
                 }
-            )
+                run_rows.append(run_row)
+                completed_keys.add(key)
+                existing_by_key[key] = run_row
 
-            pct_after = (current_job / total_jobs) * 100.0
-            status = "dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"
-            eta_text = "--"
-            if current_job < total_jobs:
-                overall_fraction = current_job / total_jobs
-                elapsed = max(0.0, time.monotonic() - compare_started_at)
-                remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
-                eta_text = format_eta(remaining)
-            status_line.write(
-                _render_job_done_line(
-                    pct=pct_after,
-                    job_index=current_job,
-                    job_total=total_jobs,
-                    model_profile=model_profile,
-                    seed=seed,
-                    score=int(summary["final_score"]),
-                    status=status,
-                    eta_text=eta_text,
-                    color_enabled=color_enabled,
+                replay_payload = build_viewer_payload(run_log=run_log, source_log_path=Path(str(summary["log_path"])))
+                run_payloads.append(
+                    {
+                        "run_id": run_id,
+                        "model_profile": summary["model_profile"],
+                        "provider_id": summary["provider_id"],
+                        "model": summary["model"],
+                        "seed": summary["seed"],
+                        "summary": summary,
+                        "replay": replay_payload,
+                    }
                 )
-            )
 
-    status_line.finish(colorize("[100.0%] compare run completed", "36", color_enabled))
+                _persist_compare_outputs(
+                    paths=paths,
+                    compare_id=compare_id,
+                    requested_models=requested_models,
+                    seed_list=seed_list,
+                    scenario=scenario,
+                    protocol_version=protocol_version,
+                    status="running",
+                    run_rows=run_rows,
+                    run_payloads=run_payloads,
+                    resume_context=resume_context,
+                )
 
-    model_summaries = build_model_summaries(run_rows)
-    resolved_profiles = resolved_model_profiles(run_rows)
-    pairwise_rows = build_pairwise_summary(run_rows, model_profiles=resolved_profiles, seed_list=seed_list)
+                pct_after = (current_job / total_jobs) * 100.0
+                status = "dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"
+                eta_text = "--"
+                if current_job < total_jobs:
+                    overall_fraction = current_job / total_jobs
+                    elapsed = max(0.0, time.monotonic() - compare_started_at)
+                    remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
+                    eta_text = format_eta(remaining)
+                status_line.write(
+                    _render_job_done_line(
+                        pct=pct_after,
+                        job_index=current_job,
+                        job_total=total_jobs,
+                        model_profile=model_profile,
+                        seed=seed,
+                        score=int(summary["final_score"]),
+                        status=status,
+                        eta_text=eta_text,
+                        color_enabled=color_enabled,
+                    )
+                )
 
-    first_log = run_logs[0]
-    scenario = str(first_log.get("scenario", "-"))
-    protocol_version = str(first_log.get("protocol_version", "AIB-0.1"))
-    prompt_hashes = sorted({str(row.get("prompt_set_sha256")) for row in run_rows if row.get("prompt_set_sha256")})
-    prompt_hash = prompt_hashes[0] if len(prompt_hashes) == 1 else "mixed"
+        status_line.finish(colorize("[100.0%] compare run completed", "36", color_enabled))
+        _, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
+            paths=paths,
+            compare_id=compare_id,
+            requested_models=requested_models,
+            seed_list=seed_list,
+            scenario=scenario,
+            protocol_version=protocol_version,
+            status="completed",
+            run_rows=run_rows,
+            run_payloads=run_payloads,
+            resume_context=resume_context,
+        )
 
-    compare_payload = {
-        "meta": {
-            "compare_id": timestamp,
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "version": __version__,
-            "bench_version": __version__,
-            "engine_version": __version__,
-            "protocol_version": protocol_version,
-            "scenario": scenario,
-            "seed_list": seed_list,
-            "models": resolved_profiles,
-            "requested_models": model_profiles,
-            "runs_per_model": len(seed_list),
-            "total_runs": len(run_rows),
-            "paired_seeds": True,
-            "prompt_set_sha256": prompt_hash,
-        },
-        "models": model_summaries,
-        "pairwise": pairwise_rows,
-        "runs": run_payloads,
-    }
-
-    runs_csv = dirs["results"] / f"compare_runs_{timestamp}.csv"
-    models_csv = dirs["results"] / f"compare_models_{timestamp}.csv"
-    h2h_csv = dirs["results"] / f"compare_h2h_{timestamp}.csv"
-    compare_json = dirs["results"] / f"compare_{timestamp}.json"
-
-    _write_csv(runs_csv, COMPARE_RUN_FIELDS, run_rows)
-    _write_csv(models_csv, MODEL_SUMMARY_FIELDS, model_summaries)
-    _write_csv(h2h_csv, H2H_FIELDS, pairwise_rows)
-
-    compare_json.parent.mkdir(parents=True, exist_ok=True)
-    with compare_json.open("w", encoding="utf-8") as handle:
-        json.dump(compare_payload, handle, ensure_ascii=True, indent=2, sort_keys=True)
+    compare_json = paths["compare_json"]
+    runs_csv = paths["runs_csv"]
+    models_csv = paths["models_csv"]
+    h2h_csv = paths["h2h_csv"]
 
     print()
     print(colorize("COMPARE SUMMARY", "1;32", color_enabled))
@@ -853,7 +1190,7 @@ def main() -> None:
     _print_section("Identity", color_enabled)
     _print_row("Protocol", protocol_version, color_enabled=color_enabled)
     _print_row("Scenario", scenario, color_enabled=color_enabled)
-    _print_row("Models (requested)", ", ".join(model_profiles), color_enabled=color_enabled)
+    _print_row("Models (requested)", ", ".join(requested_models), color_enabled=color_enabled)
     _print_row("Models (resolved)", ", ".join(resolved_profiles), color_enabled=color_enabled)
     _print_row("Seeds", ", ".join(str(s) for s in seed_list), color_enabled=color_enabled)
     _print_row("Fairness", "Paired seeds: same seeds for all models", color_enabled=color_enabled, value_color="1;92")
@@ -920,6 +1257,7 @@ def main() -> None:
     _print_row("Runs CSV", _short_path(runs_csv), color_enabled=color_enabled, value_color="1;94")
     _print_row("Models CSV", _short_path(models_csv), color_enabled=color_enabled, value_color="1;94")
     _print_row("H2H CSV", _short_path(h2h_csv), color_enabled=color_enabled, value_color="1;94")
+    _print_row("Checkpoint", _short_path(paths["checkpoint_json"]), color_enabled=color_enabled, value_color="1;94")
 
     if not args.no_viewer:
         if args.viewer_output:
@@ -927,7 +1265,7 @@ def main() -> None:
             if not viewer_output.is_absolute():
                 viewer_output = Path.cwd() / viewer_output
         else:
-            viewer_output = dirs["replays"] / f"compare_{timestamp}_dashboard.html"
+            viewer_output = dirs["replays"] / f"compare_{compare_id}_dashboard.html"
 
         viewer_title = args.viewer_title or f"TinyWorld Compare Dashboard - {scenario}"
 
@@ -957,7 +1295,8 @@ def main() -> None:
                 viewer_target = _build_http_viewer_url(viewer_path=viewer_path, root_dir=serve_root, port=serve_port)
                 _print_row("Viewer URL", viewer_target, color_enabled=color_enabled, value_color="1;94")
 
-            if not args.no_open_viewer:
+            should_open = args.open_browser or (not args.no_open_viewer)
+            if should_open:
                 opened = webbrowser.open(viewer_target)
                 if opened:
                     _print_row("Viewer", "Opened in your default browser", color_enabled=color_enabled, value_color="1;92")
