@@ -121,6 +121,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .micro-badge.badge-stable   { background: rgba(167,139,250,0.12); color: var(--purple); }
     .micro-badge.badge-survival { background: var(--red-dim);    color: var(--red); }
     .micro-badge.badge-value   { background: rgba(6,182,212,0.12); color: #06b6d4; }
+    .micro-badge.badge-premium { background: rgba(234,179,8,0.12); color: #eab308; }
     .badge-group { display: inline; }
     .badge-hidden { display: none; }
     .badge-expand {
@@ -2127,6 +2128,40 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return costPerRun > 0 ? score / costPerRun : null;
     }
 
+    // Best premium value: rewards quality-adjacent models that are still cost-effective.
+    // Uses a geometric mean of normalised metrics weighted toward score,
+    // gated by proximity to the top scorer so cheap-but-weak models can't win.
+    function computeBestPremiumValueScore(m, allModels) {
+      const score = Number(m.avg_final_score ?? 0);
+      const coverage = Number(m.avg_coverage_pct ?? 0);
+      const latency = modelLatencyPerTurn(m);
+      const cost = Number(m.estimated_cost_total ?? 0);
+      const numRuns = Number(m.num_runs ?? 1);
+      const costPerRun = cost / numRuns;
+      if (score <= 0 || costPerRun <= 0 || !latency) return null;
+
+      const maxScore = Math.max(...allModels.map(x => Number(x.avg_final_score ?? 0)), 1);
+      const maxCov = Math.max(...allModels.map(x => Number(x.avg_coverage_pct ?? 0)), 1);
+      const minLat = Math.min(...allModels.map(x => modelLatencyPerTurn(x) ?? Infinity));
+      const minCost = Math.min(...allModels.filter(x => {
+        const c = Number(x.estimated_cost_total ?? 0) / Number(x.num_runs ?? 1);
+        return c > 0;
+      }).map(x => Number(x.estimated_cost_total ?? 0) / Number(x.num_runs ?? 1)));
+
+      const S = score / maxScore;
+      const COV = coverage / maxCov;
+      const SPD = minLat / latency;
+      const CST = minCost / costPerRun;
+
+      const basePV = 100 * Math.pow(S, 0.55) * Math.pow(COV, 0.20) * Math.pow(SPD, 0.10) * Math.pow(CST, 0.15);
+
+      // Premium gate: model must be within ~10% of top score to get full credit
+      const clamp01 = v => Math.max(0, Math.min(1, v));
+      const premiumGate = 0.35 + 0.65 * clamp01((S - 0.90) / 0.10);
+
+      return basePV * premiumGate;
+    }
+
     /* ── Sortable table system ── */
     let currentSort = { key: 'avg_final_score', desc: true };
 
@@ -2176,27 +2211,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       // Best Score
       sorted(models, (a, b) => (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0))[0]
-        .badges.push({ label: '🏆 Best Score', cls: 'badge-score' });
+        .badges.push({ label: '🏆 Best Score', cls: 'badge-score', tip: 'Highest average final score across all runs' });
 
       // Fastest
       const withLatency = models.filter(m => modelLatencyPerTurn(m) != null);
       if (withLatency.length) {
         sorted(withLatency, (a, b) => modelLatencyPerTurn(a) - modelLatencyPerTurn(b))[0]
-          .badges.push({ label: '⚡ Fastest', cls: 'badge-fast' });
+          .badges.push({ label: '⚡ Fastest', cls: 'badge-fast', tip: 'Lowest average API response time per turn' });
       }
 
       // Cheapest
       const withCost = models.filter(m => m.estimated_cost_total != null && m.estimated_cost_total > 0);
       if (withCost.length) {
         sorted(withCost, (a, b) => a.estimated_cost_total - b.estimated_cost_total)[0]
-          .badges.push({ label: '💰 Cheapest', cls: 'badge-cheap' });
+          .badges.push({ label: '💰 Cheapest', cls: 'badge-cheap', tip: 'Lowest total estimated cost across all runs' });
       }
 
       // Best Coverage
       const withCoverage = models.filter(m => m.avg_coverage_pct != null);
       if (withCoverage.length) {
         sorted(withCoverage, (a, b) => (b.avg_coverage_pct ?? 0) - (a.avg_coverage_pct ?? 0))[0]
-          .badges.push({ label: '🗺️ Best Coverage', cls: 'badge-coverage' });
+          .badges.push({ label: '🗺️ Best Coverage', cls: 'badge-coverage', tip: 'Highest % of unique map cells explored' });
       }
 
       // Most Stable
@@ -2204,21 +2239,36 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (withSpread.length) {
         sorted(withSpread, (a, b) =>
           (a.best_final_score - a.worst_final_score) - (b.best_final_score - b.worst_final_score)
-        )[0].badges.push({ label: '🎯 Most Stable', cls: 'badge-stable' });
+        )[0].badges.push({ label: '🎯 Most Stable', cls: 'badge-stable', tip: 'Smallest gap between best and worst run score (most consistent)' });
       }
 
       // Best Survival
       const withSurvival = models.filter(m => m.death_rate_pct != null);
       if (withSurvival.length) {
         sorted(withSurvival, (a, b) => (a.death_rate_pct ?? 100) - (b.death_rate_pct ?? 100))[0]
-          .badges.push({ label: '❤️ Best Survival', cls: 'badge-survival' });
+          .badges.push({ label: '❤️ Best Survival', cls: 'badge-survival', tip: 'Lowest death rate — survived the most runs without dying' });
       }
 
       // Best Value (score per dollar)
       const withValue = models.filter(m => modelScorePerCost(m) != null);
       if (withValue.length) {
         sorted(withValue, (a, b) => modelScorePerCost(b) - modelScorePerCost(a))[0]
-          .badges.push({ label: '💎 Best Value', cls: 'badge-value' });
+          .badges.push({ label: '💎 Best Value', cls: 'badge-value', tip: 'Highest score per dollar spent (avg_score / cost_per_run)' });
+      }
+
+      // Best Premium Value — best quality-adjusted cost efficiency
+      const withPV = models.filter(m => computeBestPremiumValueScore(m, models) != null);
+      if (withPV.length) {
+        // sort by premium value, tie-break: score > coverage > latency (asc)
+        sorted(withPV, (a, b) => {
+          const diff = computeBestPremiumValueScore(b, models) - computeBestPremiumValueScore(a, models);
+          if (Math.abs(diff) > 0.001) return diff;
+          const sd = (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0);
+          if (Math.abs(sd) > 0.001) return sd;
+          const cd = (b.avg_coverage_pct ?? 0) - (a.avg_coverage_pct ?? 0);
+          if (Math.abs(cd) > 0.001) return cd;
+          return (modelLatencyPerTurn(a) ?? Infinity) - (modelLatencyPerTurn(b) ?? Infinity);
+        })[0].badges.push({ label: '👑 Best Premium Value', cls: 'badge-premium', tip: 'Best quality-adjusted cost efficiency — weighted blend of score, coverage, speed and cost, gated by proximity to top scorer' });
       }
     }
 
@@ -2227,9 +2277,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const visible = m.badges.slice(0, maxVisible);
       const hidden = m.badges.slice(maxVisible);
       let html = '<span class="badge-group">';
-      html += visible.map(b => `<span class="micro-badge ${b.cls}">${b.label}</span>`).join('');
+      html += visible.map(b => `<span class="micro-badge ${b.cls}" ${b.tip ? `data-tip="${b.tip}"` : ''}>${b.label}</span>`).join('');
       if (hidden.length) {
-        const hiddenHtml = hidden.map(b => `<span class="micro-badge ${b.cls}">${b.label}</span>`).join('');
+        const hiddenHtml = hidden.map(b => `<span class="micro-badge ${b.cls}" ${b.tip ? `data-tip="${b.tip}"` : ''}>${b.label}</span>`).join('');
         html += `<span class="badge-expand" data-tip="${hidden.map(b=>b.label).join(', ')}"
                   onclick="event.stopPropagation();this.style.display='none';this.parentElement.querySelector('.badge-hidden').style.display='inline'">+${hidden.length}</span>`;
         html += `<span class="badge-hidden">${hiddenHtml}</span>`;
