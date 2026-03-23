@@ -392,6 +392,64 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       .charts-row { grid-template-columns: 1fr; }
     }
 
+    /* ── BADGE RACE ── */
+    .badge-race-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px 32px;
+      padding: 8px 0;
+    }
+    @media (max-width: 800px) {
+      .badge-race-grid { grid-template-columns: 1fr; }
+    }
+    .badge-race-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .badge-race-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-race-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 45px;
+      gap: 8px;
+      align-items: center;
+      height: 20px;
+    }
+    .badge-race-name {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: right;
+    }
+    .badge-race-track {
+      height: 14px;
+      background: var(--bg-raised);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .badge-race-fill {
+      height: 100%;
+      border-radius: 4px;
+      min-width: 2px;
+    }
+    .badge-race-val {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text);
+      text-align: left;
+    }
+
     /* ── SORTABLE COLUMNS ── */
     th[data-sort-key] {
       cursor: pointer;
@@ -1501,6 +1559,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </div>
 
       <div class=\"panel\">
+        <div class=\"panel-title\" data-tip=\"How each model scored in every badge category. Taller bar = stronger contender.\" class=\"tip-down\">Badge Race</div>
+        <div id=\"badgeRaceGrid\" class=\"badge-race-grid\"></div>
+      </div>
+
+      <div class=\"panel\">
         <div class=\"panel-title\">Detailed Metrics</div>
         <div class=\"table-wrap\">
           <table>
@@ -2187,6 +2250,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderRanking();
       renderRadarChart();
       renderDonutCharts();
+      renderBadgeRace();
     }
 
     document.addEventListener('click', (e) => {
@@ -2235,7 +2299,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (withSpread.length) {
         sorted(withSpread, (a, b) =>
           (a.best_final_score - a.worst_final_score) - (b.best_final_score - b.worst_final_score)
-        )[0].badges.push({ label: '🎯 Most Stable', cls: 'badge-stable', tip: 'Smallest gap between best and worst run score (most consistent)' });
+        )[0].badges.push({ label: '🎯 Most Stable', cls: 'badge-stable', tip: 'Most repeatable results across seeds — smallest gap between best and worst run score' });
       }
 
       // Best Survival
@@ -2377,7 +2441,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { key: 'survival',   label: 'Survival',   tip: 'Avg turns survived normalised to best model (0-100)' },
         { key: 'coverage',   label: 'Coverage',   tip: '% of unique map cells visited' },
         { key: 'efficiency', label: 'Efficiency',  tip: 'Resource conversion: % of gathered food/water consumed' },
-        { key: 'stability',  label: 'Stability',  tip: 'Consistency: 100 − normalised score spread (smaller spread = higher)' },
+        { key: 'stability',  label: 'Stability',  tip: 'Repeatability: 100 − score spread (best−worst). Higher = more consistent across different seeds' },
       ];
       const N = axes.length;
       const cx = 220, cy = 170, R = 130;
@@ -2464,7 +2528,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: '⚙️ Efficiency', tip: 'Resource conversion: % of gathered food/water successfully consumed (eat+drink / total gathered)', fn: m => Number(m.avg_conversion_efficiency_pct ?? 0) },
         { label: '🗺️ Coverage',  tip: 'Map exploration: % of unique cells visited out of total map cells', fn: m => Number(m.avg_coverage_pct ?? 0) },
         { label: '❤️ Survival',  tip: 'Avg turns survived (when all die: raw turn count; otherwise: 100 − death rate %)', fn: m => { const s = 100 - Number(m.death_rate_pct ?? 100); return s > 0 ? s : Number(m.avg_turns_survived ?? 0); } },
-        { label: '🎯 Stability', tip: 'Inverse of score spread (best − worst). Smaller spread = bigger slice = more consistent', fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return s > 0 ? 1 / s : 1; } },
+        { label: '🎯 Stability', tip: 'Repeatability across seeds: smaller spread between best and worst run = bigger slice', fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return s > 0 ? 1 / s : 1; } },
       ];
 
       el.innerHTML = categories.map(cat => {
@@ -2502,6 +2566,53 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <div class="donut-label" data-tip="${cat.tip}">${cat.label}</div>
           <svg viewBox="0 0 ${size} ${size}" width="100" height="100">${arcs}</svg>
           <div class="donut-winner" data-tip="Leader: ${models[bestIdx].model_profile}">${models[bestIdx].model_profile}</div>
+        </div>`;
+      }).join('');
+    }
+
+    /* ── Badge Race ── */
+    function renderBadgeRace() {
+      const el = document.getElementById('badgeRaceGrid');
+      if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
+
+      const races = [
+        { label: '🗺️ Coverage',          tip: 'Average map coverage %',
+          fn: m => Number(m.avg_coverage_pct ?? 0),         fmt: v => `${v.toFixed(1)}%` },
+        { label: '❤️ Survival',           tip: 'Average turns survived',
+          fn: m => Number(m.avg_turns_survived ?? 0),       fmt: v => v.toFixed(1) },
+        { label: '🎯 Stability',          tip: 'Repeatability: 100 − (best − worst score). Higher = more consistent results across different seeds',
+          fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return Math.max(0, 100 - s); },
+          fmt: v => v.toFixed(0) },
+        { label: '⚡ Speed',              tip: 'Latency per turn (lower = faster). Bar shows inverse for visual comparison.',
+          fn: m => { const l = modelLatencyPerTurn(m); return l ? 1000 / l : 0; },
+          fmtRaw: m => { const l = modelLatencyPerTurn(m); return l ? (l / 1000).toFixed(2) + 's' : 'n/a'; } },
+        { label: '💎 Value (Score/$)',     tip: 'Score per dollar per run',
+          fn: m => modelScorePerCost(m) ?? 0,               fmt: v => v.toFixed(0) },
+        { label: '👑 Premium Sweet Spot', tip: 'PSS composite: S² × COV^0.5 × CostSaved^0.5 × SPD^0.1',
+          fn: m => computePremiumSweetSpotScore(m, models) ?? 0, fmt: v => v.toFixed(1) },
+      ];
+
+      el.innerHTML = races.map(race => {
+        // sort models by value descending for this race
+        const ranked = models.map((m, i) => ({ m, val: race.fn(m), i }))
+          .sort((a, b) => b.val - a.val);
+        const maxVal = ranked[0]?.val || 1;
+
+        const rows = ranked.map((r, rank) => {
+          const pct = (r.val / maxVal * 100).toFixed(1);
+          const label = race.fmtRaw ? race.fmtRaw(r.m) : race.fmt(r.val);
+          const isWinner = rank === 0;
+          const barStyle = `width:${pct}%;background:${r.m._color || '#888'}`;
+          return `<div class="badge-race-row" data-tip="${r.m.model_profile}: ${label}">
+            <div class="badge-race-name" style="color:${r.m._color || '#888'}">${r.m.model_profile.replace(/^vercel_/, '')}</div>
+            <div class="badge-race-track"><div class="badge-race-fill" style="${barStyle}${isWinner ? ';opacity:1' : ';opacity:0.6'}"></div></div>
+            <div class="badge-race-val">${label}</div>
+          </div>`;
+        }).join('');
+
+        return `<div class="badge-race-cell">
+          <div class="badge-race-title" data-tip="${race.tip}">${race.label}</div>
+          ${rows}
         </div>`;
       }).join('');
     }
@@ -3119,6 +3230,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderProtocolPanel();
       renderRadarChart();
       renderDonutCharts();
+      renderBadgeRace();
       renderRanking();
       renderPairwise();
       initFilters();
