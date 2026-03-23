@@ -164,19 +164,33 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
     benchmark_cfg = run_log.get("config_snapshot", {}).get("benchmark", {})
     parser_cfg = benchmark_cfg.get("parser", {})
 
-    if summary and (not isinstance(summary.get("kpi"), dict) or not summary.get("primary_failure_archetype")):
+    analysis_obj = run_log.get("run_analysis")
+
+    if summary and (
+        not isinstance(summary.get("kpi"), dict)
+        or not summary.get("primary_failure_archetype")
+        or not summary.get("short_summary")
+    ):
         analysis = _build_run_analytics(
             turn_logs=list(run_log.get("turn_logs", [])),
             run_summary=summary,
             rules_cfg=benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {},
             initial_tiles=run_log.get("world_snapshots", {}).get("initial_tiles", []),
+            protocol_version=str(run_log.get("protocol_version", "AIB-0.1")),
         )
         summary["analysis_version"] = analysis["analysis_version"]
+        summary["analysis_schema_version"] = analysis["analysis_schema_version"]
         summary["kpi"] = analysis["kpi"]
         summary["failure_archetypes"] = analysis["failure_archetypes"]
         summary["failure_archetypes_human"] = analysis["failure_archetypes_human"]
         summary["primary_failure_archetype"] = analysis["primary_failure_archetype"]
         summary["primary_failure_archetype_human"] = analysis["primary_failure_archetype_human"]
+        summary["secondary_failure_archetypes"] = analysis["secondary_failure_archetypes"]
+        summary["secondary_failure_archetypes_human"] = analysis["secondary_failure_archetypes_human"]
+        summary["confidence_hint"] = analysis["confidence_hint"]
+        summary["short_summary"] = analysis["short_summary"]
+        summary["detailed_summary"] = analysis["detailed_summary"]
+        analysis_obj = analysis.get("run_analysis")
 
     return {
         "meta": {
@@ -194,6 +208,7 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
             "map_coverage": map_coverage,
         },
         "summary": summary,
+        "analysis": analysis_obj,
         "world": {
             "width": width,
             "height": height,
@@ -389,6 +404,33 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       color: var(--text-dim);
       border-left: 2px solid var(--border-bright);
       padding-left: 12px;
+    }
+
+    .analysis-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 8px 10px;
+    }
+
+    .analysis-box summary {
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      list-style: none;
+    }
+
+    .analysis-box summary::-webkit-details-marker { display: none; }
+
+    .analysis-box p {
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      line-height: 1.45;
     }
 
     /* ── TECH ACCORDION ── */
@@ -1498,10 +1540,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ? `${gathered}/${gatherableTotal}` : `${gathered}`;
 
       const deathCause = inferDeathCause(s);
-      let whyText = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
+      const shortSummary = String(s.short_summary || '').trim();
+      const detailedSummary = String(s.detailed_summary || '').trim();
+      let whyText = shortSummary || s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
       if (isDead && deathCause) whyText += ` ${deathCause}`;
       const failureMode = String(s.primary_failure_archetype_human || s.primary_failure_archetype || 'Balanced or unclear').trim();
-      if (failureMode) whyText += ` Failure mode: ${failureMode}.`;
+      if (failureMode && !shortSummary) whyText += ` Failure mode: ${failureMode}.`;
+      const confidenceHint = String(s.confidence_hint || '').trim();
+      const secondaryModes = Array.isArray(s.secondary_failure_archetypes_human)
+        ? s.secondary_failure_archetypes_human.filter(Boolean).join(', ')
+        : '';
 
       const badgeClass = isDead ? 'died' : 'survived';
       const badgeText = isDead
@@ -1546,6 +1594,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           </div>
         </div>
         <div class="outcome-why">${escapeHtml(whyText)}</div>
+        ${detailedSummary
+          ? `<details class="analysis-box"><summary>Deterministic Analysis</summary><p>${escapeHtml(detailedSummary)}</p></details>`
+          : ''}
       `;
 
       // Technical details chips
@@ -1575,11 +1626,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `<span class="chip"><span class="chip-key">tokens</span> <span class="chip-value">${formatCount(s.tokens_used)}</span></span>`,
         `<span class="chip"><span class="chip-key">cost</span> <span class="chip-value">${formatEstimatedCost(s.estimated_cost)}</span></span>`,
         `<span class="chip"><span class="chip-key">failure</span> <span class="chip-value">${escapeHtml(failureMode)}</span></span>`,
+        confidenceHint ? `<span class="chip"><span class="chip-key">confidence</span> <span class="chip-value">${escapeHtml(confidenceHint)}</span></span>` : '',
+        secondaryModes ? `<span class="chip"><span class="chip-key">secondary</span> <span class="chip-value">${escapeHtml(secondaryModes)}</span></span>` : '',
         `<span class="chip"><span class="chip-key">coverage</span> <span class="chip-value">${coverageText}</span></span>`,
         `<span class="chip"><span class="chip-key">revisit</span> <span class="chip-value">${revisitText}</span></span>`,
         `<span class="chip"><span class="chip-key">conversion</span> <span class="chip-value">${conversionText}</span></span>`,
         `<span class="chip"><span class="chip-key">dist/useful</span> <span class="chip-value">${distanceText}</span></span>`,
-      ].join('');
+      ].filter(Boolean).join('');
 
       const protocolChip = document.getElementById('protocolChip');
       if (protocolChip) {

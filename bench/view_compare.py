@@ -128,6 +128,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       gap: 10px;
     }
 
+    .podium-model-wrap {
+      min-width: 0;
+      flex: 1;
+      display: grid;
+      gap: 2px;
+    }
+
     .podium-rank {
       font-family: var(--font-mono);
       font-size: 1.1rem;
@@ -161,6 +168,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .podium-card.first .podium-model-name {
       color: var(--accent);
+    }
+
+    .podium-model-time {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .podium-model-time .metric-value-strong {
+      color: var(--text-secondary);
+      font-weight: 800;
+    }
+
+    .podium-model-time .metric-value-cost {
+      color: var(--accent);
+      font-weight: 800;
     }
 
     .podium-stats {
@@ -363,16 +391,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     /* ── TOOLTIPS ── */
     [data-tip] {
-      position: relative;
       cursor: help;
     }
 
-    [data-tip]::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
+    .global-tooltip {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
       background: var(--bg);
       color: var(--text);
       border: 1px solid var(--border-bright);
@@ -382,25 +407,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-size: 0.72rem;
       font-weight: 400;
       line-height: 1.4;
-      white-space: normal;
-      width: max-content;
-      max-width: 300px;
-      z-index: 100;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.15s;
+      max-width: 320px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(2px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      white-space: normal;
       text-transform: none;
       letter-spacing: normal;
     }
 
-    [data-tip]:hover::after {
+    .global-tooltip.show {
       opacity: 1;
-    }
-
-    [data-tip].tip-down::after {
-      bottom: auto;
-      top: calc(100% + 6px);
+      transform: translateY(0);
     }
 
     .chip {
@@ -769,7 +788,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .replay-header {
       display: grid;
-      gap: 8px;
+      gap: 6px;
     }
 
     .replay-title {
@@ -785,13 +804,51 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .replay-sub {
       font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .replay-sub-strip {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 6px 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .analysis-detail {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 6px 10px;
+    }
+
+    .analysis-detail summary {
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      list-style: none;
+    }
+
+    .analysis-detail summary::-webkit-details-marker { display: none; }
+
+    .analysis-detail .detail-body {
+      margin-top: 8px;
+      font-family: var(--font-mono);
       font-size: 0.76rem;
       color: var(--text-dim);
+      line-height: 1.45;
     }
 
     .summary-cards {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -801,7 +858,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     .card {
       background: var(--bg-raised);
-      padding: 8px 10px;
+      padding: 6px 9px;
     }
 
     .card .label {
@@ -817,7 +874,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .card .value {
       font-family: var(--font-mono);
       font-weight: 800;
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       color: var(--text);
       margin-top: 2px;
       white-space: nowrap;
@@ -842,7 +899,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       flex-wrap: wrap;
       align-items: center;
       gap: 8px;
-      padding: 10px 12px;
+      padding: 8px 10px;
       background: var(--bg-raised);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -1253,18 +1310,6 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       <div class=\"page-title\"><span>TinyWorld</span> Compare Dashboard <span id=\"dashVersion\"></span></div>
     </div>
 
-    <section id=\"compareSummary\"></section>
-
-    <section class=\"tech-accordion\">
-      <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
-        // technical details <span id=\"techArrow\">&#9654;</span>
-      </button>
-      <div class=\"tech-body\" id=\"techBody\">
-        <div class=\"chip-row\" id=\"metaChips\"></div>
-        <div class=\"protocol-panel\" id=\"protocolPanel\"></div>
-      </div>
-    </section>
-
     <nav class=\"tab-bar\">
       <button class=\"tab-btn active\" data-tab=\"leaderboard\" type=\"button\">Leaderboard</button>
       <button class=\"tab-btn\" data-tab=\"explorer\" type=\"button\">Run Explorer</button>
@@ -1272,6 +1317,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     <!-- TAB 1: LEADERBOARD -->
     <div class=\"tab-panel active\" id=\"tab-leaderboard\">
+      <section id=\"compareSummary\"></section>
+
       <div class=\"panel\">
         <div class=\"panel-title\" data-tip=\"Visual comparison of average scores. Bar length = avg score. Hover the bar to see the best–worst range\" class=\"tip-down\">Score Comparison</div>
         <div id=\"scoreChart\" class=\"score-chart\"></div>
@@ -1292,6 +1339,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Maximum turns survived in a single run\" class=\"tip-down\">Best Survived</th>
                 <th data-tip=\"Percentage of runs where the agent died before reaching max turns\" class=\"tip-down\">Death Rate</th>
                 <th data-tip=\"Average number of invalid actions per run (penalised -2 each)\" class=\"tip-down\">Avg Invalid</th>
+                <th data-tip=\"Average map coverage percentage (unique visited cells / total map cells)\" class=\"tip-down\">Avg Coverage</th>
+                <th data-tip=\"Average revisit ratio (revisited moves / total successful moves)\" class=\"tip-down\">Avg Revisit</th>
+                <th data-tip=\"Average resource conversion efficiency percentage\" class=\"tip-down\">Avg Conversion</th>
                 <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\">Avg Latency / turn</th>
                 <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\">Total Tokens</th>
               </tr>
@@ -1422,6 +1472,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </div>
     </div>
 
+    <section class=\"tech-accordion\">
+      <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
+        // technical details <span id=\"techArrow\">&#9654;</span>
+      </button>
+      <div class=\"tech-body\" id=\"techBody\">
+        <div class=\"chip-row\" id=\"metaChips\"></div>
+        <div class=\"protocol-panel\" id=\"protocolPanel\"></div>
+      </div>
+    </section>
+
     <div class=\"footer\">
       <span>TinyWorld Survival Bench</span>
     </div>
@@ -1489,6 +1549,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     let filteredRunIndexes = [];
     let currentTurnIndex = 0;
     let autoPlayTimer = null;
+    let tooltipEl = null;
+    let tooltipTarget = null;
 
     /* ── TABS ── */
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1501,9 +1563,100 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
     });
 
+    function initTooltips() {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'global-tooltip';
+      tooltipEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(tooltipEl);
+
+      function placeTooltip(clientX, clientY) {
+        if (!tooltipEl || !tooltipEl.classList.contains('show')) return;
+        const pad = 12;
+        const vw = window.innerWidth || 1280;
+        const vh = window.innerHeight || 720;
+        const rect = tooltipEl.getBoundingClientRect();
+        let left = clientX + 14;
+        let top = clientY - rect.height - 12;
+        if (left + rect.width + pad > vw) left = vw - rect.width - pad;
+        if (left < pad) left = pad;
+        if (top < pad) top = clientY + 14;
+        if (top + rect.height + pad > vh) top = vh - rect.height - pad;
+        tooltipEl.style.left = `${left}px`;
+        tooltipEl.style.top = `${top}px`;
+      }
+
+      function showTooltip(target, clientX, clientY) {
+        if (!tooltipEl) return;
+        const tip = target?.getAttribute?.('data-tip');
+        if (!tip) return;
+        tooltipTarget = target;
+        tooltipEl.textContent = tip;
+        tooltipEl.classList.add('show');
+        placeTooltip(clientX, clientY);
+      }
+
+      function hideTooltip() {
+        if (!tooltipEl) return;
+        tooltipTarget = null;
+        tooltipEl.classList.remove('show');
+      }
+
+      document.addEventListener('mouseover', (event) => {
+        const target = event.target?.closest?.('[data-tip]');
+        if (!target) return;
+        const rect = target.getBoundingClientRect();
+        showTooltip(target, rect.left + (rect.width / 2), rect.top);
+      });
+
+      document.addEventListener('mousemove', (event) => {
+        if (!tooltipTarget) return;
+        placeTooltip(event.clientX, event.clientY);
+      });
+
+      document.addEventListener('mouseout', (event) => {
+        if (!tooltipTarget) return;
+        const from = event.target?.closest?.('[data-tip]');
+        const to = event.relatedTarget?.closest?.('[data-tip]');
+        if (from === tooltipTarget && to !== tooltipTarget) {
+          hideTooltip();
+        }
+      });
+
+      document.addEventListener('focusin', (event) => {
+        const target = event.target?.closest?.('[data-tip]');
+        if (!target) return;
+        const rect = target.getBoundingClientRect();
+        showTooltip(target, rect.left + (rect.width / 2), rect.top);
+      });
+
+      document.addEventListener('focusout', (event) => {
+        const target = event.target?.closest?.('[data-tip]');
+        if (target && target === tooltipTarget) hideTooltip();
+      });
+
+      document.addEventListener('scroll', () => {
+        if (!tooltipTarget) return;
+        const rect = tooltipTarget.getBoundingClientRect();
+        placeTooltip(rect.left + (rect.width / 2), rect.top);
+      }, true);
+
+      document.addEventListener('click', () => {
+        if (tooltipTarget) hideTooltip();
+      });
+    }
+
     function numberOr(value, fallback) {
       const num = Number(value);
       return Number.isFinite(num) ? num : fallback;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
     function formatCount(value, fallback = 'n/a') {
@@ -1518,6 +1671,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const num = Number(value);
       if (!Number.isFinite(num)) return fallback;
       return num.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+
+    function formatUsd(value, fallback = 'n/a') {
+      if (value === null || value === undefined || value === '') return fallback;
+      const num = Number(value);
+      if (!Number.isFinite(num)) return fallback;
+      if (Math.abs(num) >= 1) {
+        return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      if (Math.abs(num) >= 0.01) {
+        return `$${num.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+      }
+      return `$${num.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })}`;
     }
 
     function formatDurationFromMs(valueMs) {
@@ -1588,12 +1754,47 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return 'meter';
     }
 
+    function ensureChildVisible(container, child) {
+      if (!container || !child) return;
+      const containerRect = container.getBoundingClientRect();
+      const childRect = child.getBoundingClientRect();
+      if (childRect.top < containerRect.top) {
+        container.scrollTop -= (containerRect.top - childRect.top) + 6;
+      } else if (childRect.bottom > containerRect.bottom) {
+        container.scrollTop += (childRect.bottom - containerRect.bottom) + 6;
+      }
+    }
+
     function chip(label, value, tip) {
       const tipAttr = tip ? ` data-tip="${tip}"` : '';
       return `<span class="chip"${tipAttr}><span class="chip-key">${label}</span> <span class="chip-val">${value}</span></span>`;
     }
 
     function renderMetaChips() {
+      const compareDurationMs = (() => {
+        const generated = String(meta.generated_at_utc || '');
+        const idRaw = String(meta.compare_id || '');
+        const match = idRaw.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+        if (!generated || !match) return null;
+        const started = Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`);
+        const ended = Date.parse(generated);
+        if (!Number.isFinite(started) || !Number.isFinite(ended)) return null;
+        if (ended < started) return null;
+        return ended - started;
+      })();
+
+      const totalModelTimeMs = models.reduce((sum, modelRow) => {
+        const raw = Number(modelRow?.latency_ms_total ?? 0);
+        if (!Number.isFinite(raw) || raw < 0) return sum;
+        return sum + raw;
+      }, 0);
+      const modelCosts = models
+        .map(modelRow => Number(modelRow?.estimated_cost_total))
+        .filter(value => Number.isFinite(value));
+      const totalModelCost = modelCosts.length > 0
+        ? modelCosts.reduce((sum, value) => sum + value, 0)
+        : null;
+
       const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" data-tip="Click to show the full game rules, stat mechanics, and scoring logic"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
       const chips = [
         protocolBtn,
@@ -1604,6 +1805,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         chip('runs/model', formatCount(meta.runs_per_model), 'How many runs each model played (one per seed)'),
         chip('total runs', formatCount(meta.total_runs || runs.length), 'Total number of runs across all models and seeds'),
         chip('seeds', (meta.seed_list || []).join(', ') || '-', 'Random seeds used for map generation. Same seeds = same maps for all models'),
+        chip('total compare time', formatDurationFromMs(compareDurationMs), 'Wall-clock compare duration (from compare start id timestamp to artifact generation)'),
+        chip('total model time', formatDurationFromMs(totalModelTimeMs || null), 'Sum of all model API latency across all runs'),
+        chip('estimated cost total', formatUsd(totalModelCost, 'not available'), 'Estimated total USD cost across all runs (provider-reported or deterministic fallback)'),
         chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12), 'SHA-256 hash of the prompt set. Same hash = identical prompts across runs'),
         chip('fairness', 'paired seeds', 'All models play the exact same maps (paired seeds) so score differences reflect model ability, not map luck'),
       ];
@@ -1713,15 +1917,26 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const isFirst = i === 0;
           const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
           const avgLatencyPerCall = formatDurationFromMs(modelLatencyPerTurn(m));
+          const totalModelTime = formatDurationFromMs(m.latency_ms_total);
+          const totalModelCost = formatUsd(m.estimated_cost_total, 'not available');
+          const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
+          const revisit = formatFloat(m.avg_revisit_ratio, 2, 'n/a');
+          const conversion = m.avg_conversion_efficiency_pct == null ? 'n/a' : `${formatFloat(m.avg_conversion_efficiency_pct, 1)}%`;
           return `<div class="podium-card ${isFirst ? 'first' : ''}">
             <div class="podium-card-header">
               <div class="podium-rank">${m.rank}</div>
-              <div class="podium-model-name">${m.model_profile}</div>
+              <div class="podium-model-wrap">
+                <div class="podium-model-name">${m.model_profile}</div>
+                <div class="podium-model-time">total time <span class="metric-value-strong">${totalModelTime}</span> | cost <span class="metric-value-cost">${totalModelCost}</span></div>
+              </div>
             </div>
             <div class="podium-stats">
               <div class="podium-stat" data-tip="Average score across all runs"><div class="ps-value">${formatFloat(m.avg_final_score, 2)}</div><div class="ps-label">Avg Score</div></div>
               <div class="podium-stat" data-tip="Percentage of runs where the agent survived all turns"><div class="ps-value">${survivalRate}%</div><div class="ps-label">Survival</div></div>
               <div class="podium-stat" data-tip="Average API response time per turn"><div class="ps-value">${avgLatencyPerCall}</div><div class="ps-label">Avg Latency</div></div>
+              <div class="podium-stat" data-tip="Average map coverage percentage (unique visited cells / total map cells)"><div class="ps-value">${coverage}</div><div class="ps-label">Coverage</div></div>
+              <div class="podium-stat" data-tip="Average revisit ratio (revisited moves / total successful moves)"><div class="ps-value">${revisit}</div><div class="ps-label">Revisit</div></div>
+              <div class="podium-stat" data-tip="Average resource conversion efficiency percentage"><div class="ps-value">${conversion}</div><div class="ps-label">Conversion</div></div>
             </div>
           </div>`;
         }).join('')}
@@ -1757,7 +1972,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderRanking() {
       if (!models.length) {
-        rankingBody.innerHTML = '<tr><td colspan="11" style="color:var(--text-dim)">No model stats.</td></tr>';
+        rankingBody.innerHTML = '<tr><td colspan="14" style="color:var(--text-dim)">No model stats.</td></tr>';
         return;
       }
 
@@ -1775,6 +1990,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${formatCount(row.max_turns_survived)}</td>
           <td>${formatFloat(row.death_rate_pct, 1)}%</td>
           <td>${formatFloat(row.avg_invalid_actions, 2)}</td>
+          <td>${row.avg_coverage_pct == null ? 'n/a' : `${formatFloat(row.avg_coverage_pct, 1)}%`}</td>
+          <td>${formatFloat(row.avg_revisit_ratio, 2)}</td>
+          <td>${row.avg_conversion_efficiency_pct == null ? 'n/a' : `${formatFloat(row.avg_conversion_efficiency_pct, 1)}%`}</td>
           <td>${avgLatencyPerCall}</td>
           <td>${formatCount(row.tokens_used_total)}</td>
         </tr>`;
@@ -1934,7 +2152,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
 
       const active = runList.querySelector('.seed-pair.active');
-      if (active) active.scrollIntoView({ block: 'nearest' });
+      ensureChildVisible(runList, active);
     }
 
     function selectedRun() {
@@ -1978,6 +2196,17 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
         : 'n/a';
       const failureMode = String(summary.primary_failure_archetype_human || summary.primary_failure_archetype || 'Balanced or unclear');
+      const shortSummary = String(summary.short_summary || '').trim();
+      const detailedSummary = String(summary.detailed_summary || '').trim();
+      const confidenceHint = String(summary.confidence_hint || '').trim();
+      const fallbackFacts = [summary.end_reason_human, deathCause]
+        .map(value => String(value || '').trim())
+        .filter(value => value.length > 0)
+        .join(' | ');
+      const summaryLine = shortSummary || fallbackFacts;
+      const stripHtml = summaryLine
+        ? `<div class="replay-sub-strip"><span class="replay-sub">${escapeHtml(summaryLine)}</span></div>`
+        : '';
 
       const cards = [
         { label: 'Score', value: formatCount(summary.final_score), tip: 'Final score for this run (survive +1, gather +3, consume +2, invalid -2, death -10)' },
@@ -1985,6 +2214,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: 'Invalid', value: formatCount(summary.invalid_actions), tip: 'Actions the model attempted that were not valid (e.g. eat without food)' },
         { label: 'Resources', value: gatheredLabel, tip: 'Resources gathered from the map out of total available' },
         { label: 'Failure mode', value: failureMode, tip: 'Primary deterministic failure archetype for this run' },
+        confidenceHint ? { label: 'Confidence', value: confidenceHint, tip: 'Deterministic confidence hint from the rule engine' } : null,
         { label: 'Coverage', value: coverageLabel, tip: 'Unique visited cells over total map cells' },
         { label: 'Revisit ratio', value: formatFloat(kpi.revisit_ratio, 2), tip: 'Higher means more repeated movement over already visited cells' },
         { label: 'Conversion', value: conversionLabel, tip: 'Useful eat/drink conversions divided by gathered food+water' },
@@ -1996,7 +2226,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           return turns > 0 ? formatDurationFromMs(total / turns) : 'n/a';
         })(), tip: 'Average API response time per turn' },
         { label: 'Tokens', value: formatCount(summary.tokens_used), tip: 'Total tokens consumed (input + output) across all turns' },
-      ];
+        { label: 'Cost', value: formatUsd(summary.estimated_cost), tip: 'Estimated run cost (provider-reported or deterministic fallback)' },
+      ].filter(Boolean);
 
       const sameSeedRuns = runs
         .map((r, i) => ({ r, i }))
@@ -2016,12 +2247,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <span style="color:var(--text-dim);font-size:0.78rem">seed ${run.seed}</span>
           <span class="badge ${status.className}">${status.label}</span>
         </div>
-        ${summary.end_reason_human ? `<div class="replay-sub">${summary.end_reason_human}</div>` : ''}
-        ${deathCause ? `<div class="replay-sub">${deathCause}</div>` : ''}
+        ${stripHtml}
         <div class="summary-cards">
           ${cards.map(c => `<div class="card"${c.tip ? ` data-tip="${c.tip}"` : ''}><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
         </div>
         ${switcherHtml}
+        ${detailedSummary
+          ? `<details class="analysis-detail"><summary>Deterministic Analysis</summary><div class="detail-body">${escapeHtml(detailedSummary)}</div></details>`
+          : ''}
       `;
 
       replayHeader.querySelectorAll('[data-switch-run]').forEach(btn => {
@@ -2134,8 +2367,25 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `events: ${(scoreDelta.events || []).map(formatScoreEvent).join(', ') || '-'}`,
         `latency: ${formatDurationFromMs(metrics.latency_ms)}`,
         `tokens: ${formatCount(metrics.tokens_used)}`,
-        `cost: ${formatFloat(metrics.estimated_cost, 6, 'n/a')}`,
       ];
+      let turnCost = metrics.estimated_cost;
+      let turnCostApprox = false;
+      if ((turnCost === null || turnCost === undefined || turnCost === '') && metrics.tokens_used != null) {
+        const runCost = Number(run.summary?.estimated_cost);
+        const runTokens = Number(run.summary?.tokens_used);
+        const turnTokens = Number(metrics.tokens_used);
+        if (
+          Number.isFinite(runCost)
+          && Number.isFinite(runTokens)
+          && Number.isFinite(turnTokens)
+          && runTokens > 0
+          && turnTokens >= 0
+        ) {
+          turnCost = runCost * (turnTokens / runTokens);
+          turnCostApprox = true;
+        }
+      }
+      eventLines.push(`cost: ${formatUsd(turnCost)}${turnCostApprox ? ' (estimated)' : ''}`);
       scoreEvents.textContent = eventLines.join('\\n');
 
       const frames = run.replay?.frames || [];
@@ -2167,7 +2417,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
 
       const selected = timelineBody.querySelector('tr.selected-row');
-      if (selected) selected.scrollIntoView({ block: 'nearest' });
+      const timelineWrap = timelineBody.closest('.timeline-wrap');
+      ensureChildVisible(timelineWrap, selected);
 
       const frameCount = frames.length;
       turnMeta.textContent = frameCount ? `${currentTurnIndex + 1}/${frameCount}` : '0/0';
@@ -2321,6 +2572,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     function boot() {
       const vEl = document.getElementById('dashVersion');
       if (vEl) vEl.textContent = `v${meta.bench_version || meta.version || '?'}`;
+      initTooltips();
       enrichModelsFromRuns();
       renderCompareSummary();
       renderMetaChips();

@@ -20,3 +20,6 @@ artifacts/results/*
 !artifacts/results/.gitkeep
 !artifacts/results/baselines/
 !artifacts/results/baselines/**
+
+artifacts/runs/*
+!artifacts/runs/.gitkeep

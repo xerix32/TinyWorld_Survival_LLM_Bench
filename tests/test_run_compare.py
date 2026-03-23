@@ -9,6 +9,7 @@ import yaml
 
 from bench.common import load_yaml_file, run_match_once
 from bench.run_compare import (
+    _build_jobs,
     _build_from_logs,
     _compare_paths,
     build_model_summaries,
@@ -50,6 +51,25 @@ def test_resolve_seed_list_explicit_overrides_range() -> None:
 
     ranged = resolve_seed_list(None, num_runs=4, seed_start=3)
     assert ranged == [3, 4, 5, 6]
+
+
+def test_build_jobs_stable_order() -> None:
+    jobs = _build_jobs(["model_a", "model_b"], [11, 12])
+
+    assert [job.job_index for job in jobs] == [1, 2, 3, 4]
+    assert [(job.model_profile, job.seed) for job in jobs] == [
+        ("model_a", 11),
+        ("model_a", 12),
+        ("model_b", 11),
+        ("model_b", 12),
+    ]
+
+
+def test_compare_paths_supports_legacy_dirs_without_checkpoint(tmp_path: Path) -> None:
+    results_dir = (tmp_path / "results").resolve()
+    results_dir.mkdir(parents=True, exist_ok=True)
+    paths = _compare_paths({"results": results_dir}, "abc123")
+    assert paths["checkpoint_json"] == results_dir / "compare_state.json"
 
 
 def test_build_model_summaries_ranking_tiebreaks() -> None:
@@ -120,6 +140,8 @@ def test_run_compare_smoke_dummy_cli(tmp_path: Path, monkeypatch) -> None:
             str(Path("configs/providers.yaml").resolve()),
             "--prompts-dir",
             str(Path("prompts").resolve()),
+            "--runs-root",
+            str((tmp_path / "runs").resolve()),
             "--no-open-viewer",
             "--no-color",
         ],
@@ -127,8 +149,10 @@ def test_run_compare_smoke_dummy_cli(tmp_path: Path, monkeypatch) -> None:
 
     main()
 
-    results_dir = tmp_path / "results"
-    replays_dir = tmp_path / "replays"
+    run_roots = sorted((tmp_path / "runs").glob("*"))
+    assert run_roots
+    results_dir = run_roots[-1] / "results"
+    replays_dir = run_roots[-1] / "replays"
 
     assert list(results_dir.glob("compare_runs_*.csv"))
     assert list(results_dir.glob("compare_models_*.csv"))
@@ -167,6 +191,8 @@ def test_run_compare_from_logs_mode(tmp_path: Path, monkeypatch) -> None:
             str(Path("configs/providers.yaml").resolve()),
             "--prompts-dir",
             str(Path("prompts").resolve()),
+            "--runs-root",
+            str((tmp_path / "runs").resolve()),
             "--no-open-viewer",
             "--no-color",
         ],
@@ -174,8 +200,10 @@ def test_run_compare_from_logs_mode(tmp_path: Path, monkeypatch) -> None:
 
     main()
 
-    results_dir = tmp_path / "results"
-    replays_dir = tmp_path / "replays"
+    run_roots = sorted((tmp_path / "runs").glob("*"))
+    assert run_roots
+    results_dir = run_roots[-1] / "results"
+    replays_dir = run_roots[-1] / "replays"
     assert list(results_dir.glob("compare_runs_*.csv"))
     assert list(results_dir.glob("compare_models_*.csv"))
     assert list(results_dir.glob("compare_h2h_*.csv"))
@@ -203,11 +231,15 @@ def test_run_compare_resume_from_checkpoint(tmp_path: Path, monkeypatch) -> None
         row["job_index"] = idx
         row["job_total"] = 2
 
+    run_root = (tmp_path / "runs" / compare_id).resolve()
     dirs = {
-        "logs": (tmp_path / "logs").resolve(),
-        "results": (tmp_path / "results").resolve(),
-        "replays": (tmp_path / "replays").resolve(),
+        "logs": run_root / "logs",
+        "results": run_root / "results",
+        "replays": run_root / "replays",
+        "checkpoint": run_root / "checkpoint",
     }
+    for path in dirs.values():
+        path.mkdir(parents=True, exist_ok=True)
     paths = _compare_paths(dirs, compare_id)
     checkpoint_path = paths["checkpoint_json"]
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,6 +259,8 @@ def test_run_compare_resume_from_checkpoint(tmp_path: Path, monkeypatch) -> None
             "prompts_dir": str(Path("prompts").resolve()),
             "scenario_arg": scenario,
             "max_turns": 8,
+            "run_id": compare_id,
+            "runs_root": str((tmp_path / "runs").resolve()),
         },
         "run_rows": run_rows,
         "run_payloads": run_payloads,
@@ -250,6 +284,8 @@ def test_run_compare_resume_from_checkpoint(tmp_path: Path, monkeypatch) -> None
             str(Path("configs/providers.yaml").resolve()),
             "--prompts-dir",
             str(Path("prompts").resolve()),
+            "--runs-root",
+            str((tmp_path / "runs").resolve()),
             "--no-open-viewer",
             "--no-color",
         ],

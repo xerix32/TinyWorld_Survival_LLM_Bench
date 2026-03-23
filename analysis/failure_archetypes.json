@@ -1,0 +1,80 @@
+{
+  "schema_version": "AIB-FA-0.1",
+  "archetypes": [
+    {
+      "code": "dehydration",
+      "label": "Dehydration"
+    },
+    {
+      "code": "starvation",
+      "label": "Starvation"
+    },
+    {
+      "code": "energy_collapse",
+      "label": "Energy collapse"
+    },
+    {
+      "code": "delayed_water_priority",
+      "label": "Delayed water priority"
+    },
+    {
+      "code": "delayed_food_priority",
+      "label": "Delayed food priority"
+    },
+    {
+      "code": "wandering",
+      "label": "Wandering"
+    },
+    {
+      "code": "local_loop",
+      "label": "Local loop"
+    },
+    {
+      "code": "bad_gather_timing",
+      "label": "Bad gather timing"
+    },
+    {
+      "code": "invalid_output_collapse",
+      "label": "Invalid-output collapse"
+    },
+    {
+      "code": "resource_tunnel_vision",
+      "label": "Resource tunnel vision"
+    },
+    {
+      "code": "late_recovery_failure",
+      "label": "Late recovery failure"
+    },
+    {
+      "code": "balanced_but_insufficient",
+      "label": "Balanced but insufficient"
+    },
+    {
+      "code": "successful_stabilization",
+      "label": "Successful stabilization"
+    },
+    {
+      "code": "successful_optimization",
+      "label": "Successful optimization"
+    }
+  ],
+  "thresholds": {
+    "hunger_warning_ratio": 0.7,
+    "thirst_warning_ratio": 0.7,
+    "energy_warning_ratio": 0.3,
+    "early_window_turns": 10,
+    "delayed_priority_turn": 12,
+    "invalid_rate_collapse": 0.25,
+    "loop_revisit_ratio": 0.55,
+    "loop_consecutive_revisit_max": 4,
+    "wandering_move_ratio": 0.55,
+    "wandering_useful_action_ratio": 0.2,
+    "bad_gather_missed_opportunities": 2,
+    "resource_tunnel_gather_count": 4,
+    "optimization_min_score": 45,
+    "optimization_max_revisit_ratio": 0.35,
+    "stabilization_invalid_rate_max": 0.1,
+    "late_recovery_tail_ratio": 0.7
+  }
+}
+

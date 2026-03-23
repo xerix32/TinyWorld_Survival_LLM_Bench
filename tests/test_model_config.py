@@ -25,6 +25,7 @@ def test_legacy_dummy_alias_still_supported() -> None:
 def test_openai_profile_requires_key_when_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     providers_cfg = load_yaml_file("configs/providers.yaml")
     monkeypatch.delenv("VERCEL_AI_GATEWAY_API_KEY", raising=False)
+    providers_cfg["providers"]["vercel_gateway"].pop("api_key", None)
 
     with pytest.raises(ValueError, match="missing API key"):
         create_model_wrapper("vercel_gpt_oss_120b", seed=7, providers_cfg=providers_cfg)

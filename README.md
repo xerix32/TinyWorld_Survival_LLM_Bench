@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **0.1.19**
+Version: **0.1.34**
 
 TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
 
@@ -33,10 +33,17 @@ TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner f
 Providers and model profiles are configured in:
 - `configs/providers.yaml` (default)
 - `configs/providers.local.yaml` (local variant)
+- `configs/pricing.yaml` (deterministic estimated-cost fallback rates)
 
 A model profile binds:
 - `provider` (e.g. `vercel_gateway`, `groq_gateway`, `local_lmstudio`)
 - `model` and runtime params (e.g. `temperature`, `max_tokens`)
+- provider throttling controls (e.g. `requests_per_minute`, `max_concurrent_requests`)
+
+Pricing notes:
+- If provider returns `estimated_cost`, TinyWorld uses that value.
+- If missing, TinyWorld can deterministically estimate from `prompt_tokens` + `completion_tokens` using `configs/pricing.yaml`.
+- `0` means known zero-cost (e.g. local runtime). Unknown pricing must stay `null`.
 
 This separates provider identity from model name, so the same model can be benchmarked across different backends.
 
@@ -105,6 +112,9 @@ python -m bench.run_compare
 - `--num-runs 5`
 - `--seed-start 1`
 - `--providers-config configs/providers.yaml`
+- `--runs-root artifacts/runs`
+- `--model-workers 1`
+- `--seed-workers-per-model 1`
 
 Example model-vs-model compare:
 ```bash
@@ -118,6 +128,22 @@ python -m bench.run_compare \
 Explicit seed list (overrides `--num-runs/--seed-start`):
 ```bash
 python -m bench.run_compare --models dummy_v0_1,local_gpt_oss_20b --seeds 1,2,3,4
+```
+
+Parallel compare (2 models in parallel, up to 2 seeds in parallel per active model):
+```bash
+python -m bench.run_compare \
+  --models vercel_gpt_oss_120b,vercel_gpt_4o,vercel_gpt_5_4 \
+  --num-runs 3 \
+  --model-workers 2 \
+  --seed-workers-per-model 2
+```
+
+Resume an interrupted compare using checkpoint path or run id:
+```bash
+python -m bench.run_compare --resume artifacts/runs/<run_id>/checkpoint/compare_state.json
+# or
+python -m bench.run_compare --resume <run_id>
 ```
 
 ## Aggregate existing logs into CSV
@@ -161,6 +187,11 @@ Use only the command protocol actions listed above. Stop with `Ctrl+C`.
 - Logs: `artifacts/logs/`
 - Suite/Aggregate/Compare CSV + Compare JSON: `artifacts/results/`
 - Replay dashboards (single run + compare): `artifacts/replays/`
+- Compare runs (new run-scoped layout):
+  - `artifacts/runs/<run_id>/logs/`
+  - `artifacts/runs/<run_id>/results/`
+  - `artifacts/runs/<run_id>/replays/`
+  - `artifacts/runs/<run_id>/checkpoint/compare_state.json`
 
 ## Reproducibility metadata in run JSON
 Each run log includes benchmark identity metadata for fair comparisons:

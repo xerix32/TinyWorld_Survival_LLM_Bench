@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import yaml
 
+from analysis.run_analyzer import build_run_analysis
 from engine.actions import ActionOutcome, apply_action
 from engine.observation import build_observation
 from engine.parser import parse_action
@@ -27,10 +28,15 @@ from models.dummy import DummyRandomWrapper
 from models.local_wrapper import LocalWrapper
 from models.openai_wrapper import OpenAIWrapper
 from renderers.json_renderer import prompt_pair_hash
+from bench.pricing import (
+    estimate_cost_from_total_tokens,
+    estimate_cost_usd,
+    load_pricing_config,
+    resolve_model_pricing,
+)
 
 
 DEFAULT_AGENT_ID = "agent_1"
-ANALYTICS_VERSION = "AIB-AN-0.1"
 
 _MOVE_ACTIONS = {"move north", "move south", "move east", "move west"}
 
@@ -147,6 +153,7 @@ def _create_openai_compatible_wrapper(
         retry_base_seconds=float(_resolve_numeric("retry_base_seconds", 2.0)),
         retry_max_seconds=float(_resolve_numeric("retry_max_seconds", 20.0)),
         request_timeout_seconds=float(_resolve_numeric("request_timeout_seconds", 60.0)),
+        max_concurrent_requests=int(_resolve_numeric("max_concurrent_requests", 1)),
         provider_id=provider_id,
         profile_name=profile_name,
     )
@@ -240,6 +247,15 @@ def _optional_sum_update(current_sum: float, has_value: bool, new_value: float |
     return current_sum + float(new_value), True
 
 
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _human_end_reason(end_reason: str, turns_played: int, max_turns: int) -> str:
     if end_reason == "agent_dead":
         return f"The agent died on turn {turns_played}."
@@ -303,6 +319,7 @@ def _build_run_analytics(
     run_summary: dict[str, Any],
     rules_cfg: dict[str, Any],
     initial_tiles: list[list[str]],
+    protocol_version: str | None = None,
 ) -> dict[str, Any]:
     turns_played = int(run_summary.get("turns_played", len(turn_logs)))
     invalid_actions = int(run_summary.get("invalid_actions", 0))
@@ -493,40 +510,99 @@ def _build_run_analytics(
         detected = ["balanced_or_unclear"]
     primary = detected[0]
 
+    legacy_kpi = {
+        "unique_cells_visited": len(visited_cells),
+        "map_cells_total": map_cells_total if map_cells_total > 0 else None,
+        "coverage_pct": round(coverage_pct, 4) if coverage_pct is not None else None,
+        "moves_successful": move_success_count,
+        "revisits": revisits,
+        "revisit_ratio": round(revisit_ratio, 6) if revisit_ratio is not None else None,
+        "useful_gather_count": useful_gather_count,
+        "useful_consume_count": useful_consume_count,
+        "useful_eat_count": useful_eat_count,
+        "useful_drink_count": useful_drink_count,
+        "useful_events_total": useful_events_total,
+        "distance_per_useful_gain": round(distance_per_useful_gain, 6) if distance_per_useful_gain is not None else None,
+        "food_water_gathered": food_water_gathered,
+        "food_water_consumed_useful": food_water_consumed_useful,
+        "resource_conversion_efficiency": round(resource_conversion_efficiency, 6)
+        if resource_conversion_efficiency is not None
+        else None,
+        "resource_conversion_efficiency_pct": round(resource_conversion_efficiency_pct, 4)
+        if resource_conversion_efficiency_pct is not None
+        else None,
+        "critical_turns": critical_turns,
+        "critical_entries": critical_entries,
+        "critical_recovery_count": critical_recovery_count,
+        "max_critical_streak": max_critical_streak,
+        "max_invalid_streak": max_invalid_streak,
+        "local_loop_hits": local_loop_hits,
+    }
+
+    effective_protocol_version = str(
+        protocol_version
+        or run_summary.get("protocol_version")
+        or "AIB-0.1"
+    )
+    run_identity = {
+        "protocol_version": effective_protocol_version,
+        "seed": run_summary.get("seed"),
+        "scenario": run_summary.get("scenario"),
+        "provider_id": run_summary.get("provider_id"),
+        "model_profile": run_summary.get("model_profile"),
+        "model": run_summary.get("model"),
+        "prompt_variant": run_summary.get("prompt_variant"),
+        "prompt_set_sha256": run_summary.get("prompt_set_sha256"),
+    }
+    structured = build_run_analysis(
+        run_identity=run_identity,
+        run_summary=run_summary,
+        turn_logs=turn_logs,
+        rules_cfg=rules_cfg,
+        initial_tiles=initial_tiles,
+    )
+    classification = structured.get("classification", {})
+    summaries = structured.get("summaries", {})
+
+    failure_archetypes = classification.get("failure_archetypes")
+    if not isinstance(failure_archetypes, list) or not failure_archetypes:
+        failure_archetypes = detected
+
+    failure_archetypes_human = classification.get("failure_archetypes_human")
+    if not isinstance(failure_archetypes_human, list) or not failure_archetypes_human:
+        failure_archetypes_human = [_failure_label(code) for code in failure_archetypes]
+
+    primary_archetype = str(
+        classification.get("primary_failure_archetype")
+        or primary
+    )
+    primary_archetype_human = str(
+        classification.get("primary_failure_archetype_human")
+        or _failure_label(primary_archetype)
+    )
+
+    secondary_archetypes = classification.get("secondary_failure_archetypes")
+    if not isinstance(secondary_archetypes, list):
+        secondary_archetypes = [code for code in failure_archetypes if code != primary_archetype]
+
+    secondary_archetypes_human = classification.get("secondary_failure_archetypes_human")
+    if not isinstance(secondary_archetypes_human, list):
+        secondary_archetypes_human = [_failure_label(code) for code in secondary_archetypes]
+
     return {
-        "analysis_version": ANALYTICS_VERSION,
-        "kpi": {
-            "unique_cells_visited": len(visited_cells),
-            "map_cells_total": map_cells_total if map_cells_total > 0 else None,
-            "coverage_pct": round(coverage_pct, 4) if coverage_pct is not None else None,
-            "moves_successful": move_success_count,
-            "revisits": revisits,
-            "revisit_ratio": round(revisit_ratio, 6) if revisit_ratio is not None else None,
-            "useful_gather_count": useful_gather_count,
-            "useful_consume_count": useful_consume_count,
-            "useful_eat_count": useful_eat_count,
-            "useful_drink_count": useful_drink_count,
-            "useful_events_total": useful_events_total,
-            "distance_per_useful_gain": round(distance_per_useful_gain, 6) if distance_per_useful_gain is not None else None,
-            "food_water_gathered": food_water_gathered,
-            "food_water_consumed_useful": food_water_consumed_useful,
-            "resource_conversion_efficiency": round(resource_conversion_efficiency, 6)
-            if resource_conversion_efficiency is not None
-            else None,
-            "resource_conversion_efficiency_pct": round(resource_conversion_efficiency_pct, 4)
-            if resource_conversion_efficiency_pct is not None
-            else None,
-            "critical_turns": critical_turns,
-            "critical_entries": critical_entries,
-            "critical_recovery_count": critical_recovery_count,
-            "max_critical_streak": max_critical_streak,
-            "max_invalid_streak": max_invalid_streak,
-            "local_loop_hits": local_loop_hits,
-        },
-        "failure_archetypes": detected,
-        "failure_archetypes_human": [_failure_label(code) for code in detected],
-        "primary_failure_archetype": primary,
-        "primary_failure_archetype_human": _failure_label(primary),
+        "analysis_version": structured.get("analysis_version"),
+        "analysis_schema_version": structured.get("schema_version"),
+        "kpi": legacy_kpi,
+        "failure_archetypes": failure_archetypes,
+        "failure_archetypes_human": failure_archetypes_human,
+        "primary_failure_archetype": primary_archetype,
+        "primary_failure_archetype_human": primary_archetype_human,
+        "secondary_failure_archetypes": secondary_archetypes,
+        "secondary_failure_archetypes_human": secondary_archetypes_human,
+        "confidence_hint": classification.get("confidence_hint"),
+        "short_summary": summaries.get("short_summary"),
+        "detailed_summary": summaries.get("detailed_summary"),
+        "run_analysis": structured,
     }
 
 
@@ -558,6 +634,17 @@ def run_match_once(
     rules_cfg = benchmark_cfg["rules"]
     scoring_cfg = benchmark_cfg["scoring"]
     protocol_version = benchmark_cfg["protocol_version"]
+    pricing_config_path = benchmark_cfg.get("pricing_config_path", "configs/pricing.yaml")
+
+    pricing_cfg: dict[str, Any] | None = None
+    pricing_config_used: str | None = None
+    if pricing_config_path:
+        pricing_path = Path(str(pricing_config_path))
+        if not pricing_path.is_absolute():
+            pricing_path = (project_root / pricing_path).resolve()
+        pricing_config_used = str(pricing_path)
+        if pricing_path.exists():
+            pricing_cfg = load_pricing_config(pricing_path)
 
     run_max_turns = int(max_turns if max_turns is not None else benchmark_cfg["max_turns"])
 
@@ -570,6 +657,11 @@ def run_match_once(
 
     model_binding = create_model_wrapper(model_name=model_name, seed=seed, providers_cfg=providers_cfg)
     wrapper = model_binding.wrapper
+    model_pricing = resolve_model_pricing(
+        pricing_cfg=pricing_cfg,
+        provider_id=model_binding.provider_id,
+        model=wrapper.model_name,
+    )
 
     _emit_progress(
         progress_callback,
@@ -597,8 +689,18 @@ def run_match_once(
 
     tokens_sum = 0.0
     tokens_seen = False
+    prompt_tokens_sum = 0.0
+    prompt_tokens_seen = False
+    completion_tokens_sum = 0.0
+    completion_tokens_seen = False
+    cache_read_tokens_sum = 0.0
+    cache_read_tokens_seen = False
+    cache_write_tokens_sum = 0.0
+    cache_write_tokens_seen = False
     cost_sum = 0.0
     cost_seen = False
+    estimated_cost_provider_used = False
+    estimated_cost_fallback_used = False
     latency_sum_ms = 0.0
     last_survival_update: Any | None = None
 
@@ -639,8 +741,51 @@ def run_match_once(
         latency_ms = model_response.latency_ms if model_response.latency_ms is not None else measured_latency_ms
         latency_sum_ms += float(latency_ms)
 
-        tokens_sum, tokens_seen = _optional_sum_update(tokens_sum, tokens_seen, model_response.tokens_used)
-        cost_sum, cost_seen = _optional_sum_update(cost_sum, cost_seen, model_response.estimated_cost)
+        response_meta = model_response.metadata if isinstance(model_response.metadata, dict) else {}
+        prompt_tokens = _optional_int(response_meta.get("prompt_tokens"))
+        completion_tokens = _optional_int(response_meta.get("completion_tokens"))
+        cache_read_tokens = _optional_int(response_meta.get("cache_read_tokens"))
+        cache_write_tokens = _optional_int(response_meta.get("cache_write_tokens"))
+
+        turn_total_tokens = model_response.tokens_used
+        if turn_total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+            turn_total_tokens = prompt_tokens + completion_tokens
+
+        tokens_sum, tokens_seen = _optional_sum_update(tokens_sum, tokens_seen, turn_total_tokens)
+        prompt_tokens_sum, prompt_tokens_seen = _optional_sum_update(
+            prompt_tokens_sum, prompt_tokens_seen, prompt_tokens
+        )
+        completion_tokens_sum, completion_tokens_seen = _optional_sum_update(
+            completion_tokens_sum, completion_tokens_seen, completion_tokens
+        )
+        cache_read_tokens_sum, cache_read_tokens_seen = _optional_sum_update(
+            cache_read_tokens_sum, cache_read_tokens_seen, cache_read_tokens
+        )
+        cache_write_tokens_sum, cache_write_tokens_seen = _optional_sum_update(
+            cache_write_tokens_sum, cache_write_tokens_seen, cache_write_tokens
+        )
+
+        turn_estimated_cost = model_response.estimated_cost
+        if turn_estimated_cost is not None:
+            estimated_cost_provider_used = True
+        if turn_estimated_cost is None:
+            turn_estimated_cost = estimate_cost_usd(
+                pricing=model_pricing,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+            )
+            if turn_estimated_cost is not None:
+                estimated_cost_fallback_used = True
+        if turn_estimated_cost is None:
+            turn_estimated_cost = estimate_cost_from_total_tokens(
+                pricing=model_pricing,
+                total_tokens=turn_total_tokens,
+            )
+            if turn_estimated_cost is not None:
+                estimated_cost_fallback_used = True
+        cost_sum, cost_seen = _optional_sum_update(cost_sum, cost_seen, turn_estimated_cost)
 
         parse_result = parse_action(
             raw_output=model_response.raw_text,
@@ -727,8 +872,12 @@ def run_match_once(
                 "cumulative_score": world.agents[DEFAULT_AGENT_ID].score,
                 "metrics": {
                     "latency_ms": latency_ms,
-                    "tokens_used": model_response.tokens_used,
-                    "estimated_cost": model_response.estimated_cost,
+                    "tokens_used": turn_total_tokens,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "cache_write_tokens": cache_write_tokens,
+                    "estimated_cost": turn_estimated_cost,
                 },
             }
         )
@@ -762,6 +911,7 @@ def run_match_once(
         "version": __version__,
         "bench_version": __version__,
         "engine_version": __version__,
+        "protocol_version": protocol_version,
         "prompt_set_sha256": prompt_metadata["prompt_set_sha256"],
         "seed": seed,
         "scenario": scenario_key,
@@ -781,8 +931,42 @@ def run_match_once(
         "death_cause": death_cause,
         "death_cause_human": death_cause_human,
         "tokens_used": int(tokens_sum) if tokens_seen else None,
+        "token_breakdown": {
+            "prompt_tokens": int(prompt_tokens_sum) if prompt_tokens_seen else None,
+            "completion_tokens": int(completion_tokens_sum) if completion_tokens_seen else None,
+            "cache_read_tokens": int(cache_read_tokens_sum) if cache_read_tokens_seen else None,
+            "cache_write_tokens": int(cache_write_tokens_sum) if cache_write_tokens_seen else None,
+        },
         "latency_ms": round(latency_sum_ms, 3),
         "estimated_cost": round(cost_sum, 6) if cost_seen else None,
+        "estimated_cost_source": (
+            "mixed"
+            if estimated_cost_provider_used and estimated_cost_fallback_used
+            else ("provider_reported" if estimated_cost_provider_used else ("pricing_fallback" if estimated_cost_fallback_used else None))
+        ),
+        "pricing_ref": (
+            {
+                "config_path": pricing_config_used,
+                "provider_id": model_binding.provider_id,
+                "model": wrapper.model_name,
+                "input_per_million_usd": model_pricing.input_per_million_usd,
+                "output_per_million_usd": model_pricing.output_per_million_usd,
+                "cache_read_per_million_usd": model_pricing.cache_read_per_million_usd,
+                "cache_write_per_million_usd": model_pricing.cache_write_per_million_usd,
+                "fallback_input_ratio_from_total_tokens": model_pricing.fallback_input_ratio_from_total_tokens,
+            }
+            if model_pricing is not None
+            else {
+                "config_path": pricing_config_used,
+                "provider_id": model_binding.provider_id,
+                "model": wrapper.model_name,
+                "input_per_million_usd": None,
+                "output_per_million_usd": None,
+                "cache_read_per_million_usd": None,
+                "cache_write_per_million_usd": None,
+                "fallback_input_ratio_from_total_tokens": None,
+            }
+        ),
     }
 
     analysis = _build_run_analytics(
@@ -790,13 +974,20 @@ def run_match_once(
         run_summary=run_summary,
         rules_cfg=rules_cfg,
         initial_tiles=initial_tiles,
+        protocol_version=protocol_version,
     )
     run_summary["analysis_version"] = analysis["analysis_version"]
+    run_summary["analysis_schema_version"] = analysis["analysis_schema_version"]
     run_summary["kpi"] = analysis["kpi"]
     run_summary["failure_archetypes"] = analysis["failure_archetypes"]
     run_summary["failure_archetypes_human"] = analysis["failure_archetypes_human"]
     run_summary["primary_failure_archetype"] = analysis["primary_failure_archetype"]
     run_summary["primary_failure_archetype_human"] = analysis["primary_failure_archetype_human"]
+    run_summary["secondary_failure_archetypes"] = analysis["secondary_failure_archetypes"]
+    run_summary["secondary_failure_archetypes_human"] = analysis["secondary_failure_archetypes_human"]
+    run_summary["confidence_hint"] = analysis["confidence_hint"]
+    run_summary["short_summary"] = analysis["short_summary"]
+    run_summary["detailed_summary"] = analysis["detailed_summary"]
 
     run_log = {
         "version": __version__,
@@ -828,6 +1019,7 @@ def run_match_once(
             "providers": sanitize_providers_config(providers_cfg),
         },
         "run_summary": run_summary,
+        "run_analysis": analysis["run_analysis"],
         "turn_logs": turn_logs,
         "world_snapshots": {
             "initial_tiles": initial_tiles,
@@ -847,9 +1039,21 @@ def run_match_once(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     run_summary["log_path"] = str(output)
+    analysis_output = output.with_name(f"{output.stem}_analysis.json")
+    run_summary["analysis_path"] = str(analysis_output)
+
+    analysis_payload = {
+        "version": __version__,
+        "protocol_version": protocol_version,
+        "run_log_path": str(output),
+        "run_analysis": analysis["run_analysis"],
+    }
 
     with output.open("w", encoding="utf-8") as handle:
         json.dump(run_log, handle, ensure_ascii=True, indent=2, sort_keys=True)
+
+    with analysis_output.open("w", encoding="utf-8") as handle:
+        json.dump(analysis_payload, handle, ensure_ascii=True, indent=2, sort_keys=True)
 
     _emit_progress(
         progress_callback,

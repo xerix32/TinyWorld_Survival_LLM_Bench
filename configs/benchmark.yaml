@@ -1,5 +1,6 @@
-version: 0.1.19
+version: 0.1.34
 protocol_version: AIB-0.1
+pricing_config_path: configs/pricing.yaml
 default_scenario: v0_1_basic
 max_turns: 50
 invalid_action_policy: waste_turn

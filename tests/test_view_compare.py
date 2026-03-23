@@ -100,8 +100,8 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
     assert output_html.exists()
 
     rendered = output_html.read_text(encoding="utf-8")
-    assert "TinyWorld Compare Dashboard" in rendered
+    assert "Compare Dashboard" in rendered
     assert "Compare Viewer Test" in rendered
     assert "Run Browser" in rendered
-    assert "Selected Run Replay" in rendered
+    assert "Turn Timeline" in rendered
     assert "dummy_v0_1" in rendered
