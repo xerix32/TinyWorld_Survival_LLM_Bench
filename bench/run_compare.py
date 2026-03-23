@@ -42,6 +42,7 @@ COMPARE_RUN_FIELDS = [
     "bench_version",
     "engine_version",
     "prompt_set_sha256",
+    "protocol_version",
     "seed",
     "scenario",
     "provider_id",
@@ -288,6 +289,76 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
+def _normalized_unique_strings(run_rows: list[dict[str, Any]], key: str) -> tuple[list[str], int]:
+    values: set[str] = set()
+    missing = 0
+    for row in run_rows:
+        raw = row.get(key)
+        if raw is None:
+            missing += 1
+            continue
+        text = str(raw).strip()
+        if not text:
+            missing += 1
+            continue
+        values.add(text)
+    return sorted(values), missing
+
+
+def _build_compatibility_report(run_rows: list[dict[str, Any]], fallback_protocol_version: str) -> dict[str, Any]:
+    protocol_versions, protocol_missing = _normalized_unique_strings(run_rows, "protocol_version")
+    if not protocol_versions and fallback_protocol_version:
+        protocol_versions = [str(fallback_protocol_version)]
+
+    prompt_hashes, prompt_missing = _normalized_unique_strings(run_rows, "prompt_set_sha256")
+    bench_versions, bench_missing = _normalized_unique_strings(run_rows, "bench_version")
+    engine_versions, engine_missing = _normalized_unique_strings(run_rows, "engine_version")
+
+    warnings: list[dict[str, Any]] = []
+
+    def add_mixed_warning(code: str, label: str, values: list[str]) -> None:
+        if len(values) <= 1:
+            return
+        warnings.append(
+            {
+                "code": code,
+                "message": f"Mixed {label}: {', '.join(values)}",
+                "values": values,
+            }
+        )
+
+    def add_missing_warning(code: str, label: str, missing_count: int) -> None:
+        if missing_count <= 0:
+            return
+        warnings.append(
+            {
+                "code": code,
+                "message": f"Missing {label} in {missing_count}/{len(run_rows)} runs.",
+                "missing_runs": missing_count,
+                "total_runs": len(run_rows),
+            }
+        )
+
+    add_mixed_warning("mixed_protocol_version", "protocol versions", protocol_versions)
+    add_mixed_warning("mixed_prompt_hash", "prompt hashes", prompt_hashes)
+    add_mixed_warning("mixed_bench_version", "bench versions", bench_versions)
+    add_mixed_warning("mixed_engine_version", "engine versions", engine_versions)
+
+    add_missing_warning("missing_protocol_version", "protocol version", protocol_missing)
+    add_missing_warning("missing_prompt_hash", "prompt hash", prompt_missing)
+    add_missing_warning("missing_bench_version", "bench version", bench_missing)
+    add_missing_warning("missing_engine_version", "engine version", engine_missing)
+
+    return {
+        "status": "warning" if warnings else "ok",
+        "warnings": warnings,
+        "protocol_versions": protocol_versions,
+        "prompt_hashes": prompt_hashes,
+        "bench_versions": bench_versions,
+        "engine_versions": engine_versions,
+    }
+
+
 def _elapsed_seconds_from_run_rows(run_rows: list[dict[str, Any]]) -> float:
     total_ms = 0.0
     for row in run_rows:
@@ -509,6 +580,7 @@ def _build_compare_payload(
 
     prompt_hashes = sorted({str(row.get("prompt_set_sha256")) for row in run_rows if row.get("prompt_set_sha256")})
     prompt_hash = prompt_hashes[0] if len(prompt_hashes) == 1 else ("mixed" if prompt_hashes else "not_available")
+    compatibility = _build_compatibility_report(run_rows, fallback_protocol_version=protocol_version)
 
     compare_payload = {
         "meta": {
@@ -527,6 +599,7 @@ def _build_compare_payload(
             "total_runs": len(run_rows),
             "paired_seeds": True,
             "prompt_set_sha256": prompt_hash,
+            "compatibility": compatibility,
             "status": status,
         },
         "models": model_summaries,
@@ -609,6 +682,7 @@ def _build_from_logs(
         summary = dict(run_log.get("run_summary", {}))
         if not summary:
             continue
+        summary.setdefault("protocol_version", run_log.get("protocol_version"))
 
         if summary.get("estimated_cost") is None:
             provider_id = str(summary.get("provider_id", run_log.get("provider_id", "")))
@@ -1097,7 +1171,7 @@ def main() -> None:
         resume_context["from_logs_glob"] = args.from_logs_glob
         resume_context["run_id"] = compare_id
 
-        _, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
+        compare_payload, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
             paths=paths,
             compare_id=compare_id,
             requested_models=requested_models,
@@ -1241,6 +1315,7 @@ def main() -> None:
             summary = dict(run_log["run_summary"])
             scenario = str(run_log.get("scenario", scenario))
             protocol_version = str(run_log.get("protocol_version", protocol_version))
+            summary.setdefault("protocol_version", run_log.get("protocol_version", protocol_version))
 
             run_row = {
                 "compare_id": compare_id,
@@ -1643,7 +1718,7 @@ def main() -> None:
 
             status_line.finish(colorize("[100.0%] compare run completed", "36", color_enabled))
 
-        _, model_summaries, pairwise_rows, resolved_profiles = _persist_running_state(status="completed")
+        compare_payload, model_summaries, pairwise_rows, resolved_profiles = _persist_running_state(status="completed")
 
     compare_json = paths["compare_json"]
     runs_csv = paths["runs_csv"]
@@ -1662,6 +1737,16 @@ def main() -> None:
     _print_row("Models (resolved)", ", ".join(resolved_profiles), color_enabled=color_enabled)
     _print_row("Seeds", ", ".join(str(s) for s in seed_list), color_enabled=color_enabled)
     _print_row("Fairness", "Paired seeds: same seeds for all models", color_enabled=color_enabled, value_color="1;92")
+
+    compatibility = compare_payload.get("meta", {}).get("compatibility", {}) if isinstance(compare_payload, dict) else {}
+    compatibility_warnings = compatibility.get("warnings", []) if isinstance(compatibility, dict) else []
+    if compatibility_warnings:
+        _print_section("Compatibility Warnings", color_enabled)
+        for warning in compatibility_warnings:
+            message = str(warning.get("message", "")).strip()
+            if not message:
+                continue
+            _print_row("Warning", message, color_enabled=color_enabled, value_color="1;93")
 
     _print_section("Ranking (by avg score)", color_enabled)
     for row in model_summaries:

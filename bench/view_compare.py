@@ -100,202 +100,321 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-weight: 500;
     }
 
-    /* ── PODIUM CARDS ── */
-    .podium-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 12px;
-    }
-
-    .podium-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px 20px;
-      display: grid;
-      gap: 12px;
-      transition: border-color 0.15s;
-    }
-
-    .podium-card.first {
-      border-color: var(--accent);
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-
-    .podium-card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .podium-model-wrap {
-      min-width: 0;
-      flex: 1;
-      display: grid;
-      gap: 2px;
-    }
-
-    .podium-rank {
+    /* ── MICRO BADGES ── */
+    .micro-badge {
+      display: inline-block;
       font-family: var(--font-mono);
-      font-size: 1.1rem;
-      font-weight: 800;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 8px;
-      background: var(--bg-raised);
-      border: 1px solid var(--border);
-      color: var(--text-dim);
-    }
-
-    .podium-card.first .podium-rank {
-      background: var(--accent-dim);
-      color: var(--accent);
-      border-color: rgba(34, 211, 238, 0.3);
-    }
-
-    .podium-model-name {
-      font-family: var(--font-mono);
-      font-size: 0.82rem;
+      font-size: 0.54rem;
       font-weight: 700;
-      color: var(--text);
-      overflow: hidden;
-      text-overflow: ellipsis;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      line-height: 1.4;
+      letter-spacing: 0.02em;
       white-space: nowrap;
+      vertical-align: middle;
+      margin-left: 4px;
     }
-
-    .podium-card.first .podium-model-name {
-      color: var(--accent);
-    }
-
-    .podium-model-time {
+    .micro-badge.badge-score    { background: var(--accent-dim); color: var(--accent); }
+    .micro-badge.badge-fast     { background: var(--green-dim);  color: var(--green); }
+    .micro-badge.badge-cheap    { background: var(--green-dim);  color: var(--green); }
+    .micro-badge.badge-coverage { background: var(--orange-dim); color: var(--orange); }
+    .micro-badge.badge-stable   { background: rgba(167,139,250,0.12); color: var(--purple); }
+    .micro-badge.badge-survival { background: var(--red-dim);    color: var(--red); }
+    .micro-badge.badge-value   { background: rgba(6,182,212,0.12); color: #06b6d4; }
+    .badge-group { display: inline; }
+    .badge-hidden { display: none; }
+    .badge-expand {
+      display: inline-block;
       font-family: var(--font-mono);
       font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      margin-left: 3px;
+      background: var(--bg-raised);
       color: var(--text-dim);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      white-space: nowrap;
+      cursor: pointer;
+      vertical-align: middle;
+      border: 1px solid var(--border);
+    }
+    .badge-expand:hover { background: var(--border); color: var(--text); }
+
+    /* ── WINNER STRIP ── */
+    .winner-strip {
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+      border-radius: var(--radius);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .winner-strip .ws-rank {
+      font-family: var(--font-mono);
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--accent);
+      width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--accent-dim);
+      border: 1px solid rgba(34,211,238,0.3);
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .winner-strip .ws-info {
+      min-width: 0;
+    }
+    .winner-strip .ws-model {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--accent);
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
-
-    .podium-model-time .metric-value-strong {
-      color: var(--text-secondary);
-      font-weight: 800;
-    }
-
-    .podium-model-time .metric-value-cost {
-      color: var(--accent);
-      font-weight: 800;
-    }
-
-    .podium-stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      overflow: hidden;
-    }
-
-    .podium-stat {
-      background: var(--bg-raised);
-      padding: 8px 10px;
+    .winner-strip .ws-score-block {
       text-align: center;
+      padding: 0 16px;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
     }
-
-    .podium-stat .ps-value {
+    .winner-strip .ws-score {
       font-family: var(--font-mono);
-      font-size: 1rem;
+      font-size: 1.5rem;
       font-weight: 800;
       color: var(--text);
-      line-height: 1.1;
+      line-height: 1;
     }
-
-    .podium-card.first .podium-stat:first-child .ps-value {
-      color: var(--accent);
-    }
-
-    .podium-stat .ps-label {
-      font-size: 0.6rem;
+    .winner-strip .ws-score-label {
+      font-size: 0.56rem;
       font-weight: 600;
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.06em;
       margin-top: 2px;
     }
-
-    /* ── SCORE BAR CHART ── */
-    .score-chart {
-      display: grid;
-      gap: 10px;
+    .winner-strip .ws-metrics {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-left: auto;
     }
-
-    .chart-row {
-      display: grid;
-      grid-template-columns: 160px 1fr;
-      gap: 10px;
-      align-items: center;
+    .winner-strip .ws-metric {
+      text-align: center;
     }
-
-    .chart-model {
+    .winner-strip .ws-metric-value {
       font-family: var(--font-mono);
-      font-size: 0.72rem;
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .winner-strip .ws-metric-label {
+      font-size: 0.54rem;
       font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── COMPACT LEADERBOARD TABLE ── */
+    .lb-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+    }
+    .lb-table th {
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 8px 10px;
+      text-align: left;
+      background: var(--bg-raised);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 2;
+      white-space: nowrap;
+    }
+    .lb-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
       color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .lb-table tbody tr:first-child td {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .lb-table .lb-rank {
+      font-weight: 800;
+      color: var(--text-dim);
+      width: 32px;
+      text-align: center;
+    }
+    .lb-table .lb-model {
+      font-weight: 700;
+      color: var(--text);
+      white-space: normal;
+    }
+    .lb-table .lb-score {
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    /* Inline range bar */
+    .range-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      min-width: 90px;
+    }
+    .range-bar {
+      position: relative;
+      height: 8px;
+      flex: 1;
+      background: var(--bg);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .range-bar .range-fill {
+      position: absolute;
+      top: 1px; bottom: 1px;
+      border-radius: 3px;
+      opacity: 0.3;
+    }
+    .range-bar .range-fill.rank-1 { background: var(--accent); }
+    .range-bar .range-fill.rank-2 { background: var(--green); }
+    .range-bar .range-fill.rank-3 { background: var(--orange); }
+    .range-bar .range-fill.rank-other { background: var(--purple); }
+    .range-bar .range-dot {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-card);
+      z-index: 1;
+    }
+    .range-bar .range-dot.rank-1 { background: var(--accent); }
+    .range-bar .range-dot.rank-2 { background: var(--green); }
+    .range-bar .range-dot.rank-3 { background: var(--orange); }
+    .range-bar .range-dot.rank-other { background: var(--purple); }
+    .range-bar .range-label {
+      position: absolute;
+      top: -14px;
+      transform: translateX(-50%);
+      font-family: var(--font-mono);
+      font-size: 0.54rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .range-bar .range-label-min { left: 0; transform: none; }
+    .range-bar .range-label-max { right: 0; transform: none; text-align: right; }
+
+    /* ── RADAR CHART ── */
+    .radar-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px 0;
+    }
+    .radar-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+    .radar-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+    }
+    .radar-legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── DONUT CHARTS ── */
+    .donut-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px 12px;
+      padding: 8px 0;
+    }
+    @media (max-width: 600px) {
+      .donut-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .donut-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .donut-label {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .donut-winner {
+      font-family: var(--font-mono);
+      font-size: 0.60rem;
+      color: var(--text-dim);
+      max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      text-align: right;
+      text-align: center;
     }
 
-    .chart-bar-bg {
-      height: 28px;
-      background: var(--bg-raised);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
+    /* ── TWO-CHART LAYOUT ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 900px) {
+      .charts-row { grid-template-columns: 1fr; }
+    }
+
+    /* ── SORTABLE COLUMNS ── */
+    th[data-sort-key] {
+      cursor: pointer;
+      user-select: none;
       position: relative;
     }
-
-    .chart-bar-fill {
-      height: 100%;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding-right: 8px;
-      min-width: 60px;
+    th[data-sort-key]:hover { color: var(--accent); }
+    th[data-sort-key]::after {
+      content: '⇅';
+      margin-left: 5px;
+      font-size: 0.9em;
+      opacity: 0.3;
     }
-
-    .chart-bar-fill.rank-1 { background: var(--accent); }
-    .chart-bar-fill.rank-2 { background: var(--green); }
-    .chart-bar-fill.rank-3 { background: var(--orange); }
-    .chart-bar-fill.rank-other { background: var(--purple); }
-
-    .chart-bar-label {
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      font-weight: 800;
-      color: var(--bg);
-      white-space: nowrap;
+    th[data-sort-key].sort-asc::after {
+      content: '▲';
+      font-size: 0.9em;
+      opacity: 1;
+      color: var(--accent);
     }
-
-    .chart-range {
-      position: absolute;
-      top: 0;
-      right: 8px;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      font-family: var(--font-mono);
-      font-size: 0.62rem;
-      color: var(--text-dim);
-      gap: 4px;
-      pointer-events: none;
+    th[data-sort-key].sort-desc::after {
+      content: '▼';
+      font-size: 0.9em;
+      opacity: 1;
+      color: var(--accent);
     }
 
     /* ── TAB BAR ── */
@@ -381,6 +500,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     .tech-body.open {
       display: grid;
       gap: 8px;
+    }
+
+    .compat-warnings {
+      display: grid;
+      gap: 6px;
+    }
+
+    .compat-warning {
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      background: rgba(251, 146, 60, 0.10);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: #fdba74;
+      font-weight: 600;
     }
 
     .chip-row {
@@ -1222,6 +1357,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       --red-dim: rgba(220, 38, 38, 0.08);
       --orange: #ea580c;
       --orange-dim: rgba(234, 88, 12, 0.08);
+      --purple: #7c3aed;
+    }
+    [data-theme="light"] .micro-badge.badge-stable {
+      background: rgba(124, 58, 237, 0.08);
+      color: var(--purple);
     }
 
     [data-theme="light"] .tile.unknown { background: #e4e4e7; }
@@ -1267,6 +1407,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     [data-theme="light"] .seed-pair.active {
       border-color: rgba(8, 145, 178, 0.4);
       background: rgba(8, 145, 178, 0.05);
+    }
+
+    [data-theme="light"] .compat-warning {
+      color: #9a3412;
+      border-color: rgba(180, 83, 9, 0.35);
+      background: rgba(255, 237, 213, 0.85);
     }
 
     /* ── THEME TOGGLE ── */
@@ -1317,33 +1463,62 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     <!-- TAB 1: LEADERBOARD -->
     <div class=\"tab-panel active\" id=\"tab-leaderboard\">
-      <section id=\"compareSummary\"></section>
+      <section id=\"winnerStrip\"></section>
 
       <div class=\"panel\">
-        <div class=\"panel-title\" data-tip=\"Visual comparison of average scores. Bar length = avg score. Hover the bar to see the best–worst range\" class=\"tip-down\">Score Comparison</div>
-        <div id=\"scoreChart\" class=\"score-chart\"></div>
+        <div class=\"panel-title\" data-tip=\"All models ranked by average score. Badges highlight category leaders.\" class=\"tip-down\">Leaderboard</div>
+        <div class=\"table-wrap\">
+          <table class=\"lb-table\">
+            <thead>
+              <tr>
+                <th data-sort-key=\"rank\">#</th>
+                <th>Model</th>
+                <th data-tip=\"Average score across all runs\" class=\"tip-down\" data-sort-key=\"avg_final_score\" data-sort-desc=\"1\">Avg Score</th>
+                <th data-tip=\"Score spread: worst to best run. Dot = average.\" class=\"tip-down\">Range</th>
+                <th data-tip=\"Percentage of runs where agent survived all turns\" class=\"tip-down\" data-sort-key=\"survival_pct\" data-sort-desc=\"1\">Survival</th>
+                <th data-tip=\"Average API response time per turn\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Latency</th>
+                <th data-tip=\"Estimated total cost across all runs\" class=\"tip-down\" data-sort-key=\"estimated_cost_total\">Cost</th>
+                <th data-tip=\"Score points per dollar spent (higher = better value)\" class=\"tip-down\" data-sort-key=\"score_per_cost\" data-sort-desc=\"1\">Score/$</th>
+                <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
+              </tr>
+            </thead>
+            <tbody id=\"lbBody\"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class=\"charts-row\">
+        <div class=\"panel\">
+          <div class=\"panel-title\" data-tip=\"Normalised profile across key dimensions. Larger area = more well-rounded model.\" class=\"tip-down\">Model Profile</div>
+          <div class=\"radar-wrap\"><svg id=\"radarChart\" width=\"440\" height=\"360\"></svg></div>
+          <div id=\"radarLegend\" class=\"radar-legend\"></div>
+        </div>
+        <div class=\"panel\">
+          <div class=\"panel-title\" data-tip=\"Share of each model across six categories. Larger slice = stronger in that dimension.\" class=\"tip-down\">Category Breakdown</div>
+          <div id=\"donutGrid\" class=\"donut-grid\"></div>
+        </div>
       </div>
 
       <div class=\"panel\">
-        <div class=\"panel-title\">Model Ranking</div>
+        <div class=\"panel-title\">Detailed Metrics</div>
         <div class=\"table-wrap\">
           <table>
             <thead>
               <tr>
-                <th>#</th>
+                <th data-sort-key=\"rank\">#</th>
                 <th>Model</th>
-                <th data-tip=\"Average score across all runs for this model\" class=\"tip-down\">Avg Score</th>
-                <th data-tip=\"Highest score in a single run\" class=\"tip-down\">Best</th>
-                <th data-tip=\"Lowest score in a single run\" class=\"tip-down\">Worst</th>
-                <th data-tip=\"Average number of turns survived out of maximum turns\" class=\"tip-down\">Avg Survived</th>
-                <th data-tip=\"Maximum turns survived in a single run\" class=\"tip-down\">Best Survived</th>
-                <th data-tip=\"Percentage of runs where the agent died before reaching max turns\" class=\"tip-down\">Death Rate</th>
-                <th data-tip=\"Average number of invalid actions per run (penalised -2 each)\" class=\"tip-down\">Avg Invalid</th>
-                <th data-tip=\"Average map coverage percentage (unique visited cells / total map cells)\" class=\"tip-down\">Avg Coverage</th>
-                <th data-tip=\"Average revisit ratio (revisited moves / total successful moves)\" class=\"tip-down\">Avg Revisit</th>
-                <th data-tip=\"Average resource conversion efficiency percentage\" class=\"tip-down\">Avg Conversion</th>
-                <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\">Avg Latency / turn</th>
-                <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\">Total Tokens</th>
+                <th data-tip=\"Average score across all runs for this model\" class=\"tip-down\" data-sort-key=\"avg_final_score\" data-sort-desc=\"1\">Avg Score</th>
+                <th data-tip=\"Highest score in a single run\" class=\"tip-down\" data-sort-key=\"best_final_score\" data-sort-desc=\"1\">Best</th>
+                <th data-tip=\"Lowest score in a single run\" class=\"tip-down\" data-sort-key=\"worst_final_score\" data-sort-desc=\"1\">Worst</th>
+                <th data-tip=\"Average number of turns survived out of maximum turns\" class=\"tip-down\" data-sort-key=\"avg_turns_survived\" data-sort-desc=\"1\">Avg Survived</th>
+                <th data-tip=\"Maximum turns survived in a single run\" class=\"tip-down\" data-sort-key=\"max_turns_survived\" data-sort-desc=\"1\">Best Survived</th>
+                <th data-tip=\"Percentage of runs where the agent died before reaching max turns\" class=\"tip-down\" data-sort-key=\"death_rate_pct\">Death Rate</th>
+                <th data-tip=\"Average number of invalid actions per run (penalised -2 each)\" class=\"tip-down\" data-sort-key=\"avg_invalid_actions\">Avg Invalid</th>
+                <th data-tip=\"Average map coverage percentage (unique visited cells / total map cells)\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Avg Coverage</th>
+                <th data-tip=\"Average revisit ratio (revisited moves / total successful moves)\" class=\"tip-down\" data-sort-key=\"avg_revisit_ratio\">Avg Revisit</th>
+                <th data-tip=\"Average resource conversion efficiency percentage\" class=\"tip-down\" data-sort-key=\"avg_conversion_efficiency_pct\" data-sort-desc=\"1\">Avg Conversion</th>
+                <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Avg Latency / turn</th>
+                <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\" data-sort-key=\"tokens_used_total\" data-sort-desc=\"1\">Total Tokens</th>
               </tr>
             </thead>
             <tbody id=\"rankingBody\"></tbody>
@@ -1478,6 +1653,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </button>
       <div class=\"tech-body\" id=\"techBody\">
         <div class=\"chip-row\" id=\"metaChips\"></div>
+        <div class=\"compat-warnings\" id=\"compatWarnings\"></div>
         <div class=\"protocol-panel\" id=\"protocolPanel\"></div>
       </div>
     </section>
@@ -1511,6 +1687,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     };
 
     const metaChips = document.getElementById('metaChips');
+    const compatWarnings = document.getElementById('compatWarnings');
     const rankingBody = document.getElementById('rankingBody');
     const h2hBody = document.getElementById('h2hBody');
 
@@ -1540,7 +1717,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const scoreEvents = document.getElementById('scoreEvents');
     const timelineBody = document.getElementById('timelineBody');
 
+    // 16 maximally distinct hues – no two adjacent colours should be confusable
+    const MODEL_COLORS = [
+      '#22d3ee', // cyan
+      '#f97316', // orange
+      '#a78bfa', // violet
+      '#22c55e', // green
+      '#f43f5e', // rose
+      '#eab308', // yellow
+      '#3b82f6', // blue
+      '#ec4899', // pink
+      '#14b8a6', // teal
+      '#f59e0b', // amber
+      '#8b5cf6', // purple
+      '#84cc16', // lime
+      '#ef4444', // red
+      '#06b6d4', // sky
+      '#d946ef', // fuchsia
+      '#10b981', // emerald
+    ];
     const models = Array.isArray(DATA.models) ? DATA.models : [];
+    models.forEach((m, i) => { m._color = MODEL_COLORS[i % MODEL_COLORS.length]; });
     const pairwise = Array.isArray(DATA.pairwise) ? DATA.pairwise : [];
     const runs = Array.isArray(DATA.runs) ? DATA.runs : [];
     const meta = DATA.meta || {};
@@ -1788,6 +1985,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (!Number.isFinite(raw) || raw < 0) return sum;
         return sum + raw;
       }, 0);
+      const compatibility = (meta.compatibility && typeof meta.compatibility === 'object') ? meta.compatibility : {};
+      const compatibilityWarnings = Array.isArray(compatibility.warnings) ? compatibility.warnings : [];
       const modelCosts = models
         .map(modelRow => Number(modelRow?.estimated_cost_total))
         .filter(value => Number.isFinite(value));
@@ -1808,10 +2007,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         chip('total compare time', formatDurationFromMs(compareDurationMs), 'Wall-clock compare duration (from compare start id timestamp to artifact generation)'),
         chip('total model time', formatDurationFromMs(totalModelTimeMs || null), 'Sum of all model API latency across all runs'),
         chip('estimated cost total', formatUsd(totalModelCost, 'not available'), 'Estimated total USD cost across all runs (provider-reported or deterministic fallback)'),
+        chip('compatibility', compatibilityWarnings.length ? 'warnings' : 'ok', 'Cross-run metadata consistency (protocol, prompt hash, bench version, engine version)'),
         chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12), 'SHA-256 hash of the prompt set. Same hash = identical prompts across runs'),
         chip('fairness', 'paired seeds', 'All models play the exact same maps (paired seeds) so score differences reflect model ability, not map luck'),
       ];
       metaChips.innerHTML = chips.join('');
+
+      if (compatWarnings) {
+        if (!compatibilityWarnings.length) {
+          compatWarnings.innerHTML = '';
+        } else {
+          compatWarnings.innerHTML = compatibilityWarnings
+            .map(item => `<div class="compat-warning">warning: ${escapeHtml(String(item?.message || 'compatibility mismatch detected'))}</div>`)
+            .join('');
+        }
+      }
 
       const protocolChip = document.getElementById('protocolChip');
       if (protocolChip) {
@@ -1908,64 +2118,344 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return null;
     }
 
-    function renderCompareSummary() {
-      const el = document.getElementById('compareSummary');
+    function modelScorePerCost(m) {
+      const score = Number(m.avg_final_score ?? 0);
+      const cost = Number(m.estimated_cost_total ?? 0);
+      if (cost <= 0 || score <= 0) return null;
+      const runs = Number(m.num_runs ?? 1);
+      const costPerRun = cost / runs;
+      return costPerRun > 0 ? score / costPerRun : null;
+    }
+
+    /* ── Sortable table system ── */
+    let currentSort = { key: 'avg_final_score', desc: true };
+
+    function getSortValue(m, key) {
+      if (key === 'rank') return Number(m.rank ?? 999);
+      if (key === 'survival_pct') return 100 - Number(m.death_rate_pct ?? 100);
+      if (key === 'latency_per_turn') return modelLatencyPerTurn(m) ?? Infinity;
+      if (key === 'score_per_cost') return modelScorePerCost(m) ?? -Infinity;
+      return Number(m[key] ?? 0);
+    }
+
+    function sortModels(key, desc) {
+      currentSort = { key, desc };
+      models.sort((a, b) => {
+        const va = getSortValue(a, key);
+        const vb = getSortValue(b, key);
+        return desc ? vb - va : va - vb;
+      });
+      // update all sort indicators
+      document.querySelectorAll('th[data-sort-key]').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.getAttribute('data-sort-key') === key) {
+          th.classList.add(desc ? 'sort-desc' : 'sort-asc');
+        }
+      });
+      renderCompactLeaderboard();
+      renderRanking();
+      renderRadarChart();
+      renderDonutCharts();
+    }
+
+    document.addEventListener('click', (e) => {
+      const th = e.target.closest('th[data-sort-key]');
+      if (!th) return;
+      const key = th.getAttribute('data-sort-key');
+      const defaultDesc = th.hasAttribute('data-sort-desc');
+      // toggle direction if same key, otherwise use default
+      const desc = currentSort.key === key ? !currentSort.desc : defaultDesc;
+      sortModels(key, desc);
+    });
+
+    function computeBadges() {
+      if (!models.length) return;
+      models.forEach(m => { m.badges = []; });
+
+      const sorted = (arr, fn) => [...arr].sort(fn);
+
+      // Best Score
+      sorted(models, (a, b) => (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0))[0]
+        .badges.push({ label: '🏆 Best Score', cls: 'badge-score' });
+
+      // Fastest
+      const withLatency = models.filter(m => modelLatencyPerTurn(m) != null);
+      if (withLatency.length) {
+        sorted(withLatency, (a, b) => modelLatencyPerTurn(a) - modelLatencyPerTurn(b))[0]
+          .badges.push({ label: '⚡ Fastest', cls: 'badge-fast' });
+      }
+
+      // Cheapest
+      const withCost = models.filter(m => m.estimated_cost_total != null && m.estimated_cost_total > 0);
+      if (withCost.length) {
+        sorted(withCost, (a, b) => a.estimated_cost_total - b.estimated_cost_total)[0]
+          .badges.push({ label: '💰 Cheapest', cls: 'badge-cheap' });
+      }
+
+      // Best Coverage
+      const withCoverage = models.filter(m => m.avg_coverage_pct != null);
+      if (withCoverage.length) {
+        sorted(withCoverage, (a, b) => (b.avg_coverage_pct ?? 0) - (a.avg_coverage_pct ?? 0))[0]
+          .badges.push({ label: '🗺️ Best Coverage', cls: 'badge-coverage' });
+      }
+
+      // Most Stable
+      const withSpread = models.filter(m => m.best_final_score != null && m.worst_final_score != null);
+      if (withSpread.length) {
+        sorted(withSpread, (a, b) =>
+          (a.best_final_score - a.worst_final_score) - (b.best_final_score - b.worst_final_score)
+        )[0].badges.push({ label: '🎯 Most Stable', cls: 'badge-stable' });
+      }
+
+      // Best Survival
+      const withSurvival = models.filter(m => m.death_rate_pct != null);
+      if (withSurvival.length) {
+        sorted(withSurvival, (a, b) => (a.death_rate_pct ?? 100) - (b.death_rate_pct ?? 100))[0]
+          .badges.push({ label: '❤️ Best Survival', cls: 'badge-survival' });
+      }
+
+      // Best Value (score per dollar)
+      const withValue = models.filter(m => modelScorePerCost(m) != null);
+      if (withValue.length) {
+        sorted(withValue, (a, b) => modelScorePerCost(b) - modelScorePerCost(a))[0]
+          .badges.push({ label: '💎 Best Value', cls: 'badge-value' });
+      }
+    }
+
+    function renderBadges(m, maxVisible = 99) {
+      if (!m.badges || !m.badges.length) return '';
+      const visible = m.badges.slice(0, maxVisible);
+      const hidden = m.badges.slice(maxVisible);
+      let html = '<span class="badge-group">';
+      html += visible.map(b => `<span class="micro-badge ${b.cls}">${b.label}</span>`).join('');
+      if (hidden.length) {
+        const hiddenHtml = hidden.map(b => `<span class="micro-badge ${b.cls}">${b.label}</span>`).join('');
+        html += `<span class="badge-expand" data-tip="${hidden.map(b=>b.label).join(', ')}"
+                  onclick="event.stopPropagation();this.style.display='none';this.parentElement.querySelector('.badge-hidden').style.display='inline'">+${hidden.length}</span>`;
+        html += `<span class="badge-hidden">${hiddenHtml}</span>`;
+      }
+      html += '</span>';
+      return html;
+    }
+
+    function renderWinnerStrip() {
+      const el = document.getElementById('winnerStrip');
       if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
 
-      el.innerHTML = `<div class="podium-grid">
-        ${models.map((m, i) => {
-          const isFirst = i === 0;
-          const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
-          const avgLatencyPerCall = formatDurationFromMs(modelLatencyPerTurn(m));
-          const totalModelTime = formatDurationFromMs(m.latency_ms_total);
-          const totalModelCost = formatUsd(m.estimated_cost_total, 'not available');
-          const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
-          const revisit = formatFloat(m.avg_revisit_ratio, 2, 'n/a');
-          const conversion = m.avg_conversion_efficiency_pct == null ? 'n/a' : `${formatFloat(m.avg_conversion_efficiency_pct, 1)}%`;
-          return `<div class="podium-card ${isFirst ? 'first' : ''}">
-            <div class="podium-card-header">
-              <div class="podium-rank">${m.rank}</div>
-              <div class="podium-model-wrap">
-                <div class="podium-model-name">${m.model_profile}</div>
-                <div class="podium-model-time">total time <span class="metric-value-strong">${totalModelTime}</span> | cost <span class="metric-value-cost">${totalModelCost}</span></div>
-              </div>
-            </div>
-            <div class="podium-stats">
-              <div class="podium-stat" data-tip="Average score across all runs"><div class="ps-value">${formatFloat(m.avg_final_score, 2)}</div><div class="ps-label">Avg Score</div></div>
-              <div class="podium-stat" data-tip="Percentage of runs where the agent survived all turns"><div class="ps-value">${survivalRate}%</div><div class="ps-label">Survival</div></div>
-              <div class="podium-stat" data-tip="Average API response time per turn"><div class="ps-value">${avgLatencyPerCall}</div><div class="ps-label">Avg Latency</div></div>
-              <div class="podium-stat" data-tip="Average map coverage percentage (unique visited cells / total map cells)"><div class="ps-value">${coverage}</div><div class="ps-label">Coverage</div></div>
-              <div class="podium-stat" data-tip="Average revisit ratio (revisited moves / total successful moves)"><div class="ps-value">${revisit}</div><div class="ps-label">Revisit</div></div>
-              <div class="podium-stat" data-tip="Average resource conversion efficiency percentage"><div class="ps-value">${conversion}</div><div class="ps-label">Conversion</div></div>
-            </div>
-          </div>`;
-        }).join('')}
+      const m = models[0];
+      const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
+      const latency = formatDurationFromMs(modelLatencyPerTurn(m));
+      const cost = formatUsd(m.estimated_cost_total, 'n/a');
+      const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
+
+      el.innerHTML = `<div class="winner-strip">
+        <div class="ws-rank">1</div>
+        <div class="ws-info">
+          <div class="ws-model"><span style="color:${m._color || '#22d3ee'}">${m.model_profile}</span> ${renderBadges(m)}</div>
+        </div>
+        <div class="ws-score-block">
+          <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
+          <div class="ws-score-label">Avg Score</div>
+        </div>
+        <div class="ws-metrics">
+          <div class="ws-metric" data-tip="Percentage of runs where the agent survived all turns"><div class="ws-metric-value">${survivalRate}%</div><div class="ws-metric-label">Survival</div></div>
+          <div class="ws-metric" data-tip="Average API response time per turn"><div class="ws-metric-value">${latency}</div><div class="ws-metric-label">Latency</div></div>
+          <div class="ws-metric" data-tip="Estimated total cost across all runs"><div class="ws-metric-value">${cost}</div><div class="ws-metric-label">Cost</div></div>
+          <div class="ws-metric" data-tip="Average map coverage percentage"><div class="ws-metric-value">${coverage}</div><div class="ws-metric-label">Coverage</div></div>
+        </div>
       </div>`;
     }
 
-    function renderScoreChart() {
-      const el = document.getElementById('scoreChart');
+    function renderCompactLeaderboard() {
+      const el = document.getElementById('lbBody');
       if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
 
-      const maxScore = Math.max(...models.map(m => Number(m.best_final_score ?? m.avg_final_score ?? 0)));
-      const chartMax = Math.max(1, maxScore * 1.1);
+      const allScores = models.flatMap(m => [
+        Number(m.best_final_score ?? m.avg_final_score ?? 0),
+        Number(m.worst_final_score ?? m.avg_final_score ?? 0)
+      ]);
+      const globalMax = Math.max(...allScores);
+      const globalMin = Math.min(...allScores);
+      const chartMin = Math.max(0, globalMin - (globalMax - globalMin) * 0.15);
+      const chartMax = globalMax + (globalMax - globalMin) * 0.15 || 1;
+      const chartSpan = chartMax - chartMin || 1;
 
       el.innerHTML = models.map((m, i) => {
         const avg = Number(m.avg_final_score ?? 0);
         const best = Number(m.best_final_score ?? avg);
         const worst = Number(m.worst_final_score ?? avg);
-        const avgPct = Math.max(8, (avg / chartMax) * 100);
+        const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
+        const latency = formatDurationFromMs(modelLatencyPerTurn(m));
+        const cost = formatUsd(m.estimated_cost_total, 'n/a');
+        const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
         const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-        const rangeText = best !== worst ? `${formatFloat(worst, 0)}–${formatFloat(best, 0)}` : '';
 
-        return `<div class="chart-row">
-          <div class="chart-model">${m.model_profile}</div>
-          <div class="chart-bar-bg">
-            <div class="chart-bar-fill ${rankClass}" style="width:${avgPct.toFixed(1)}%">
-              <span class="chart-bar-label">${formatFloat(avg, 1)}</span>
-            </div>
-            ${rangeText ? `<div class="chart-range">${rangeText}</div>` : ''}
-          </div>
+        const worstPct = ((worst - chartMin) / chartSpan * 100).toFixed(1);
+        const bestPct = ((best - chartMin) / chartSpan * 100).toFixed(1);
+        const avgPct = ((avg - chartMin) / chartSpan * 100).toFixed(1);
+        const widthPct = (bestPct - worstPct).toFixed(1);
+
+        const mColor = m._color || '#888';
+        const rangeBar = best !== worst
+          ? `<div class="range-bar" data-tip="${formatFloat(worst, 0)} – ${formatFloat(avg, 1)} – ${formatFloat(best, 0)}">
+              <div class="range-fill" style="left:${worstPct}%;width:${widthPct}%;background:${mColor};opacity:0.25"></div>
+              <div class="range-dot" style="left:${avgPct}%;background:${mColor}"></div>
+            </div>`
+          : `<div class="range-bar" data-tip="All runs: ${formatFloat(avg, 1)}">
+              <div class="range-dot" style="left:${avgPct}%;background:${mColor}"></div>
+            </div>`;
+
+        return `<tr>
+          <td class="lb-rank">${m.rank}</td>
+          <td class="lb-model"><span style="color:${mColor}">${m.model_profile}</span> ${renderBadges(m, 2)}</td>
+          <td class="lb-score">${formatFloat(avg, 2)}</td>
+          <td><div class="range-bar-wrap">${rangeBar}</div></td>
+          <td>${survivalRate}%</td>
+          <td>${latency}</td>
+          <td>${cost}</td>
+          <td>${(() => { const v = modelScorePerCost(m); return v != null ? formatFloat(v, 0) : 'n/a'; })()}</td>
+          <td>${coverage}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    /* ── Radar Chart ── */
+    function renderRadarChart() {
+      const svg = document.getElementById('radarChart');
+      const legendEl = document.getElementById('radarLegend');
+      if (!svg || !models.length) { if (svg) svg.innerHTML = ''; if (legendEl) legendEl.innerHTML = ''; return; }
+
+      // use per-model colors from _color
+      const axes = [
+        { key: 'score',      label: 'Score',      tip: 'Avg final score normalised to best model (0-100)' },
+        { key: 'survival',   label: 'Survival',   tip: 'Avg turns survived normalised to best model (0-100)' },
+        { key: 'coverage',   label: 'Coverage',   tip: '% of unique map cells visited' },
+        { key: 'efficiency', label: 'Efficiency',  tip: 'Resource conversion: % of gathered food/water consumed' },
+        { key: 'stability',  label: 'Stability',  tip: 'Consistency: 100 − normalised score spread (smaller spread = higher)' },
+      ];
+      const N = axes.length;
+      const cx = 220, cy = 170, R = 130;
+
+      // normalise each metric 0-100
+      const maxScore = Math.max(...models.map(m => Number(m.avg_final_score ?? 0)), 1);
+      const maxSurvived = Math.max(...models.map(m => Number(m.avg_turns_survived ?? 0)), 1);
+      const vals = models.map(m => {
+        const spread = (Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0));
+        const maxSpread = Math.max(...models.map(x => (Number(x.best_final_score ?? 0) - Number(x.worst_final_score ?? 0))), 1);
+        const survPct = 100 - Number(m.death_rate_pct ?? 0);
+        return {
+          score:      Number(m.avg_final_score ?? 0) / maxScore * 100,
+          survival:   survPct > 0 ? survPct : (Number(m.avg_turns_survived ?? 0) / maxSurvived * 100),
+          coverage:   Number(m.avg_coverage_pct ?? 0),
+          efficiency: Number(m.avg_conversion_efficiency_pct ?? 0),
+          stability:  100 - (spread / maxSpread * 100),
+        };
+      });
+
+      // helper: angle for axis i (start at top, go clockwise)
+      const angle = i => (Math.PI * 2 * i / N) - Math.PI / 2;
+      const px = (i, r) => cx + r * Math.cos(angle(i));
+      const py = (i, r) => cy + r * Math.sin(angle(i));
+
+      let html = '';
+
+      // grid rings
+      [0.25, 0.5, 0.75, 1].forEach(frac => {
+        const pts = Array.from({length: N}, (_, i) => `${px(i, R*frac)},${py(i, R*frac)}`).join(' ');
+        html += `<polygon points="${pts}" fill="none" stroke="var(--border)" stroke-width="1" opacity="0.5"/>`;
+      });
+
+      // axis lines + labels
+      axes.forEach((a, i) => {
+        html += `<line x1="${cx}" y1="${cy}" x2="${px(i, R)}" y2="${py(i, R)}" stroke="var(--border)" stroke-width="1" opacity="0.5"/>`;
+        const lx = px(i, R + 18);
+        const ly = py(i, R + 18);
+        const anchor = Math.abs(lx - cx) < 5 ? 'middle' : lx > cx ? 'start' : 'end';
+        html += `<text x="${lx}" y="${ly}" text-anchor="${anchor}" dominant-baseline="central"
+                  fill="var(--text-dim)" font-family="var(--font-mono)" font-size="10" font-weight="600"
+                  data-tip="${a.tip}" style="cursor:help">${a.label}</text>`;
+      });
+
+      // model polygons (reverse so rank-1 is on top)
+      [...models].reverse().forEach((m, ri) => {
+        const i = models.length - 1 - ri;
+        const v = vals[i];
+        const mColor = m._color || '#888';
+        const pts = axes.map((a, ai) => {
+          const pct = (v[a.key] ?? 0) / 100;
+          return `${px(ai, R * pct)},${py(ai, R * pct)}`;
+        }).join(' ');
+        html += `<polygon points="${pts}" fill="${mColor}" fill-opacity="0.12"
+                  stroke="${mColor}" stroke-width="2" stroke-opacity="0.8"/>`;
+        // dots at vertices (with tooltip)
+        axes.forEach((a, ai) => {
+          const pct = (v[a.key] ?? 0) / 100;
+          const val = (v[a.key] ?? 0).toFixed(1);
+          html += `<circle cx="${px(ai, R * pct)}" cy="${py(ai, R * pct)}" r="5"
+                    fill="${mColor}" opacity="0.9" data-tip="${m.model_profile}: ${a.label} ${val}" style="cursor:pointer"/>`;
+        });
+      });
+
+      svg.innerHTML = html;
+
+      // legend
+      legendEl.innerHTML = models.map((m, i) => {
+        return `<div class="radar-legend-item">
+          <span class="radar-legend-dot" style="background:${m._color || '#888'}"></span>
+          ${m.model_profile}
+        </div>`;
+      }).join('');
+    }
+
+    /* ── Donut Charts ── */
+    function renderDonutCharts() {
+      const el = document.getElementById('donutGrid');
+      if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
+
+      const categories = [
+        { label: '🏆 Score',      tip: 'Average final score across all runs (higher = better)', fn: m => Number(m.avg_final_score ?? 0) },
+        { label: '⚡ Speed',      tip: 'Inverse of avg API latency per turn (lower latency = bigger slice)', fn: m => { const l = modelLatencyPerTurn(m); return l ? 1 / l : 0; } },
+        { label: '⚙️ Efficiency', tip: 'Resource conversion: % of gathered food/water successfully consumed (eat+drink / total gathered)', fn: m => Number(m.avg_conversion_efficiency_pct ?? 0) },
+        { label: '🗺️ Coverage',  tip: 'Map exploration: % of unique cells visited out of total map cells', fn: m => Number(m.avg_coverage_pct ?? 0) },
+        { label: '❤️ Survival',  tip: 'Avg turns survived (when all die: raw turn count; otherwise: 100 − death rate %)', fn: m => { const s = 100 - Number(m.death_rate_pct ?? 100); return s > 0 ? s : Number(m.avg_turns_survived ?? 0); } },
+        { label: '🎯 Stability', tip: 'Inverse of score spread (best − worst). Smaller spread = bigger slice = more consistent', fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return s > 0 ? 1 / s : 1; } },
+      ];
+
+      el.innerHTML = categories.map(cat => {
+        const raw = models.map(cat.fn);
+        const total = raw.reduce((a, b) => a + b, 0) || 1;
+        const size = 100, r = 36, ctr = 50;
+        let cumAngle = -Math.PI / 2;
+        let bestIdx = 0;
+        raw.forEach((v, i) => { if (v > raw[bestIdx]) bestIdx = i; });
+
+        let arcs = '';
+        models.forEach((m, i) => {
+          const frac = raw[i] / total;
+          if (frac <= 0) return;
+          const startAngle = cumAngle;
+          const endAngle = cumAngle + frac * Math.PI * 2;
+          cumAngle = endAngle;
+          const large = frac > 0.5 ? 1 : 0;
+          const x1 = ctr + r * Math.cos(startAngle);
+          const y1 = ctr + r * Math.sin(startAngle);
+          const x2 = ctr + r * Math.cos(endAngle - 0.001);
+          const y2 = ctr + r * Math.sin(endAngle - 0.001);
+          const mColor = m._color || '#888';
+          const opacity = i === bestIdx ? 1 : 0.5;
+          const pctLabel = (frac * 100).toFixed(1);
+          const rawLabel = raw[i] < 1 ? raw[i].toFixed(3) : raw[i] < 100 ? raw[i].toFixed(1) : Math.round(raw[i]);
+          arcs += `<path d="M${ctr},${ctr} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z"
+                    fill="${mColor}" opacity="${opacity}" data-tip="${m.model_profile}: ${rawLabel} (${pctLabel}%)" style="cursor:pointer"/>`;
+        });
+
+        // hollow centre
+        arcs += `<circle cx="${ctr}" cy="${ctr}" r="${r * 0.55}" fill="var(--bg-card)"/>`;
+
+        return `<div class="donut-cell">
+          <div class="donut-label" data-tip="${cat.tip}">${cat.label}</div>
+          <svg viewBox="0 0 ${size} ${size}" width="100" height="100">${arcs}</svg>
+          <div class="donut-winner" data-tip="Leader: ${models[bestIdx].model_profile}">${models[bestIdx].model_profile}</div>
         </div>`;
       }).join('');
     }
@@ -2574,10 +3064,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (vEl) vEl.textContent = `v${meta.bench_version || meta.version || '?'}`;
       initTooltips();
       enrichModelsFromRuns();
-      renderCompareSummary();
+      computeBadges();
+      renderWinnerStrip();
+      renderCompactLeaderboard();
+      // mark default sort column
+      document.querySelectorAll('th[data-sort-key="avg_final_score"]').forEach(th => th.classList.add('sort-desc'));
       renderMetaChips();
       renderProtocolPanel();
-      renderScoreChart();
+      renderRadarChart();
+      renderDonutCharts();
       renderRanking();
       renderPairwise();
       initFilters();

@@ -9,6 +9,7 @@ import yaml
 
 from bench.common import load_yaml_file, run_match_once
 from bench.run_compare import (
+    _build_compatibility_report,
     _build_jobs,
     _build_from_logs,
     _compare_paths,
@@ -108,6 +109,30 @@ def test_build_pairwise_summary_on_paired_seeds() -> None:
     assert row["ties"] == 0
     assert row["win_rate_a_vs_b"] == 50.0
     assert row["avg_delta_a_minus_b"] == 0.0
+
+
+def test_build_compatibility_report_detects_mixed_versions() -> None:
+    rows = [
+        {
+            "protocol_version": "AIB-0.1",
+            "prompt_set_sha256": "hash_a",
+            "bench_version": "0.1.20",
+            "engine_version": "0.1.20",
+        },
+        {
+            "protocol_version": "AIB-0.1",
+            "prompt_set_sha256": "hash_b",
+            "bench_version": "0.1.27",
+            "engine_version": "0.1.27",
+        },
+    ]
+
+    report = _build_compatibility_report(rows, fallback_protocol_version="AIB-0.1")
+    assert report["status"] == "warning"
+    warning_codes = {warning["code"] for warning in report["warnings"]}
+    assert "mixed_prompt_hash" in warning_codes
+    assert "mixed_bench_version" in warning_codes
+    assert "mixed_engine_version" in warning_codes
 
 
 def test_run_compare_smoke_dummy_cli(tmp_path: Path, monkeypatch) -> None:

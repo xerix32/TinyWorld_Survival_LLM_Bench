@@ -20,6 +20,12 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
             "total_runs": 1,
             "paired_seeds": True,
             "prompt_set_sha256": "abc123",
+            "compatibility": {
+                "status": "warning",
+                "warnings": [
+                    {"code": "mixed_engine_version", "message": "Mixed engine versions: 0.1.20, 0.1.27"}
+                ],
+            },
         },
         "models": [
             {
@@ -105,3 +111,4 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
     assert "Run Browser" in rendered
     assert "Turn Timeline" in rendered
     assert "dummy_v0_1" in rendered
+    assert "Mixed engine versions" in rendered
