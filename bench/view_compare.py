@@ -2128,10 +2128,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return costPerRun > 0 ? score / costPerRun : null;
     }
 
-    // Best premium value: rewards quality-adjacent models that are still cost-effective.
-    // Uses a geometric mean of normalised metrics weighted toward score,
-    // gated by proximity to the top scorer so cheap-but-weak models can't win.
-    function computeBestPremiumValueScore(m, allModels) {
+    // Premium Sweet Spot: best high-end tradeoff — "most of the top model's quality
+    // for the least premium". Cost is flipped: reference is the MOST expensive model,
+    // so the priciest model self-eliminates and cheap-vs-cheaper differences compress.
+    // S^2 amplifies quality gaps so near-top models are rewarded.
+    function computePremiumSweetSpotScore(m, allModels) {
       const score = Number(m.avg_final_score ?? 0);
       const coverage = Number(m.avg_coverage_pct ?? 0);
       const latency = modelLatencyPerTurn(m);
@@ -2143,23 +2144,18 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const maxScore = Math.max(...allModels.map(x => Number(x.avg_final_score ?? 0)), 1);
       const maxCov = Math.max(...allModels.map(x => Number(x.avg_coverage_pct ?? 0)), 1);
       const minLat = Math.min(...allModels.map(x => modelLatencyPerTurn(x) ?? Infinity));
-      const minCost = Math.min(...allModels.filter(x => {
+      const maxCostPerRun = Math.max(...allModels.map(x => {
         const c = Number(x.estimated_cost_total ?? 0) / Number(x.num_runs ?? 1);
-        return c > 0;
-      }).map(x => Number(x.estimated_cost_total ?? 0) / Number(x.num_runs ?? 1)));
+        return c > 0 ? c : 0;
+      }));
 
-      const S = score / maxScore;
+      const S   = score / maxScore;
       const COV = coverage / maxCov;
       const SPD = minLat / latency;
-      const CST = minCost / costPerRun;
+      // Flipped cost: how much you SAVE vs the most expensive (floor 0.01)
+      const CST = Math.max(0.01, 1 - costPerRun / maxCostPerRun);
 
-      const basePV = 100 * Math.pow(S, 0.55) * Math.pow(COV, 0.20) * Math.pow(SPD, 0.10) * Math.pow(CST, 0.15);
-
-      // Premium gate: model must be within ~10% of top score to get full credit
-      const clamp01 = v => Math.max(0, Math.min(1, v));
-      const premiumGate = 0.35 + 0.65 * clamp01((S - 0.90) / 0.10);
-
-      return basePV * premiumGate;
+      return 100 * Math.pow(S, 2.0) * Math.pow(COV, 0.5) * Math.pow(CST, 0.5) * Math.pow(SPD, 0.1);
     }
 
     /* ── Sortable table system ── */
@@ -2210,8 +2206,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const sorted = (arr, fn) => [...arr].sort(fn);
 
       // Best Score
-      sorted(models, (a, b) => (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0))[0]
-        .badges.push({ label: '🏆 Best Score', cls: 'badge-score', tip: 'Highest average final score across all runs' });
+      const bestScoreModel = sorted(models, (a, b) => (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0))[0];
+      bestScoreModel.badges.push({ label: '🏆 Best Score', cls: 'badge-score', tip: 'Highest average final score across all runs' });
 
       // Fastest
       const withLatency = models.filter(m => modelLatencyPerTurn(m) != null);
@@ -2256,19 +2252,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           .badges.push({ label: '💎 Best Value', cls: 'badge-value', tip: 'Highest score per dollar spent (avg_score / cost_per_run)' });
       }
 
-      // Best Premium Value — best quality-adjusted cost efficiency
-      const withPV = models.filter(m => computeBestPremiumValueScore(m, models) != null);
-      if (withPV.length) {
-        // sort by premium value, tie-break: score > coverage > latency (asc)
-        sorted(withPV, (a, b) => {
-          const diff = computeBestPremiumValueScore(b, models) - computeBestPremiumValueScore(a, models);
+      // Premium Sweet Spot — best high-end tradeoff (all models eligible, no exclusions)
+      const withPSS = models.filter(m => computePremiumSweetSpotScore(m, models) != null);
+      if (withPSS.length) {
+        // sort by PSS, tie-break: score > coverage > latency (asc)
+        sorted(withPSS, (a, b) => {
+          const diff = computePremiumSweetSpotScore(b, models) - computePremiumSweetSpotScore(a, models);
           if (Math.abs(diff) > 0.001) return diff;
           const sd = (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0);
           if (Math.abs(sd) > 0.001) return sd;
           const cd = (b.avg_coverage_pct ?? 0) - (a.avg_coverage_pct ?? 0);
           if (Math.abs(cd) > 0.001) return cd;
           return (modelLatencyPerTurn(a) ?? Infinity) - (modelLatencyPerTurn(b) ?? Infinity);
-        })[0].badges.push({ label: '👑 Best Premium Value', cls: 'badge-premium', tip: 'Best quality-adjusted cost efficiency — weighted blend of score, coverage, speed and cost, gated by proximity to top scorer' });
+        })[0].badges.push({ label: '👑 Premium Sweet Spot', cls: 'badge-premium', tip: 'Best high-end tradeoff — most of the top model\\'s quality and coverage for the least cost. Score² × Coverage^0.5 × CostSaved^0.5 × Speed^0.1' });
       }
     }
 
