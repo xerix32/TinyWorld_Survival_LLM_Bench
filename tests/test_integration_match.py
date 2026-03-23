@@ -36,3 +36,15 @@ def test_run_match_is_reproducible_for_fixed_seed(tmp_path: Path) -> None:
     assert summary_a.get("prompt_set_sha256") == identity_a.get("prompt_set_sha256")
     assert summary_a.get("death_cause") is not None
     assert summary_a.get("death_cause_human") is not None
+    assert summary_a.get("analysis_version") == "AIB-AN-0.1"
+    assert isinstance(summary_a.get("kpi"), dict)
+    assert isinstance(summary_a.get("failure_archetypes"), list)
+    assert summary_a.get("primary_failure_archetype")
+    assert summary_a.get("primary_failure_archetype_human")
+
+    kpi_a = summary_a["kpi"]
+    assert "unique_cells_visited" in kpi_a
+    assert "coverage_pct" in kpi_a
+    assert "revisit_ratio" in kpi_a
+    assert "resource_conversion_efficiency_pct" in kpi_a
+    assert "distance_per_useful_gain" in kpi_a

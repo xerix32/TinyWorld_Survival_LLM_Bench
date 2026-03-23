@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 import webbrowser
 
+from bench.common import _build_run_analytics
 
 def _as_int(value: Any, default: int = 0) -> int:
     try:
@@ -157,11 +158,25 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
     width, height = _extract_dimensions(run_log)
     frames, map_coverage = _build_frames(run_log, width, height)
     gatherable_total, gatherable_breakdown = _initial_gatherable_totals(run_log, width, height)
-    summary = run_log.get("run_summary", {})
+    summary = dict(run_log.get("run_summary", {}))
     identity = run_log.get("benchmark_identity", {})
     prompt_versions = run_log.get("prompt_versions", {})
     benchmark_cfg = run_log.get("config_snapshot", {}).get("benchmark", {})
     parser_cfg = benchmark_cfg.get("parser", {})
+
+    if summary and (not isinstance(summary.get("kpi"), dict) or not summary.get("primary_failure_archetype")):
+        analysis = _build_run_analytics(
+            turn_logs=list(run_log.get("turn_logs", [])),
+            run_summary=summary,
+            rules_cfg=benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {},
+            initial_tiles=run_log.get("world_snapshots", {}).get("initial_tiles", []),
+        )
+        summary["analysis_version"] = analysis["analysis_version"]
+        summary["kpi"] = analysis["kpi"]
+        summary["failure_archetypes"] = analysis["failure_archetypes"]
+        summary["failure_archetypes_human"] = analysis["failure_archetypes_human"]
+        summary["primary_failure_archetype"] = analysis["primary_failure_archetype"]
+        summary["primary_failure_archetype_human"] = analysis["primary_failure_archetype_human"]
 
     return {
         "meta": {
@@ -1216,6 +1231,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return Math.round(num).toLocaleString('en-US');
     }
 
+    function formatFloat(value, digits = 2, fallback = 'n/a') {
+      if (value === null || value === undefined || value === '') return fallback;
+      const num = Number(value);
+      if (!Number.isFinite(num)) return fallback;
+      return num.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+
     function formatEstimatedCost(value) {
       if (value === null || value === undefined || value === '') return 'n/a';
       const num = Number(value);
@@ -1463,6 +1485,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     function renderOutcomeHero() {
       const s = DATA.summary || {};
       const meta = DATA.meta || {};
+      const kpi = s.kpi || {};
       const turnsPlayed = Number(s.turns_played ?? 0);
       const maxTurns = Number(s.max_turns ?? 0);
       const turnsSurvived = Number(s.turns_survived ?? 0);
@@ -1477,6 +1500,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const deathCause = inferDeathCause(s);
       let whyText = s.end_reason_human || formatEndReason(s.end_reason, s.turns_played, s.max_turns);
       if (isDead && deathCause) whyText += ` ${deathCause}`;
+      const failureMode = String(s.primary_failure_archetype_human || s.primary_failure_archetype || 'Balanced or unclear').trim();
+      if (failureMode) whyText += ` Failure mode: ${failureMode}.`;
 
       const badgeClass = isDead ? 'died' : 'survived';
       const badgeText = isDead
@@ -1526,6 +1551,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       // Technical details chips
       const latencyTotal = formatDurationFromMs(s.latency_ms);
       const latencyAvg = turnsPlayed > 0 ? formatDurationFromMs(Number(s.latency_ms ?? 0) / turnsPlayed) : 'n/a';
+      const coverageText = (kpi.coverage_pct !== null && kpi.coverage_pct !== undefined)
+        ? `${formatFloat(kpi.coverage_pct, 1)}% (${formatCount(kpi.unique_cells_visited)}/${formatCount(kpi.map_cells_total)})`
+        : formatCount(kpi.unique_cells_visited);
+      const revisitText = formatFloat(kpi.revisit_ratio, 2, 'n/a');
+      const conversionText = (kpi.resource_conversion_efficiency_pct !== null && kpi.resource_conversion_efficiency_pct !== undefined)
+        ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
+        : 'n/a';
+      const distanceText = formatFloat(kpi.distance_per_useful_gain, 2, 'n/a');
 
       metaChips.innerHTML = [
         `<span class="chip"><span class="chip-key">provider</span> <span class="chip-value">${escapeHtml(meta.provider_id || '-')}</span></span>`,
@@ -1541,6 +1574,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `<span class="chip"><span class="chip-key">avg</span> <span class="chip-value">${latencyAvg}</span></span>`,
         `<span class="chip"><span class="chip-key">tokens</span> <span class="chip-value">${formatCount(s.tokens_used)}</span></span>`,
         `<span class="chip"><span class="chip-key">cost</span> <span class="chip-value">${formatEstimatedCost(s.estimated_cost)}</span></span>`,
+        `<span class="chip"><span class="chip-key">failure</span> <span class="chip-value">${escapeHtml(failureMode)}</span></span>`,
+        `<span class="chip"><span class="chip-key">coverage</span> <span class="chip-value">${coverageText}</span></span>`,
+        `<span class="chip"><span class="chip-key">revisit</span> <span class="chip-value">${revisitText}</span></span>`,
+        `<span class="chip"><span class="chip-key">conversion</span> <span class="chip-value">${conversionText}</span></span>`,
+        `<span class="chip"><span class="chip-key">dist/useful</span> <span class="chip-value">${distanceText}</span></span>`,
       ].join('');
 
       const protocolChip = document.getElementById('protocolChip');

@@ -19,7 +19,7 @@ from urllib.parse import quote
 import webbrowser
 
 from bench.cli_ui import StatusLine, colorize, format_eta, use_color
-from bench.common import load_yaml_file, resolve_artifact_dirs, run_match_once
+from bench.common import _build_run_analytics, load_yaml_file, resolve_artifact_dirs, run_match_once
 from bench.view_compare import generate_compare_viewer
 from bench.view_log import build_viewer_payload
 from engine.version import __version__
@@ -519,6 +519,22 @@ def _build_from_logs(
         summary = dict(run_log.get("run_summary", {}))
         if not summary:
             continue
+
+        if not isinstance(summary.get("kpi"), dict) or not summary.get("primary_failure_archetype"):
+            benchmark_rules = run_log.get("config_snapshot", {}).get("benchmark", {}).get("rules", {})
+            initial_tiles = run_log.get("world_snapshots", {}).get("initial_tiles", [])
+            analysis = _build_run_analytics(
+                turn_logs=list(run_log.get("turn_logs", [])),
+                run_summary=summary,
+                rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
+                initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
+            )
+            summary["analysis_version"] = analysis["analysis_version"]
+            summary["kpi"] = analysis["kpi"]
+            summary["failure_archetypes"] = analysis["failure_archetypes"]
+            summary["failure_archetypes_human"] = analysis["failure_archetypes_human"]
+            summary["primary_failure_archetype"] = analysis["primary_failure_archetype"]
+            summary["primary_failure_archetype_human"] = analysis["primary_failure_archetype_human"]
 
         profile = str(summary.get("model_profile", "unknown_profile"))
         seed = int(summary.get("seed", 0))

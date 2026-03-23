@@ -30,6 +30,21 @@ from renderers.json_renderer import prompt_pair_hash
 
 
 DEFAULT_AGENT_ID = "agent_1"
+ANALYTICS_VERSION = "AIB-AN-0.1"
+
+_MOVE_ACTIONS = {"move north", "move south", "move east", "move west"}
+
+_FAILURE_LABELS = {
+    "wandering": "Wandering / low-yield movement",
+    "starvation": "Starvation",
+    "dehydration": "Dehydration",
+    "gather_timing_failure": "Gather timing failure",
+    "resource_tunnel_vision": "Resource tunnel vision",
+    "local_loop": "Local loop",
+    "invalid_output_collapse": "Invalid-output collapse",
+    "late_recovery_failure": "Late recovery failure",
+    "balanced_or_unclear": "Balanced or unclear",
+}
 
 
 @dataclass(frozen=True)
@@ -260,6 +275,259 @@ def _emit_progress(
     except Exception:
         # CLI feedback should never break benchmark execution.
         return
+
+
+def _as_position_tuple(value: Any) -> tuple[int, int] | None:
+    if isinstance(value, dict):
+        try:
+            return int(value.get("x")), int(value.get("y"))
+        except (TypeError, ValueError):
+            return None
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        try:
+            return int(value[0]), int(value[1])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _failure_label(code: str | None) -> str:
+    if code is None:
+        return _FAILURE_LABELS["balanced_or_unclear"]
+    return _FAILURE_LABELS.get(code, code.replace("_", " "))
+
+
+def _build_run_analytics(
+    *,
+    turn_logs: list[dict[str, Any]],
+    run_summary: dict[str, Any],
+    rules_cfg: dict[str, Any],
+    initial_tiles: list[list[str]],
+) -> dict[str, Any]:
+    turns_played = int(run_summary.get("turns_played", len(turn_logs)))
+    invalid_actions = int(run_summary.get("invalid_actions", 0))
+    end_reason = str(run_summary.get("end_reason", ""))
+    death_cause = str(run_summary.get("death_cause", "") or "")
+
+    hunger_max = int(rules_cfg.get("hunger_max", 100))
+    thirst_max = int(rules_cfg.get("thirst_max", 100))
+    hunger_alert = max(1, int(hunger_max * 0.70))
+    thirst_alert = max(1, int(thirst_max * 0.70))
+
+    map_cells_total = 0
+    if initial_tiles and isinstance(initial_tiles, list):
+        map_cells_total = sum(len(row) for row in initial_tiles if isinstance(row, list))
+
+    visited_cells: set[tuple[int, int]] = set()
+    revisits = 0
+    move_success_count = 0
+    gather_success_count = 0
+    useful_gather_count = 0
+    useful_consume_count = 0
+    useful_eat_count = 0
+    useful_drink_count = 0
+    useful_events_total = 0
+    max_invalid_streak = 0
+    current_invalid_streak = 0
+    critical_turns = 0
+    critical_entries = 0
+    critical_recovery_count = 0
+    critical_streak = 0
+    max_critical_streak = 0
+
+    previous_critical = False
+    positions_after: list[tuple[int, int]] = []
+    move_flags: list[int] = []
+    useful_flags: list[int] = []
+    local_loop_hits = 0
+    local_loop_active = False
+
+    for turn in turn_logs:
+        observation = turn.get("observation", {})
+        validation = turn.get("validation_result", {})
+        action_result = turn.get("action_result", {})
+        action_delta = turn.get("world_result_delta", {}).get("action_delta", {})
+        score_events = [str(item) for item in (turn.get("score_delta", {}).get("events") or [])]
+
+        before_pos = _as_position_tuple(observation.get("position"))
+        after_pos = _as_position_tuple(action_delta.get("position_after")) or before_pos
+        if before_pos is not None and not visited_cells:
+            visited_cells.add(before_pos)
+        if after_pos is not None:
+            if after_pos in visited_cells:
+                revisits += 1
+            else:
+                visited_cells.add(after_pos)
+            positions_after.append(after_pos)
+
+        is_valid = bool(validation.get("is_valid", False))
+        if not is_valid:
+            current_invalid_streak += 1
+            if current_invalid_streak > max_invalid_streak:
+                max_invalid_streak = current_invalid_streak
+        else:
+            current_invalid_streak = 0
+
+        action_applied = str(action_result.get("applied") or "").strip().lower()
+        action_requested = str(action_result.get("requested") or "").strip().lower()
+        action_success = bool(action_result.get("success", False))
+
+        moved = action_applied in _MOVE_ACTIONS and action_success
+        move_flags.append(1 if moved else 0)
+        if moved:
+            move_success_count += 1
+
+        if action_requested == "gather" and action_success:
+            gather_success_count += 1
+
+        useful = False
+        if "useful_gather" in score_events:
+            useful = True
+            useful_gather_count += 1
+        if "useful_consume" in score_events:
+            useful = True
+            useful_consume_count += 1
+            if action_applied == "eat":
+                useful_eat_count += 1
+            elif action_applied == "drink":
+                useful_drink_count += 1
+        useful_flags.append(1 if useful else 0)
+        if useful:
+            useful_events_total += 1
+
+        hunger_now = int(observation.get("hunger", 0))
+        thirst_now = int(observation.get("thirst", 0))
+        critical_now = hunger_now >= hunger_alert or thirst_now >= thirst_alert
+        if critical_now:
+            critical_turns += 1
+            critical_streak += 1
+            if critical_streak > max_critical_streak:
+                max_critical_streak = critical_streak
+        else:
+            critical_streak = 0
+
+        if (not previous_critical) and critical_now:
+            critical_entries += 1
+        if previous_critical and (not critical_now):
+            critical_recovery_count += 1
+        previous_critical = critical_now
+
+        if len(positions_after) >= 8:
+            window_positions = positions_after[-8:]
+            window_moves = sum(move_flags[-8:])
+            window_useful = sum(useful_flags[-8:])
+            unique_window_cells = len(set(window_positions))
+            loop_now = unique_window_cells <= 3 and window_moves >= 6 and window_useful == 0
+            if loop_now and not local_loop_active:
+                local_loop_hits += 1
+            local_loop_active = loop_now
+
+    food_water_gathered = 0
+    gathered_breakdown = run_summary.get("resources_gathered_breakdown", {})
+    if isinstance(gathered_breakdown, dict):
+        food_water_gathered = int(gathered_breakdown.get("food", 0)) + int(gathered_breakdown.get("water", 0))
+
+    food_water_consumed_useful = useful_eat_count + useful_drink_count
+
+    coverage_pct = None
+    if map_cells_total > 0:
+        coverage_pct = (len(visited_cells) / map_cells_total) * 100.0
+
+    revisit_ratio = None
+    if move_success_count > 0:
+        revisit_ratio = revisits / move_success_count
+
+    distance_per_useful_gain = None
+    if useful_events_total > 0:
+        distance_per_useful_gain = move_success_count / useful_events_total
+
+    resource_conversion_efficiency = None
+    resource_conversion_efficiency_pct = None
+    if food_water_gathered > 0:
+        resource_conversion_efficiency = food_water_consumed_useful / food_water_gathered
+        resource_conversion_efficiency_pct = resource_conversion_efficiency * 100.0
+
+    invalid_output_collapse = (turns_played > 0 and (invalid_actions / turns_played) >= 0.30) or max_invalid_streak >= 4
+    wandering = (
+        move_success_count >= max(8, int(turns_played * 0.55))
+        and useful_events_total <= max(1, int(turns_played * 0.05))
+    ) or (distance_per_useful_gain is not None and distance_per_useful_gain >= 8.0)
+    gather_timing_failure = food_water_gathered > 0 and useful_consume_count == 0 and critical_turns >= 2
+    resource_tunnel_vision = (
+        gather_success_count >= max(4, int(turns_played * 0.25))
+        and critical_turns >= 2
+        and useful_consume_count <= 1
+    )
+    late_recovery_failure = (
+        end_reason == "agent_dead"
+        and critical_turns >= 3
+        and useful_consume_count > 0
+        and death_cause in {"starvation", "dehydration", "starvation_and_dehydration", "energy_depletion"}
+    )
+    starvation = death_cause in {"starvation", "starvation_and_dehydration"}
+    dehydration = death_cause in {"dehydration", "starvation_and_dehydration"}
+    local_loop = local_loop_hits > 0
+
+    archetype_flags = {
+        "invalid_output_collapse": invalid_output_collapse,
+        "dehydration": dehydration,
+        "starvation": starvation,
+        "late_recovery_failure": late_recovery_failure,
+        "local_loop": local_loop,
+        "wandering": wandering,
+        "gather_timing_failure": gather_timing_failure,
+        "resource_tunnel_vision": resource_tunnel_vision,
+    }
+    archetype_order = [
+        "invalid_output_collapse",
+        "dehydration",
+        "starvation",
+        "late_recovery_failure",
+        "local_loop",
+        "wandering",
+        "gather_timing_failure",
+        "resource_tunnel_vision",
+    ]
+    detected = [code for code in archetype_order if archetype_flags.get(code)]
+    if not detected:
+        detected = ["balanced_or_unclear"]
+    primary = detected[0]
+
+    return {
+        "analysis_version": ANALYTICS_VERSION,
+        "kpi": {
+            "unique_cells_visited": len(visited_cells),
+            "map_cells_total": map_cells_total if map_cells_total > 0 else None,
+            "coverage_pct": round(coverage_pct, 4) if coverage_pct is not None else None,
+            "moves_successful": move_success_count,
+            "revisits": revisits,
+            "revisit_ratio": round(revisit_ratio, 6) if revisit_ratio is not None else None,
+            "useful_gather_count": useful_gather_count,
+            "useful_consume_count": useful_consume_count,
+            "useful_eat_count": useful_eat_count,
+            "useful_drink_count": useful_drink_count,
+            "useful_events_total": useful_events_total,
+            "distance_per_useful_gain": round(distance_per_useful_gain, 6) if distance_per_useful_gain is not None else None,
+            "food_water_gathered": food_water_gathered,
+            "food_water_consumed_useful": food_water_consumed_useful,
+            "resource_conversion_efficiency": round(resource_conversion_efficiency, 6)
+            if resource_conversion_efficiency is not None
+            else None,
+            "resource_conversion_efficiency_pct": round(resource_conversion_efficiency_pct, 4)
+            if resource_conversion_efficiency_pct is not None
+            else None,
+            "critical_turns": critical_turns,
+            "critical_entries": critical_entries,
+            "critical_recovery_count": critical_recovery_count,
+            "max_critical_streak": max_critical_streak,
+            "max_invalid_streak": max_invalid_streak,
+            "local_loop_hits": local_loop_hits,
+        },
+        "failure_archetypes": detected,
+        "failure_archetypes_human": [_failure_label(code) for code in detected],
+        "primary_failure_archetype": primary,
+        "primary_failure_archetype_human": _failure_label(primary),
+    }
 
 
 def run_match_once(
@@ -516,6 +784,19 @@ def run_match_once(
         "latency_ms": round(latency_sum_ms, 3),
         "estimated_cost": round(cost_sum, 6) if cost_seen else None,
     }
+
+    analysis = _build_run_analytics(
+        turn_logs=turn_logs,
+        run_summary=run_summary,
+        rules_cfg=rules_cfg,
+        initial_tiles=initial_tiles,
+    )
+    run_summary["analysis_version"] = analysis["analysis_version"]
+    run_summary["kpi"] = analysis["kpi"]
+    run_summary["failure_archetypes"] = analysis["failure_archetypes"]
+    run_summary["failure_archetypes_human"] = analysis["failure_archetypes_human"]
+    run_summary["primary_failure_archetype"] = analysis["primary_failure_archetype"]
+    run_summary["primary_failure_archetype_human"] = analysis["primary_failure_archetype_human"]
 
     run_log = {
         "version": __version__,

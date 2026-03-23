@@ -361,6 +361,48 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       gap: 6px;
     }
 
+    /* ── TOOLTIPS ── */
+    [data-tip] {
+      position: relative;
+      cursor: help;
+    }
+
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-bright);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--font-sans);
+      font-size: 0.72rem;
+      font-weight: 400;
+      line-height: 1.4;
+      white-space: normal;
+      width: max-content;
+      max-width: 300px;
+      z-index: 100;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    [data-tip]:hover::after {
+      opacity: 1;
+    }
+
+    [data-tip].tip-down::after {
+      bottom: auto;
+      top: calc(100% + 6px);
+    }
+
     .chip {
       border: 1px solid var(--border);
       background: var(--bg-raised);
@@ -1231,7 +1273,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     <!-- TAB 1: LEADERBOARD -->
     <div class=\"tab-panel active\" id=\"tab-leaderboard\">
       <div class=\"panel\">
-        <div class=\"panel-title\">Score Comparison</div>
+        <div class=\"panel-title\" data-tip=\"Visual comparison of average scores. Bar length = avg score. Hover the bar to see the best–worst range\" class=\"tip-down\">Score Comparison</div>
         <div id=\"scoreChart\" class=\"score-chart\"></div>
       </div>
 
@@ -1243,15 +1285,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <tr>
                 <th>#</th>
                 <th>Model</th>
-                <th>Avg Score</th>
-                <th>Best</th>
-                <th>Worst</th>
-                <th>Avg Survived</th>
-                <th>Best Survived</th>
-                <th>Death Rate</th>
-                <th>Avg Invalid</th>
-                <th>Avg Latency / call</th>
-                <th>Total Tokens</th>
+                <th data-tip=\"Average score across all runs for this model\" class=\"tip-down\">Avg Score</th>
+                <th data-tip=\"Highest score in a single run\" class=\"tip-down\">Best</th>
+                <th data-tip=\"Lowest score in a single run\" class=\"tip-down\">Worst</th>
+                <th data-tip=\"Average number of turns survived out of maximum turns\" class=\"tip-down\">Avg Survived</th>
+                <th data-tip=\"Maximum turns survived in a single run\" class=\"tip-down\">Best Survived</th>
+                <th data-tip=\"Percentage of runs where the agent died before reaching max turns\" class=\"tip-down\">Death Rate</th>
+                <th data-tip=\"Average number of invalid actions per run (penalised -2 each)\" class=\"tip-down\">Avg Invalid</th>
+                <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\">Avg Latency / turn</th>
+                <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\">Total Tokens</th>
               </tr>
             </thead>
             <tbody id=\"rankingBody\"></tbody>
@@ -1260,19 +1302,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </div>
 
       <div class=\"panel\">
-        <div class=\"panel-title\">Head-to-Head</div>
+        <div class=\"panel-title\" data-tip=\"Direct comparison on the same seeds: who wins when both models play the exact same map\" class=\"tip-down\">Head-to-Head</div>
         <div class=\"table-wrap\">
           <table>
             <thead>
               <tr>
                 <th>Model A</th>
                 <th>vs</th>
-                <th>Runs</th>
-                <th>A wins</th>
-                <th>B wins</th>
-                <th>Ties</th>
-                <th>A Win Rate</th>
-                <th>Avg Score Delta</th>
+                <th data-tip=\"Number of paired runs (same seed) where both models competed\" class=\"tip-down\">Runs</th>
+                <th data-tip=\"Times Model A scored higher than Model B on the same seed\" class=\"tip-down\">A wins</th>
+                <th data-tip=\"Times Model B scored higher than Model A on the same seed\" class=\"tip-down\">B wins</th>
+                <th data-tip=\"Times both models got the exact same score on the same seed\" class=\"tip-down\">Ties</th>
+                <th data-tip=\"Percentage of paired runs won by Model A\" class=\"tip-down\">A Win Rate</th>
+                <th data-tip=\"Average score difference (A minus B) across all paired seeds. Positive = A is better\" class=\"tip-down\">Avg Score Delta</th>
               </tr>
             </thead>
             <tbody id=\"h2hBody\"></tbody>
@@ -1546,23 +1588,24 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return 'meter';
     }
 
-    function chip(label, value) {
-      return `<span class="chip"><span class="chip-key">${label}</span> <span class="chip-val">${value}</span></span>`;
+    function chip(label, value, tip) {
+      const tipAttr = tip ? ` data-tip="${tip}"` : '';
+      return `<span class="chip"${tipAttr}><span class="chip-key">${label}</span> <span class="chip-val">${value}</span></span>`;
     }
 
     function renderMetaChips() {
-      const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" title="Show protocol rules"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
+      const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" data-tip="Click to show the full game rules, stat mechanics, and scoring logic"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
       const chips = [
         protocolBtn,
-        chip('bench', meta.bench_version || '-'),
-        chip('engine', meta.engine_version || '-'),
-        chip('scenario', meta.scenario || '-'),
-        chip('models', formatCount(meta.models?.length || models.length)),
-        chip('runs/model', formatCount(meta.runs_per_model)),
-        chip('total runs', formatCount(meta.total_runs || runs.length)),
-        chip('seeds', (meta.seed_list || []).join(', ') || '-'),
-        chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12)),
-        chip('fairness', 'paired seeds'),
+        chip('bench', meta.bench_version || '-', 'Version of the benchmark harness that ran the tests'),
+        chip('engine', meta.engine_version || '-', 'Version of the TinyWorld simulation engine'),
+        chip('scenario', meta.scenario || '-', 'The map and rules configuration used for this benchmark'),
+        chip('models', formatCount(meta.models?.length || models.length), 'Number of distinct AI models tested'),
+        chip('runs/model', formatCount(meta.runs_per_model), 'How many runs each model played (one per seed)'),
+        chip('total runs', formatCount(meta.total_runs || runs.length), 'Total number of runs across all models and seeds'),
+        chip('seeds', (meta.seed_list || []).join(', ') || '-', 'Random seeds used for map generation. Same seeds = same maps for all models'),
+        chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12), 'SHA-256 hash of the prompt set. Same hash = identical prompts across runs'),
+        chip('fairness', 'paired seeds', 'All models play the exact same maps (paired seeds) so score differences reflect model ability, not map luck'),
       ];
       metaChips.innerHTML = chips.join('');
 
@@ -1676,9 +1719,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class="podium-model-name">${m.model_profile}</div>
             </div>
             <div class="podium-stats">
-              <div class="podium-stat"><div class="ps-value">${formatFloat(m.avg_final_score, 2)}</div><div class="ps-label">Avg Score</div></div>
-              <div class="podium-stat"><div class="ps-value">${survivalRate}%</div><div class="ps-label">Survival</div></div>
-              <div class="podium-stat"><div class="ps-value">${avgLatencyPerCall}</div><div class="ps-label">Avg Latency</div></div>
+              <div class="podium-stat" data-tip="Average score across all runs"><div class="ps-value">${formatFloat(m.avg_final_score, 2)}</div><div class="ps-label">Avg Score</div></div>
+              <div class="podium-stat" data-tip="Percentage of runs where the agent survived all turns"><div class="ps-value">${survivalRate}%</div><div class="ps-label">Survival</div></div>
+              <div class="podium-stat" data-tip="Average API response time per turn"><div class="ps-value">${avgLatencyPerCall}</div><div class="ps-label">Avg Latency</div></div>
             </div>
           </div>`;
         }).join('')}
@@ -1920,6 +1963,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderReplayHeader(run) {
       const summary = run.summary || {};
+      const kpi = summary.kpi || {};
       const status = getRunStatus(summary);
       const deathCause = String(summary.death_cause_human || '').trim();
       const gatherableTotal = numberOr(run.replay?.world?.gatherable_total, null);
@@ -1927,19 +1971,31 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const gatheredLabel = gatherableTotal === null
         ? formatCount(gathered)
         : `${formatCount(gathered)}/${formatCount(gatherableTotal)}`;
+      const coverageLabel = (kpi.coverage_pct !== null && kpi.coverage_pct !== undefined)
+        ? `${formatFloat(kpi.coverage_pct, 1)}% (${formatCount(kpi.unique_cells_visited)}/${formatCount(kpi.map_cells_total)})`
+        : formatCount(kpi.unique_cells_visited);
+      const conversionLabel = (kpi.resource_conversion_efficiency_pct !== null && kpi.resource_conversion_efficiency_pct !== undefined)
+        ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
+        : 'n/a';
+      const failureMode = String(summary.primary_failure_archetype_human || summary.primary_failure_archetype || 'Balanced or unclear');
 
       const cards = [
-        { label: 'Score', value: formatCount(summary.final_score) },
-        { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)}` },
-        { label: 'Invalid', value: formatCount(summary.invalid_actions) },
-        { label: 'Resources', value: gatheredLabel },
-        { label: 'Latency (total)', value: formatDurationFromMs(summary.latency_ms) },
+        { label: 'Score', value: formatCount(summary.final_score), tip: 'Final score for this run (survive +1, gather +3, consume +2, invalid -2, death -10)' },
+        { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)}`, tip: 'Turns survived out of maximum turns available' },
+        { label: 'Invalid', value: formatCount(summary.invalid_actions), tip: 'Actions the model attempted that were not valid (e.g. eat without food)' },
+        { label: 'Resources', value: gatheredLabel, tip: 'Resources gathered from the map out of total available' },
+        { label: 'Failure mode', value: failureMode, tip: 'Primary deterministic failure archetype for this run' },
+        { label: 'Coverage', value: coverageLabel, tip: 'Unique visited cells over total map cells' },
+        { label: 'Revisit ratio', value: formatFloat(kpi.revisit_ratio, 2), tip: 'Higher means more repeated movement over already visited cells' },
+        { label: 'Conversion', value: conversionLabel, tip: 'Useful eat/drink conversions divided by gathered food+water' },
+        { label: 'Dist / useful', value: formatFloat(kpi.distance_per_useful_gain, 2), tip: 'Successful move actions per useful event (lower is generally better)' },
+        { label: 'Latency (total)', value: formatDurationFromMs(summary.latency_ms), tip: 'Total time spent waiting for API responses across all turns' },
         { label: 'Latency (avg)', value: (() => {
           const turns = Number(summary.turns_survived ?? 0);
           const total = Number(summary.latency_ms ?? 0);
           return turns > 0 ? formatDurationFromMs(total / turns) : 'n/a';
-        })() },
-        { label: 'Tokens', value: formatCount(summary.tokens_used) },
+        })(), tip: 'Average API response time per turn' },
+        { label: 'Tokens', value: formatCount(summary.tokens_used), tip: 'Total tokens consumed (input + output) across all turns' },
       ];
 
       const sameSeedRuns = runs
@@ -1963,7 +2019,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ${summary.end_reason_human ? `<div class="replay-sub">${summary.end_reason_human}</div>` : ''}
         ${deathCause ? `<div class="replay-sub">${deathCause}</div>` : ''}
         <div class="summary-cards">
-          ${cards.map(c => `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
+          ${cards.map(c => `<div class="card"${c.tip ? ` data-tip="${c.tip}"` : ''}><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
         </div>
         ${switcherHtml}
       `;
