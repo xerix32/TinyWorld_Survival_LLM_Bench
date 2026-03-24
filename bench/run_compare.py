@@ -38,7 +38,9 @@ from engine.prompt_loader import PromptLoader
 from engine.version import __version__
 from memory.filter import filter_lessons
 from memory.reflection import run_cross_seed_refinement, run_seed_reflection
-from memory.session import lessons_to_prompt_items, merge_lessons, save_json
+from memory.session import lessons_to_prompt_items, merge_lessons, normalize_lesson_text, save_json
+
+ADAPTIVE_MEMORY_PROMOTION_MIN_DELTA = -3
 
 
 COMPARE_RUN_FIELDS = [
@@ -101,6 +103,7 @@ ADAPTIVE_PAIR_FIELDS = [
     "lessons_before_count",
     "lessons_added_count",
     "lessons_after_count",
+    "memory_promoted",
     "reflection_parse_error",
     "reflection_path",
     "memory_snapshot_path",
@@ -1156,6 +1159,37 @@ def _job_log_path_adaptive(logs_dir: Path, job: JobSpec, attempt_kind: str) -> P
     return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}_{attempt_kind}.json"
 
 
+def _extract_prompt_rules(
+    *,
+    parsed_lesson_items: list[Any] | None,
+    parsed_lessons: list[Any] | None,
+) -> list[str]:
+    rules_from_items = [
+        normalize_lesson_text(str(item.get("rule", "")))
+        for item in (parsed_lesson_items or [])
+        if isinstance(item, dict) and normalize_lesson_text(str(item.get("rule", "")))
+    ]
+    if rules_from_items:
+        return merge_lessons([], rules_from_items)
+
+    # Backward-compatibility fallback for legacy payloads/tests that provide only parsed_lessons.
+    fallback_rules = [
+        normalize_lesson_text(str(raw))
+        for raw in (parsed_lessons or [])
+        if normalize_lesson_text(str(raw))
+    ]
+    return merge_lessons([], fallback_rules)
+
+
+def _should_promote_cross_seed_memory(
+    *,
+    initial_score: int,
+    adaptive_score: int,
+    min_delta: int = ADAPTIVE_MEMORY_PROMOTION_MIN_DELTA,
+) -> bool:
+    return int(adaptive_score) - int(initial_score) >= int(min_delta)
+
+
 def _execute_job(
     *,
     job: JobSpec,
@@ -1199,6 +1233,18 @@ def _execute_adaptive_pair(
     progress_callback: Any = None,
     fix_thinking: bool = False,
 ) -> dict[str, Any]:
+    def _emit_progress_with_extras(
+        event: dict[str, Any],
+        *,
+        baseline_score_reference: int | None = None,
+    ) -> None:
+        if progress_callback is None:
+            return
+        payload = dict(event)
+        if baseline_score_reference is not None:
+            payload["baseline_score_reference"] = int(baseline_score_reference)
+        progress_callback(payload)
+
     pair_key = f"{job.model_profile}__seed{job.seed}"
     providers_cfg = load_yaml_file(providers_config_path)
     model_binding = create_model_wrapper(model_name=job.model_profile, seed=job.seed, providers_cfg=providers_cfg)
@@ -1214,7 +1260,7 @@ def _execute_adaptive_pair(
         providers_config_path=providers_config_path,
         prompts_dir=prompts_dir,
         output_path=_job_log_path_adaptive(output_logs_dir, job, "initial"),
-        progress_callback=progress_callback,
+        progress_callback=lambda event: _emit_progress_with_extras(event),
         fix_thinking=fix_thinking,
         include_memory=True,
         # Baseline attempt in adaptive mode must stay clean:
@@ -1223,6 +1269,9 @@ def _execute_adaptive_pair(
         current_seed_lessons=[],
         attempt_kind="initial",
         adaptive_pair_key=pair_key,
+    )
+    initial_score_reference = _safe_int(
+        dict(initial_log.get("run_summary", {})).get("final_score")
     )
 
     seed_reflection = run_seed_reflection(
@@ -1240,8 +1289,12 @@ def _execute_adaptive_pair(
     )
     parsed_seed_lessons = list(seed_reflection.get("parsed_lessons") or [])
     parsed_seed_lesson_items = list(seed_reflection.get("parsed_lesson_items") or [])
+    parsed_seed_rules = _extract_prompt_rules(
+        parsed_lesson_items=parsed_seed_lesson_items,
+        parsed_lessons=parsed_seed_lessons,
+    )
     filtered_seed_lessons = filter_lessons(
-        parsed_seed_lessons,
+        parsed_seed_rules,
         context={
             "seed": job.seed,
             "model_profile": job.model_profile,
@@ -1290,7 +1343,10 @@ def _execute_adaptive_pair(
         providers_config_path=providers_config_path,
         prompts_dir=prompts_dir,
         output_path=_job_log_path_adaptive(output_logs_dir, job, "adaptive"),
-        progress_callback=progress_callback,
+        progress_callback=lambda event: _emit_progress_with_extras(
+            event,
+            baseline_score_reference=initial_score_reference,
+        ),
         fix_thinking=fix_thinking,
         include_memory=True,
         session_lessons=session_lessons,
@@ -1324,8 +1380,12 @@ def _execute_adaptive_pair(
     )
     parsed_cross_lessons = list(cross_refinement.get("parsed_lessons") or [])
     parsed_cross_lesson_items = list(cross_refinement.get("parsed_lesson_items") or [])
+    parsed_cross_rules = _extract_prompt_rules(
+        parsed_lesson_items=parsed_cross_lesson_items,
+        parsed_lessons=parsed_cross_lessons,
+    )
     filtered_cross_lessons = filter_lessons(
-        parsed_cross_lessons,
+        parsed_cross_rules,
         context={
             "seed": job.seed,
             "model_profile": job.model_profile,
@@ -1333,11 +1393,19 @@ def _execute_adaptive_pair(
             "stage": "cross_seed_refinement",
         },
     )
+    initial_score = _safe_int(initial_summary.get("final_score"))
+    adaptive_score = _safe_int(adaptive_summary.get("final_score"))
+    adaptive_delta_score = adaptive_score - initial_score
+    promote_cross_seed_memory = _should_promote_cross_seed_memory(
+        initial_score=initial_score,
+        adaptive_score=adaptive_score,
+    )
+
     # Cross-seed refinement acts as model-driven synthesis for next-session memory.
-    # If the synthesized output is empty/invalid, keep previous session memory.
+    # If output is empty/invalid, or adaptive result is below promotion threshold, keep prior session memory.
     merged_session_lessons = (
         merge_lessons([], filtered_cross_lessons)
-        if filtered_cross_lessons
+        if (filtered_cross_lessons and promote_cross_seed_memory)
         else list(session_lessons)
     )
 
@@ -1349,6 +1417,9 @@ def _execute_adaptive_pair(
         "session_lessons_before": list(session_lessons),
         "pair_lessons": pair_lessons,
         "adaptive_feedback": adaptive_feedback,
+        "adaptive_delta_score": adaptive_delta_score,
+        "memory_promotion_threshold": ADAPTIVE_MEMORY_PROMOTION_MIN_DELTA,
+        "memory_promoted": promote_cross_seed_memory,
         "parsed_lessons": parsed_cross_lessons,
         "parsed_lesson_items": parsed_cross_lesson_items,
         "filtered_lessons": filtered_cross_lessons,
@@ -1421,6 +1492,7 @@ def _execute_adaptive_pair(
         "lessons_added_count": max(0, len(merged_session_lessons) - len(session_lessons)),
         "lessons_after_count": len(merged_session_lessons),
         "reflection_parse_error": combined_parse_error,
+        "memory_promoted": promote_cross_seed_memory,
         "reflection_path": str(reflection_manifest_path),
         "memory_snapshot_path": str(memory_snapshot_path),
     }
@@ -1476,8 +1548,11 @@ def _render_turn_progress_line(
     protocol_valid: bool,
     effect_applied: bool,
     score: int,
+    baseline_score_reference: int | None,
     invalid: int,
     alive: bool,
+    energy: int | None,
+    energy_max: int | None,
     eta_text: str,
     attempt_label: str | None,
     color_enabled: bool,
@@ -1513,11 +1588,27 @@ def _render_turn_progress_line(
         elif protocol_valid and not effect_applied:
             effect_color = "1;93"
 
-        score_text = colorize(f"{score:>4}", "1;93", color_enabled)
+        score_value = (
+            f"{score:>4}({int(baseline_score_reference)})"
+            if baseline_score_reference is not None
+            else f"{score:>4}"
+        )
+        score_text = colorize(score_value, "1;93", color_enabled)
         invalid_color = "1;31" if invalid > 0 else "0;37"
         invalid_text = colorize(f"{invalid:>3}", invalid_color, color_enabled)
-        alive_color = "1;32" if alive else "1;31"
-        alive_text = colorize("yes" if alive else "no", alive_color, color_enabled)
+        energy_text = None
+        if energy is not None and energy_max is not None and energy_max > 0:
+            ratio = float(energy) / float(energy_max)
+            energy_color = "1;32"
+            if ratio <= 0.30:
+                energy_color = "1;31"
+            elif ratio <= 0.60:
+                energy_color = "1;93"
+            energy_text = colorize(f"{int(energy)}/{int(energy_max)}", energy_color, color_enabled)
+        elif energy is not None:
+            energy_text = colorize(str(int(energy)), "1;97", color_enabled)
+        else:
+            energy_text = colorize("--", "0;37", color_enabled)
         eta_label = colorize("eta:", "0;37", color_enabled)
         eta_value = colorize(eta_text, "1;97", color_enabled)
 
@@ -1534,13 +1625,16 @@ def _render_turn_progress_line(
                 f"{action_label} {action_text}",
             ]
         )
+        if not protocol_valid:
+            parts.append(f"protocol: {colorize(protocol_text, protocol_color, color_enabled)}")
+            parts.append(f"effect: {colorize(effect_text, effect_color, color_enabled)}")
+        elif not effect_applied:
+            parts.append(f"effect: {colorize(effect_text, effect_color, color_enabled)}")
         parts.extend(
             [
-                f"protocol: {colorize(protocol_text, protocol_color, color_enabled)}",
-                f"effect: {colorize(effect_text, effect_color, color_enabled)}",
                 f"score: {score_text}",
-                f"invalid: {invalid_text}",
-                f"alive: {alive_text}",
+                *( [f"invalid: {invalid_text}"] if invalid > 0 else [] ),
+                f"energy: {energy_text}",
                 f"{eta_label} {eta_value}",
             ]
         )
@@ -1559,13 +1653,29 @@ def _render_turn_progress_line(
             f"action: {action[:22]:<22}",
         ]
     )
+    if not protocol_valid:
+        parts_plain.append(f"protocol: {protocol_text:<3}")
+        parts_plain.append(f"effect: {effect_text:<7}")
+    elif not effect_applied:
+        parts_plain.append(f"effect: {effect_text:<7}")
+    score_plain = (
+        f"{score:>4}({int(baseline_score_reference)})"
+        if baseline_score_reference is not None
+        else f"{score:>4}"
+    )
     parts_plain.extend(
         [
-            f"protocol: {protocol_text:<3}",
-            f"effect: {effect_text:<7}",
-            f"score: {score:>4}",
-            f"invalid: {invalid:>3}",
-            f"alive: {'yes' if alive else 'no'}",
+            f"score: {score_plain}",
+            *( [f"invalid: {invalid:>3}"] if invalid > 0 else [] ),
+            (
+                f"energy: {int(energy)}/{int(energy_max)}"
+                if (energy is not None and energy_max is not None and energy_max > 0)
+                else (
+                    f"energy: {int(energy)}"
+                    if energy is not None
+                    else "energy: --"
+                )
+            ),
             f"eta: {eta_text}",
         ]
     )
@@ -2118,6 +2228,9 @@ def main() -> None:
                 run_progress = {
                     "max_turns": int(effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)),
                     "attempt_kind": "initial",
+                    "baseline_score_reference": None,
+                    "energy": None,
+                    "energy_max": None,
                 }
                 completed_before = completed_jobs
 
@@ -2126,6 +2239,10 @@ def main() -> None:
                     if event_type == "run_started":
                         run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
                         run_progress["attempt_kind"] = str(event.get("attempt_kind", run_progress["attempt_kind"]))
+                        run_progress["energy"] = None
+                        run_progress["energy_max"] = None
+                        if "baseline_score_reference" in event:
+                            run_progress["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
                         attempt_kind = str(run_progress["attempt_kind"])
                         display_job_index, display_job_total = _display_job_position(
                             job_index=job.job_index,
@@ -2150,8 +2267,11 @@ def main() -> None:
                                 protocol_valid=True,
                                 effect_applied=False,
                                 score=0,
+                                baseline_score_reference=run_progress.get("baseline_score_reference"),
                                 invalid=0,
                                 alive=True,
+                                energy=run_progress.get("energy"),
+                                energy_max=run_progress.get("energy_max"),
                                 eta_text=_compute_eta_text(
                                     completed_jobs=completed_units_before,
                                     total_jobs=total_progress_units,
@@ -2169,6 +2289,12 @@ def main() -> None:
                     turn = int(event.get("turn", 0))
                     max_turns = int(event.get("max_turns", run_progress["max_turns"]))
                     run_progress["max_turns"] = max_turns
+                    if "baseline_score_reference" in event:
+                        run_progress["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                    if "energy" in event:
+                        run_progress["energy"] = _safe_int(event.get("energy"))
+                    if "energy_max" in event:
+                        run_progress["energy_max"] = _safe_int(event.get("energy_max"))
                     attempt_kind = str(run_progress.get("attempt_kind", "initial"))
                     display_job_index, display_job_total = _display_job_position(
                         job_index=job.job_index,
@@ -2201,8 +2327,11 @@ def main() -> None:
                             protocol_valid=bool(event.get("protocol_valid", False)),
                             effect_applied=bool(event.get("action_effect_applied", False)),
                             score=int(event.get("cumulative_score", 0)),
+                            baseline_score_reference=run_progress.get("baseline_score_reference"),
                             invalid=int(event.get("invalid_actions", 0)),
                             alive=bool(event.get("alive", True)),
+                            energy=run_progress.get("energy"),
+                            energy_max=run_progress.get("energy_max"),
                             eta_text=eta_text,
                             attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
                             color_enabled=color_enabled,
@@ -2372,8 +2501,11 @@ def main() -> None:
                     protocol_valid=bool(selected.get("protocol_valid", True)),
                     effect_applied=bool(selected.get("effect_applied", False)),
                     score=int(selected.get("score", 0)),
+                    baseline_score_reference=_safe_int(selected.get("baseline_score_reference")),
                     invalid=int(selected.get("invalid", 0)),
                     alive=bool(selected.get("alive", True)),
+                    energy=_safe_int(selected.get("energy")),
+                    energy_max=_safe_int(selected.get("energy_max")),
                     eta_text=eta_text,
                     attempt_label=(_attempt_label(selected_attempt_kind) if adaptive_enabled else None),
                     color_enabled=color_enabled,
@@ -2403,6 +2535,9 @@ def main() -> None:
                                 "score": 0,
                                 "invalid": 0,
                                 "alive": True,
+                                "energy": None,
+                                "energy_max": None,
+                                "baseline_score_reference": None,
                                 "attempt_kind": "initial",
                                 "updated_at": time.monotonic(),
                             }
@@ -2420,8 +2555,12 @@ def main() -> None:
                                     "score": 0,
                                     "invalid": 0,
                                     "alive": True,
+                                    "energy": None,
+                                    "energy_max": None,
                                     "attempt_kind": str(event.get("attempt_kind", "initial")),
                                 }
+                                if "baseline_score_reference" in event:
+                                    update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
                             elif event_type == "turn_completed":
                                 update = {
                                     "turn": int(event.get("turn", 0)),
@@ -2432,7 +2571,11 @@ def main() -> None:
                                     "score": int(event.get("cumulative_score", 0)),
                                     "invalid": int(event.get("invalid_actions", 0)),
                                     "alive": bool(event.get("alive", True)),
+                                    "energy": _safe_int(event.get("energy")),
+                                    "energy_max": _safe_int(event.get("energy_max")),
                                 }
+                                if "baseline_score_reference" in event:
+                                    update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
                             if not update:
                                 return
                             update["updated_at"] = time.monotonic()

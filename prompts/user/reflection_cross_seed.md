@@ -78,6 +78,7 @@ Output contract:
 - Avoid rigid or absolute wording such as: "always", "never", "sole priority", "forbidden action", "eliminate all".
 - Include at least one lesson that prevents tunnel vision across pressures.
 - Include at least one lesson that requires turn-by-turn re-evaluation when recent actions are not improving the targeted pressure.
+- Ensure the final lesson set spans at least 2 distinct focus areas; do not return all lessons about only one pressure type.
 
 Output example:
 [

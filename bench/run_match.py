@@ -380,23 +380,44 @@ def main() -> None:
                 alive_text = colorize("yes" if alive else "no", alive_color, color_enabled)
                 eta_label = colorize("eta:", "0;37", color_enabled)
                 eta_value = colorize(eta_text, "1;97", color_enabled)
-
-                line = (
-                    f"{pct_text} {turn_text} | "
-                    f"action: {action_text} | "
-                    f"protocol: {colorize(protocol_text, protocol_color, color_enabled)} | "
-                    f"effect: {colorize(effect_text, effect_color, color_enabled)} | "
-                    f"score: {score_text} | "
-                    f"invalid: {invalid_text} | "
-                    f"alive: {alive_text} | {eta_label} {eta_value}"
+                line_parts = [
+                    f"{pct_text} {turn_text}",
+                    f"action: {action_text}",
+                ]
+                if not protocol_valid:
+                    line_parts.append(f"protocol: {colorize(protocol_text, protocol_color, color_enabled)}")
+                    line_parts.append(f"effect: {colorize(effect_text, effect_color, color_enabled)}")
+                elif not effect_applied:
+                    line_parts.append(f"effect: {colorize(effect_text, effect_color, color_enabled)}")
+                line_parts.extend(
+                    [
+                        f"score: {score_text}",
+                        f"invalid: {invalid_text}",
+                        f"alive: {alive_text}",
+                        f"{eta_label} {eta_value}",
+                    ]
                 )
+                line = " | ".join(line_parts)
                 status_line.write(line)
             else:
-                line = (
-                    f"[{pct:5.1f}%] Turn {turn}/{max_turns} | action: {action[:22]:<22} | "
-                    f"protocol: {protocol_text:<3} | effect: {effect_text:<7} | "
-                    f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'} | eta: {eta_text}"
+                parts_plain = [
+                    f"[{pct:5.1f}%] Turn {turn}/{max_turns}",
+                    f"action: {action[:22]:<22}",
+                ]
+                if not protocol_valid:
+                    parts_plain.append(f"protocol: {protocol_text:<3}")
+                    parts_plain.append(f"effect: {effect_text:<7}")
+                elif not effect_applied:
+                    parts_plain.append(f"effect: {effect_text:<7}")
+                parts_plain.extend(
+                    [
+                        f"score: {score:>4}",
+                        f"invalid: {invalid:>3}",
+                        f"alive: {'yes' if alive else 'no'}",
+                        f"eta: {eta_text}",
+                    ]
                 )
+                line = " | ".join(parts_plain)
                 status_line.write(line)
             return
 

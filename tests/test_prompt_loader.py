@@ -89,7 +89,7 @@ def test_prompt_loader_renders_reflection_prompt() -> None:
     )
 
     assert "SAME seed" in seed_rendered
-    assert "Do not output coordinates." in seed_rendered
+    assert "map-specific hints are allowed" in seed_rendered
     assert "strict JSON array of objects" in seed_rendered
     assert "risk_if_overapplied" in seed_rendered
     assert '"seed": 7' in seed_rendered

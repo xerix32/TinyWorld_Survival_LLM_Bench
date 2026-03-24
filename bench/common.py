@@ -940,6 +940,8 @@ def run_match_once(
                 "turn": turn,
                 "max_turns": run_max_turns,
                 "alive": world.agents[DEFAULT_AGENT_ID].alive,
+                "energy": world.agents[DEFAULT_AGENT_ID].energy,
+                "energy_max": int(rules_cfg.get("energy_max", 100)),
                 "cumulative_score": world.agents[DEFAULT_AGENT_ID].score,
                 "invalid_actions": invalid_actions,
                 "action": parse_result.action or parse_result.normalized_output,

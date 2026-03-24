@@ -13,6 +13,7 @@ from bench.run_compare import (
     _build_jobs,
     _build_from_logs,
     _compare_paths,
+    _should_promote_cross_seed_memory,
     build_model_summaries,
     build_pairwise_summary,
     main,
@@ -64,6 +65,12 @@ def test_build_jobs_stable_order() -> None:
         ("model_b", 11),
         ("model_b", 12),
     ]
+
+
+def test_should_promote_cross_seed_memory_threshold_gate() -> None:
+    assert _should_promote_cross_seed_memory(initial_score=50, adaptive_score=50) is True
+    assert _should_promote_cross_seed_memory(initial_score=50, adaptive_score=47) is True
+    assert _should_promote_cross_seed_memory(initial_score=50, adaptive_score=46) is False
 
 
 def test_compare_paths_supports_legacy_dirs_without_checkpoint(tmp_path: Path) -> None:
@@ -470,7 +477,7 @@ def test_adaptive_initial_attempt_stays_memory_clean(tmp_path: Path, monkeypatch
     adaptive_identity = dict(seed2_adaptive.get("benchmark_identity", {}))
     assert int(initial_identity.get("memory_session_lesson_count") or 0) == 0
     assert int(initial_identity.get("memory_current_seed_lesson_count") or 0) == 0
-    assert int(adaptive_identity.get("memory_session_lesson_count") or 0) >= 1
+    assert int(adaptive_identity.get("memory_session_lesson_count") or 0) == 0
     assert int(adaptive_identity.get("memory_current_seed_lesson_count") or 0) >= 1
 
 

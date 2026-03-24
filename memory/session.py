@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_PROMPT_MEMORY_MAX_ITEMS = 6
+DEFAULT_PROMPT_MEMORY_MAX_ITEMS = 3
 DEFAULT_NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.82
-DEFAULT_MAX_LESSONS_PER_TOPIC = 2
+DEFAULT_MAX_LESSONS_PER_TOPIC = 1
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _TOPIC_STOPWORDS = {
     "a",
@@ -37,6 +37,70 @@ _TOPIC_STOPWORDS = {
     "when",
     "with",
 }
+_TOPIC_KEYWORD_CLUSTERS: tuple[tuple[str, set[str]], ...] = (
+    (
+        "protocol",
+        {
+            "action",
+            "actions",
+            "allowed",
+            "allowed_actions",
+            "format",
+            "invalid",
+            "output",
+            "parser",
+            "protocol",
+            "valid",
+        },
+    ),
+    (
+        "water_pressure",
+        {
+            "dehydration",
+            "drink",
+            "thirst",
+            "water",
+        },
+    ),
+    (
+        "food_pressure",
+        {
+            "eat",
+            "food",
+            "hunger",
+            "starvation",
+        },
+    ),
+    (
+        "energy_pressure",
+        {
+            "energy",
+            "idle",
+            "rest",
+            "wait",
+        },
+    ),
+    (
+        "movement_efficiency",
+        {
+            "coverage",
+            "exploration",
+            "loop",
+            "move",
+            "movement",
+            "path",
+            "revisit",
+            "wandering",
+        },
+    ),
+)
+_TOPIC_TIE_BREAK_RANK: dict[str, int] = {
+    "water_pressure": 5,
+    "food_pressure": 5,
+    "energy_pressure": 4,
+    "movement_efficiency": 3,
+    "protocol": 1,
+}
 
 
 def normalize_lesson_text(value: str) -> str:
@@ -50,6 +114,23 @@ def _tokenize_lesson(value: str) -> set[str]:
 
 def _lesson_topic_key(value: str) -> str:
     tokens = [token for token in _TOKEN_RE.findall(normalize_lesson_text(value).casefold()) if token]
+    token_set = set(tokens)
+
+    best_cluster = ""
+    best_score = 0
+    best_rank = -1
+    for cluster_key, keywords in _TOPIC_KEYWORD_CLUSTERS:
+        score = len(token_set & keywords)
+        if score <= 0:
+            continue
+        rank = _TOPIC_TIE_BREAK_RANK.get(cluster_key, 0)
+        if score > best_score or (score == best_score and rank > best_rank):
+            best_cluster = cluster_key
+            best_score = score
+            best_rank = rank
+    if best_cluster:
+        return best_cluster
+
     for token in tokens:
         if token not in _TOPIC_STOPWORDS:
             return token
@@ -123,9 +204,9 @@ def build_prompt_memory_lessons(
 ) -> dict[str, Any]:
     """Build deterministic prompt-memory payload with dedupe and cap.
 
-    Priority order:
-    1) current-seed lessons
-    2) session lessons
+    Selection order:
+    1) current-seed lessons (exclusive when present)
+    2) session lessons (used only when current-seed lessons are absent)
     """
     session_source = [normalize_lesson_text(item) for item in (session_lessons or []) if normalize_lesson_text(item)]
     current_source = [normalize_lesson_text(item) for item in (current_seed_lessons or []) if normalize_lesson_text(item)]
@@ -146,28 +227,102 @@ def build_prompt_memory_lessons(
     )
     current_count_before_cap = len(selected_lessons)
 
-    session_exact_removed, session_near_removed, session_topic_removed = _append_unique_lessons(
-        source_lessons=session_source,
-        selected_lessons=selected_lessons,
-        selected_token_sets=selected_token_sets,
-        selected_keys=selected_keys,
-        topic_counts=topic_counts,
-        near_duplicate_threshold=near_duplicate_threshold,
-        max_lessons_per_topic=max_lessons_per_topic,
-    )
+    use_session_source = not bool(current_source)
+    if use_session_source:
+        session_exact_removed, session_near_removed, session_topic_removed = _append_unique_lessons(
+            source_lessons=session_source,
+            selected_lessons=selected_lessons,
+            selected_token_sets=selected_token_sets,
+            selected_keys=selected_keys,
+            topic_counts=topic_counts,
+            near_duplicate_threshold=near_duplicate_threshold,
+            max_lessons_per_topic=max_lessons_per_topic,
+        )
+    else:
+        session_exact_removed, session_near_removed, session_topic_removed = 0, 0, 0
     total_before_cap = len(selected_lessons)
 
     effective_max = max(0, int(max_items))
     truncated = selected_lessons[:effective_max]
     removed_by_cap = max(0, total_before_cap - len(truncated))
 
+    source_for_diversity = current_source if current_source else session_source
+    available_topic_order: list[str] = []
+    available_topic_set: set[str] = set()
+    for raw in source_for_diversity:
+        topic = _lesson_topic_key(raw)
+        if topic in available_topic_set:
+            continue
+        available_topic_set.add(topic)
+        available_topic_order.append(topic)
+
+    selected_topic_order: list[str] = []
+    selected_topic_set: set[str] = set()
+    for lesson in truncated:
+        topic = _lesson_topic_key(lesson)
+        if topic in selected_topic_set:
+            continue
+        selected_topic_set.add(topic)
+        selected_topic_order.append(topic)
+
+    diversity_override_applied = False
+    if (
+        effective_max >= 2
+        and len(available_topic_set) >= 2
+        and len(selected_topic_set) < 2
+        and source_for_diversity
+    ):
+        seen_lessons = {item.casefold() for item in truncated}
+        selected_token_sets_for_diversity = [_tokenize_lesson(item) for item in truncated]
+        primary_topic = selected_topic_order[0] if selected_topic_order else ""
+        replacement: str | None = None
+        for raw in source_for_diversity:
+            candidate = normalize_lesson_text(raw)
+            if not candidate:
+                continue
+            if candidate.casefold() in seen_lessons:
+                continue
+            candidate_topic = _lesson_topic_key(candidate)
+            if candidate_topic == primary_topic:
+                continue
+            candidate_tokens = _tokenize_lesson(candidate)
+            is_near_duplicate = any(
+                _jaccard_similarity(candidate_tokens, existing) >= near_duplicate_threshold
+                for existing in selected_token_sets_for_diversity
+            )
+            if is_near_duplicate:
+                continue
+            replacement = candidate
+            break
+
+        if replacement is not None:
+            if len(truncated) < effective_max:
+                truncated.append(replacement)
+            elif truncated:
+                truncated[-1] = replacement
+            diversity_override_applied = True
+            selected_topic_order = []
+            selected_topic_set = set()
+            for lesson in truncated:
+                topic = _lesson_topic_key(lesson)
+                if topic in selected_topic_set:
+                    continue
+                selected_topic_set.add(topic)
+                selected_topic_order.append(topic)
+
     final_current_count = min(current_count_before_cap, len(truncated))
     final_current = truncated[:final_current_count]
     final_session = truncated[final_current_count:]
 
+    selected_topic_counts: dict[str, int] = {}
+    for lesson in truncated:
+        topic = _lesson_topic_key(lesson)
+        selected_topic_counts[topic] = selected_topic_counts.get(topic, 0) + 1
+
     stats = {
         "input_session_count": len(session_source),
         "input_current_seed_count": len(current_source),
+        "session_skipped_due_to_current_seed_count": (len(session_source) if not use_session_source else 0),
         "current_removed_exact_count": current_exact_removed,
         "current_removed_near_count": current_near_removed,
         "current_removed_topic_count": current_topic_removed,
@@ -181,6 +336,9 @@ def build_prompt_memory_lessons(
         "final_current_seed_count": len(final_current),
         "final_session_count": len(final_session),
         "final_total_count": len(truncated),
+        "available_topic_count": len(available_topic_set),
+        "selected_topic_counts": selected_topic_counts,
+        "diversity_override_applied": diversity_override_applied,
     }
 
     return {

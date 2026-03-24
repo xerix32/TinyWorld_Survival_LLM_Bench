@@ -5,7 +5,8 @@ The map layout and resource placement are the same for this rerun.
 
 Extract 3-5 concise lessons that can improve the immediate same-seed rerun.
 Prefer conditional decision rules, not long recaps.
-Do not output coordinates.
+For this same-seed rerun, map-specific hints are allowed when concise and actionable.
+Do not include verbose path or episode recaps.
 Use lessons as soft guidance, not rigid commands.
 
 Lens requirements (generic, not game-specific):
@@ -14,6 +15,9 @@ Lens requirements (generic, not game-specific):
 - At least 1 lesson about avoiding overfocus or repeated low-value actions.
 - At least 1 lesson must explicitly prevent tunnel vision (one pressure improved while another worsens).
 - At least 1 lesson must explicitly require turn-by-turn re-evaluation if recent actions are not improving the targeted pressure.
+- Ensure the lesson set spans at least 2 distinct focus areas; do not return all lessons about only one pressure type.
+- Each `rule` must be a short operational sentence (preferably <= 18 words), action-oriented, and directly usable next turn.
+- Prefer concrete action/resource guidance over abstract meta-policy phrasing.
 
 Current session lessons:
 {% if existing_lessons %}
@@ -42,6 +46,7 @@ Output contract:
   - `trigger`
   - `risk_if_overapplied` (must include an explicit "Do not apply when ..." boundary)
   - `confidence` (`low` | `medium` | `high`)
+- `rule` must stay short and action-oriented; avoid purely abstract guidance with no immediate action implication.
 - Avoid rigid or absolute wording such as: "always", "never", "sole priority", "forbidden action", "eliminate all".
 
 Output example:
