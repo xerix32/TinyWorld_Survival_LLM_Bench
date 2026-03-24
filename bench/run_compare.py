@@ -847,6 +847,7 @@ def _execute_job(
     prompts_dir: str,
     output_logs_dir: Path,
     progress_callback: Any = None,
+    fix_thinking: bool = False,
 ) -> dict[str, Any]:
     return run_match_once(
         seed=job.seed,
@@ -859,6 +860,7 @@ def _execute_job(
         prompts_dir=prompts_dir,
         output_path=_job_log_path(output_logs_dir, job),
         progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
     )
 
 
@@ -1055,6 +1057,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Root directory containing compare run folders (<runs-root>/<run_id>/...).",
     )
     parser.add_argument("--prompts-dir", type=str, default="prompts", help="Prompt templates directory.")
+    parser.add_argument(
+        "--fix-thinking",
+        action="store_true",
+        help="Optional parser recovery: extract the last valid allowed action from verbose model output.",
+    )
     parser.add_argument("--model-workers", type=int, default=1, help="Number of model pipelines running in parallel.")
     parser.add_argument("--seed-workers-per-model", type=int, default=1, help="Concurrent seeds per active model.")
     parser.add_argument(
@@ -1136,6 +1143,7 @@ def main() -> None:
     effective_prompts_dir = str(Path(args.prompts_dir).resolve())
     effective_scenario_arg: str | None = args.scenario
     effective_max_turns = args.max_turns
+    effective_fix_thinking = bool(args.fix_thinking)
 
     resume_context: dict[str, Any] = {
         "benchmark_config": effective_benchmark_config_path,
@@ -1144,6 +1152,7 @@ def main() -> None:
         "prompts_dir": effective_prompts_dir,
         "scenario_arg": effective_scenario_arg,
         "max_turns": effective_max_turns,
+        "fix_thinking": effective_fix_thinking,
         "runs_root": str(runs_root),
         "run_id": compare_id,
         "model_workers": args.model_workers,
@@ -1240,6 +1249,8 @@ def main() -> None:
             effective_scenario_arg = None if resume_scenario in {None, ""} else str(resume_scenario)
             resume_max_turns = resume_context.get("max_turns", effective_max_turns)
             effective_max_turns = None if resume_max_turns in {None, ""} else int(resume_max_turns)
+            effective_fix_thinking = bool(resume_context.get("fix_thinking", effective_fix_thinking))
+            resume_context["fix_thinking"] = effective_fix_thinking
             benchmark_cfg = load_yaml_file(effective_benchmark_config_path)
 
             requested_models = list(model_profiles)
@@ -1458,6 +1469,7 @@ def main() -> None:
                         prompts_dir=effective_prompts_dir,
                         output_logs_dir=run_dirs["logs"],
                         progress_callback=on_progress,
+                        fix_thinking=effective_fix_thinking,
                     )
                 except KeyboardInterrupt:
                     _persist_running_state(status="interrupted")
@@ -1643,6 +1655,7 @@ def main() -> None:
                             prompts_dir=effective_prompts_dir,
                             output_logs_dir=run_dirs["logs"],
                             progress_callback=on_progress,
+                            fix_thinking=effective_fix_thinking,
                         )
                         future_to_job[future] = job
                         running_per_model[model_profile] += 1

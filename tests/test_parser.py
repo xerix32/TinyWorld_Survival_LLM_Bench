@@ -27,6 +27,29 @@ def test_parser_rejects_unknown_action() -> None:
     assert result.error == "not_in_allowed_actions"
 
 
+def test_parser_fix_thinking_extracts_last_action_from_verbose_single_line() -> None:
+    raw = (
+        "I need to find resources urgently. "
+        "Exploring to find water and food is critical. move south"
+    )
+    result = parse_action(raw, ALLOWED, case_mode="case_insensitive", fix_thinking=True)
+
+    assert result.valid is True
+    assert result.action == "move south"
+    assert result.normalized_output == "move south"
+    assert result.fix_thinking_applied is True
+
+
+def test_parser_fix_thinking_extracts_action_from_multiline_reasoning() -> None:
+    raw = "I should keep exploring.\nThen I will commit to move north."
+    result = parse_action(raw, ALLOWED, case_mode="case_insensitive", fix_thinking=True)
+
+    assert result.valid is True
+    assert result.action == "move north"
+    assert result.normalized_output == "move north"
+    assert result.fix_thinking_applied is True
+
+
 def test_parser_strips_thinking_block_and_accepts_action() -> None:
     raw = "<thinking>I should move.</thinking>\nmove north"
     result = parse_action(raw, ALLOWED, case_mode="case_insensitive")

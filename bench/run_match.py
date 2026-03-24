@@ -271,6 +271,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Providers + model profiles file. Default points to local profiles.",
     )
     parser.add_argument("--prompts-dir", type=str, default="prompts", help="Prompt templates directory.")
+    parser.add_argument(
+        "--fix-thinking",
+        action="store_true",
+        help="Optional parser recovery: extract the last valid allowed action from verbose model output.",
+    )
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in terminal output.")
     parser.add_argument("--no-viewer", action="store_true", help="Skip HTML report generation.")
     parser.add_argument("--viewer-output", type=str, default=None, help="Output path for generated HTML report.")
@@ -322,6 +327,8 @@ def main() -> None:
             print(f"Protocol: {protocol_value}")
             print(f"Model: {model_value} | Profile: {profile_value} | Provider: {provider_value}")
             print(f"Seed: {seed_value} | Scenario: {scenario_value}")
+            if bool(event.get("fix_thinking", False)):
+                print(colorize("Parser mode: --fix-thinking enabled (last valid action extraction)", "1;93", color_enabled))
 
             line = (
                 f"[  0.0%] Initializing | turn 0/{event['max_turns']} | "
@@ -408,6 +415,7 @@ def main() -> None:
             prompts_dir=args.prompts_dir,
             output_path=args.output,
             progress_callback=on_progress,
+            fix_thinking=args.fix_thinking,
         )
     except KeyboardInterrupt:
         status_line.finish(colorize("[interrupted] Run canceled by user", "1;93", color_enabled))

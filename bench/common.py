@@ -617,6 +617,7 @@ def run_match_once(
     prompts_dir: str | Path = "prompts",
     output_path: str | Path | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    fix_thinking: bool = False,
 ) -> dict[str, Any]:
     project_root = Path.cwd()
     benchmark_cfg, scenarios_cfg = load_configs(benchmark_config_path, scenarios_config_path)
@@ -675,6 +676,7 @@ def run_match_once(
             "model": wrapper.model_name,
             "max_turns": run_max_turns,
             "protocol_version": protocol_version,
+            "fix_thinking": fix_thinking,
         },
     )
 
@@ -791,6 +793,7 @@ def run_match_once(
             raw_output=model_response.raw_text,
             allowed_actions=allowed_actions,
             case_mode=parser_case_mode,
+            fix_thinking=fix_thinking,
         )
 
         if parse_result.valid and parse_result.action is not None:
@@ -851,6 +854,8 @@ def run_match_once(
                     "is_valid": parse_result.valid,
                     "error": parse_result.error,
                     "allowed_actions": allowed_actions,
+                    "fix_thinking_enabled": fix_thinking,
+                    "fix_thinking_applied": parse_result.fix_thinking_applied,
                 },
                 "world_result_delta": {
                     "action_delta": action_outcome.world_delta,
@@ -862,6 +867,7 @@ def run_match_once(
                     "success": action_outcome.success,
                     "message": action_outcome.message,
                     "invalid_reason": action_outcome.invalid_reason,
+                    "fix_thinking_applied": parse_result.fix_thinking_applied,
                 },
                 "score_delta": {
                     "action": action_score_delta,
@@ -919,6 +925,8 @@ def run_match_once(
         "model_profile": model_binding.model_profile,
         "model": wrapper.model_name,
         "max_turns": run_max_turns,
+        "parser_case_mode": parser_case_mode,
+        "fix_thinking": fix_thinking,
         "turns_played": len(turn_logs),
         "turns_survived": survived_turns,
         "final_score": final_agent.score,
@@ -1012,6 +1020,8 @@ def run_match_once(
             "prompt_templates": prompt_metadata["templates"],
             "active_templates": prompt_metadata["active_templates"],
             "prompts_dir": prompt_metadata["prompts_dir"],
+            "parser_case_mode": parser_case_mode,
+            "fix_thinking": fix_thinking,
         },
         "config_snapshot": {
             "benchmark": benchmark_cfg,

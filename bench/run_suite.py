@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenarios-config", type=str, default="configs/scenarios.yaml")
     parser.add_argument("--providers-config", type=str, default="configs/providers.yaml")
     parser.add_argument("--prompts-dir", type=str, default="prompts")
+    parser.add_argument(
+        "--fix-thinking",
+        action="store_true",
+        help="Optional parser recovery: extract the last valid allowed action from verbose model output.",
+    )
     parser.add_argument("--no-color", action="store_true")
     return parser
 
@@ -105,6 +110,7 @@ def main() -> None:
             prompts_dir=args.prompts_dir,
             output_path=None,
             progress_callback=None,
+            fix_thinking=args.fix_thinking,
         )
         rows.append(run_log["run_summary"])
 
