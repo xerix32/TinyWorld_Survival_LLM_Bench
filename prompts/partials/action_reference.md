@@ -7,4 +7,4 @@
 - eat: consume 1 food from inventory to reduce hunger.
 - drink: consume 1 water from inventory to reduce thirst.
 - rest: recover some energy.
-- inspect: spend a turn inspecting the current situation.
+- wait: spend a turn without a direct action (pass turn).

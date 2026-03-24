@@ -13,8 +13,12 @@ from renderers.json_renderer import to_canonical_json
 
 PROMPT_TEMPLATE_FILES = [
     "system/agent_core.md",
+    "system/reflection_core.md",
     "user/turn_observation.md",
     "user/turn_observation_with_memory.md",
+    "user/reflection_lessons.md",
+    "user/reflection_seed_rerun.md",
+    "user/reflection_cross_seed.md",
     "partials/engine_contract.md",
     "partials/rules.md",
     "partials/action_reference.md",
@@ -69,6 +73,9 @@ class PromptLoader:
                 "system": "system/agent_core.md",
                 "turn": "user/turn_observation.md",
                 "turn_with_memory": "user/turn_observation_with_memory.md",
+                "reflection_system": "system/reflection_core.md",
+                "reflection_seed_rerun": "user/reflection_seed_rerun.md",
+                "reflection_cross_seed": "user/reflection_cross_seed.md",
             },
         }
 
@@ -80,11 +87,75 @@ class PromptLoader:
         observation: dict[str, Any],
         include_memory: bool = False,
         memory_summary: str = "No memory available in v0.1.",
+        lessons: list[dict[str, Any]] | None = None,
+        session_lessons: list[dict[str, Any]] | None = None,
+        current_seed_lessons: list[dict[str, Any]] | None = None,
     ) -> str:
         template_name = "user/turn_observation_with_memory.md" if include_memory else "user/turn_observation.md"
+        effective_session_lessons = (
+            session_lessons
+            if session_lessons is not None
+            else (lessons or [])
+        )
         context = {
             "observation": observation,
             "observation_json": to_canonical_json(observation),
             "memory_summary": memory_summary,
+            "lessons": lessons or [],
+            "session_lessons": effective_session_lessons,
+            "current_seed_lessons": current_seed_lessons or [],
         }
         return self.render_template(template_name, context)
+
+    def render_reflection_system_prompt(self, context: dict[str, Any] | None = None) -> str:
+        return self.render_template("system/reflection_core.md", context or {})
+
+    def render_reflection_prompt(
+        self,
+        *,
+        run_summary: dict[str, Any],
+        run_analysis: dict[str, Any] | None,
+        existing_lessons: list[dict[str, Any]] | None = None,
+    ) -> str:
+        context = {
+            "run_summary_json": to_canonical_json(run_summary or {}),
+            "run_analysis_json": to_canonical_json(run_analysis or {}),
+            "existing_lessons": existing_lessons or [],
+        }
+        return self.render_template("user/reflection_lessons.md", context)
+
+    def render_seed_reflection_prompt(
+        self,
+        *,
+        run_summary: dict[str, Any],
+        run_analysis: dict[str, Any] | None,
+        existing_lessons: list[dict[str, Any]] | None = None,
+    ) -> str:
+        context = {
+            "run_summary_json": to_canonical_json(run_summary or {}),
+            "run_analysis_json": to_canonical_json(run_analysis or {}),
+            "existing_lessons": existing_lessons or [],
+        }
+        return self.render_template("user/reflection_seed_rerun.md", context)
+
+    def render_cross_seed_refinement_prompt(
+        self,
+        *,
+        initial_run_summary: dict[str, Any],
+        initial_run_analysis: dict[str, Any] | None,
+        rerun_summary: dict[str, Any],
+        rerun_analysis: dict[str, Any] | None,
+        existing_lessons: list[dict[str, Any]] | None = None,
+        seed_lessons: list[dict[str, Any]] | None = None,
+        adaptive_feedback: dict[str, Any] | None = None,
+    ) -> str:
+        context = {
+            "initial_run_summary_json": to_canonical_json(initial_run_summary or {}),
+            "initial_run_analysis_json": to_canonical_json(initial_run_analysis or {}),
+            "rerun_summary_json": to_canonical_json(rerun_summary or {}),
+            "rerun_analysis_json": to_canonical_json(rerun_analysis or {}),
+            "existing_lessons": existing_lessons or [],
+            "seed_lessons": seed_lessons or [],
+            "adaptive_feedback_json": to_canonical_json(adaptive_feedback or {}),
+        }
+        return self.render_template("user/reflection_cross_seed.md", context)

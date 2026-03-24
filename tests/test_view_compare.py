@@ -10,7 +10,7 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
     compare_payload = {
         "meta": {
             "compare_id": "20260322T000000Z",
-            "protocol_version": "AIB-0.1",
+            "protocol_version": "AIB-0.1.1",
             "bench_version": "0.1.14",
             "engine_version": "0.1.14",
             "scenario": "v0_1_basic",
@@ -20,6 +20,7 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
             "total_runs": 1,
             "paired_seeds": True,
             "prompt_set_sha256": "abc123",
+            "adaptive_aggregate_score": 12,
             "compatibility": {
                 "status": "warning",
                 "warnings": [
@@ -83,12 +84,12 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
                             "agent_position_after": {"x": 0, "y": 0},
                             "map_snapshot": [["empty", "tree"], ["rock", "water"]],
                             "path_prefix": [{"x": 0, "y": 0}],
-                            "action_result": {"requested": "inspect", "message": "inspected", "success": True},
+                            "action_result": {"requested": "wait", "message": "waited", "success": True},
                             "validation_result": {"is_valid": True},
                             "score_delta": {"total": 1, "events": ["survive_turn"]},
                             "cumulative_score": 1,
                             "metrics": {"latency_ms": 1000, "tokens_used": 100, "estimated_cost": None},
-                            "raw_model_output": "inspect",
+                            "raw_model_output": "wait",
                         }
                     ],
                 },
@@ -112,3 +113,4 @@ def test_generate_compare_viewer_html(tmp_path: Path) -> None:
     assert "Turn Timeline" in rendered
     assert "dummy_v0_1" in rendered
     assert "Mixed engine versions" in rendered
+    assert "adaptive total score" in rendered

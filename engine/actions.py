@@ -22,7 +22,7 @@ ACTION_REFERENCE = [
     "eat",
     "drink",
     "rest",
-    "inspect",
+    "wait",
 ]
 
 MOVE_DELTAS = {
@@ -161,11 +161,11 @@ def apply_action(
             world_delta={"energy_before": before_energy, "energy_after": agent.energy},
         )
 
-    if action == "inspect":
+    if action == "wait":
         return ActionOutcome(
             action=action,
             success=True,
-            message="inspection complete",
+            message="waited",
             world_delta={},
         )
 

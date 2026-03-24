@@ -18,6 +18,6 @@ class DummyRandomWrapper(BaseModelWrapper):
 
         allowed_actions = list(metadata.get("allowed_actions", []))
         if not allowed_actions:
-            return ModelResponse(raw_text="inspect")
+            return ModelResponse(raw_text="wait")
 
         return ModelResponse(raw_text=self._rng.choice(allowed_actions))

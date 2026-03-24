@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 
 
@@ -49,11 +50,35 @@ class StatusLine:
         stripped = re.sub(r"\x1b\[[0-9;]*m", "", text)
         return len(stripped)
 
+    @staticmethod
+    def _strip_ansi(text: str) -> str:
+        return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+    def _fit_to_terminal(self, text: str) -> str:
+        cleaned = text.replace("\n", " ").replace("\r", " ")
+        try:
+            columns = shutil.get_terminal_size(fallback=(160, 24)).columns
+        except OSError:
+            columns = 160
+        if columns <= 1:
+            return cleaned
+        max_visible = max(20, columns - 1)
+        visible_len = self._visible_len(cleaned)
+        if visible_len <= max_visible:
+            return cleaned
+
+        # Keep output single-line and avoid terminal wrapping artifacts.
+        plain = self._strip_ansi(cleaned)
+        if max_visible <= 1:
+            return plain[:max_visible]
+        return plain[: max_visible - 1] + "…"
+
     def write(self, text: str) -> None:
         if self.enabled:
-            visible_len = self._visible_len(text)
+            fitted = self._fit_to_terminal(text)
+            visible_len = self._visible_len(fitted)
             pad = max(0, self._last_visible_len - visible_len)
-            sys.stdout.write("\r" + text + (" " * pad))
+            sys.stdout.write("\r" + fitted + (" " * pad))
             sys.stdout.flush()
             self._active = True
             self._last_visible_len = visible_len
@@ -63,9 +88,10 @@ class StatusLine:
     def finish(self, text: str | None = None) -> None:
         if self.enabled:
             if text is not None:
-                visible_len = self._visible_len(text)
+                fitted = self._fit_to_terminal(text)
+                visible_len = self._visible_len(fitted)
                 pad = max(0, self._last_visible_len - visible_len)
-                sys.stdout.write("\r" + text + (" " * pad))
+                sys.stdout.write("\r" + fitted + (" " * pad))
             elif self._last_visible_len > 0:
                 sys.stdout.write("\r" + (" " * self._last_visible_len))
             sys.stdout.write("\n")

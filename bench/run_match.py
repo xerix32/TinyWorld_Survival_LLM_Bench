@@ -314,7 +314,7 @@ def main() -> None:
 
         if event_type == "run_started":
             run_started_at = time.monotonic()
-            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1")), "1;96", color_enabled)
+            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1.1")), "1;96", color_enabled)
             model_value = colorize(str(event["model"]), "1;97", color_enabled)
             profile_value = colorize(str(event["model_profile"]), "1;95", color_enabled)
             provider_value = colorize(str(event["provider_id"]), "1;94", color_enabled)

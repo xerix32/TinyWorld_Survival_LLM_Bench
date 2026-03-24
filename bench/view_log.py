@@ -176,7 +176,7 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
             run_summary=summary,
             rules_cfg=benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {},
             initial_tiles=run_log.get("world_snapshots", {}).get("initial_tiles", []),
-            protocol_version=str(run_log.get("protocol_version", "AIB-0.1")),
+            protocol_version=str(run_log.get("protocol_version", "AIB-0.1.1")),
         )
         summary["analysis_version"] = analysis["analysis_version"]
         summary["analysis_schema_version"] = analysis["analysis_schema_version"]

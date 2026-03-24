@@ -1,5 +1,5 @@
-version: 0.1.35
-protocol_version: AIB-0.1
+version: 0.2.1
+protocol_version: AIB-0.1.1
 pricing_config_path: configs/pricing.yaml
 default_scenario: v0_1_basic
 max_turns: 50

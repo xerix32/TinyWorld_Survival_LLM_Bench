@@ -183,12 +183,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
     }
+    .winner-strip .ws-score-duo {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(110px, 1fr));
+      gap: 14px;
+      align-items: center;
+    }
     .winner-strip .ws-score {
       font-family: var(--font-mono);
       font-size: 1.5rem;
       font-weight: 800;
       color: var(--text);
       line-height: 1;
+    }
+    .winner-strip .ws-score-adaptive {
+      color: var(--accent);
     }
     .winner-strip .ws-score-label {
       font-size: 0.56rem;
@@ -1805,6 +1814,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const pairwise = Array.isArray(DATA.pairwise) ? DATA.pairwise : [];
     const runs = Array.isArray(DATA.runs) ? DATA.runs : [];
     const meta = DATA.meta || {};
+    const adaptiveSection = (DATA.adaptive && typeof DATA.adaptive === 'object') ? DATA.adaptive : null;
+    const adaptiveModelRows = Array.isArray(adaptiveSection?.models) ? adaptiveSection.models : [];
+    const adaptiveAvgByProfile = new Map(
+      adaptiveModelRows
+        .map(row => [String(row?.model_profile || ''), Number(row?.adaptive_score_avg)])
+        .filter((entry) => Number.isFinite(entry[1]))
+    );
 
     let selectedRunIndex = 0;
     let filteredRunIndexes = [];
@@ -1979,6 +1995,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return text.length <= 18 ? text : `${text.slice(0, 18)}...`;
     }
 
+    function adaptiveAvgScoreForModel(modelProfile) {
+      const raw = adaptiveAvgByProfile.get(String(modelProfile || ''));
+      return Number.isFinite(raw) ? raw : null;
+    }
+
     function getRunStatus(summary) {
       const endReason = String(summary?.end_reason || '');
       if (endReason === 'agent_dead') {
@@ -2057,6 +2078,18 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const totalModelCost = modelCosts.length > 0
         ? modelCosts.reduce((sum, value) => sum + value, 0)
         : null;
+      const baselineScoreTotal = (() => {
+        const raw = Number(adaptiveSection?.baseline_totals?.score_total);
+        if (Number.isFinite(raw)) return raw;
+        const fallback = Number(meta.total_score);
+        return Number.isFinite(fallback) ? fallback : null;
+      })();
+      const adaptiveScoreTotal = (() => {
+        const raw = Number(adaptiveSection?.adaptive_totals?.score_total);
+        if (Number.isFinite(raw)) return raw;
+        const fallback = Number(meta.adaptive_aggregate_score);
+        return Number.isFinite(fallback) ? fallback : null;
+      })();
 
       const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" data-tip="Click to show the full game rules, stat mechanics, and scoring logic"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
       const chips = [
@@ -2075,6 +2108,24 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12), 'SHA-256 hash of the prompt set. Same hash = identical prompts across runs'),
         chip('fairness', 'paired seeds', 'All models play the exact same maps (paired seeds) so score differences reflect model ability, not map luck'),
       ];
+      if (baselineScoreTotal != null) {
+        chips.push(
+          chip(
+            'total score',
+            formatCount(baselineScoreTotal),
+            'Aggregate baseline score total from initial (non-memory) attempts'
+          )
+        );
+      }
+      if (adaptiveScoreTotal != null) {
+        chips.push(
+          chip(
+            'adaptive total score',
+            formatCount(adaptiveScoreTotal),
+            'Aggregate adaptive score total from memory-injected reruns'
+          )
+        );
+      }
       metaChips.innerHTML = chips.join('');
 
       if (compatWarnings) {
@@ -2357,6 +2408,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const latency = formatDurationFromMs(modelLatencyPerTurn(m));
       const cost = formatUsd(m.estimated_cost_total, 'n/a');
       const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
+      const hasAdaptiveStats = adaptiveAvgByProfile.size > 0;
+      const adaptiveAvgScore = adaptiveAvgScoreForModel(m.model_profile);
+      const adaptiveAvgScoreLabel = adaptiveAvgScore == null ? 'n/a' : formatFloat(adaptiveAvgScore, 2);
 
       el.innerHTML = `<div class="winner-strip">
         <div class="ws-rank">1</div>
@@ -2364,8 +2418,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <div class="ws-model"><span style="color:${m._color || '#22d3ee'}">${m.model_profile}</span> ${renderBadges(m)}</div>
         </div>
         <div class="ws-score-block">
-          <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
-          <div class="ws-score-label">Avg Score</div>
+          ${hasAdaptiveStats
+            ? `<div class="ws-score-duo">
+                <div>
+                  <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
+                  <div class="ws-score-label">Avg Score</div>
+                </div>
+                <div>
+                  <div class="ws-score ws-score-adaptive">${adaptiveAvgScoreLabel}</div>
+                  <div class="ws-score-label">Adaptive Avg Score</div>
+                </div>
+              </div>`
+            : `<div>
+                <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
+                <div class="ws-score-label">Avg Score</div>
+              </div>`
+          }
         </div>
         <div class="ws-metrics">
           <div class="ws-metric" data-tip="Percentage of runs where the agent survived all turns"><div class="ws-metric-value">${survivalRate}%</div><div class="ws-metric-label">Survival</div></div>

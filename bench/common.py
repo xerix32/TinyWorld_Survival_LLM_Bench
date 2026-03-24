@@ -28,6 +28,7 @@ from models.dummy import DummyRandomWrapper
 from models.local_wrapper import LocalWrapper
 from models.openai_wrapper import OpenAIWrapper
 from renderers.json_renderer import prompt_pair_hash
+from memory.session import build_prompt_memory_lessons
 from bench.pricing import (
     estimate_cost_from_total_tokens,
     estimate_cost_usd,
@@ -542,7 +543,7 @@ def _build_run_analytics(
     effective_protocol_version = str(
         protocol_version
         or run_summary.get("protocol_version")
-        or "AIB-0.1"
+        or "AIB-0.1.1"
     )
     run_identity = {
         "protocol_version": effective_protocol_version,
@@ -618,6 +619,12 @@ def run_match_once(
     output_path: str | Path | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     fix_thinking: bool = False,
+    include_memory: bool = False,
+    memory_lessons: list[str] | None = None,
+    session_lessons: list[str] | None = None,
+    current_seed_lessons: list[str] | None = None,
+    attempt_kind: str = "standard",
+    adaptive_pair_key: str | None = None,
 ) -> dict[str, Any]:
     project_root = Path.cwd()
     benchmark_cfg, scenarios_cfg = load_configs(benchmark_config_path, scenarios_config_path)
@@ -648,6 +655,22 @@ def run_match_once(
             pricing_cfg = load_pricing_config(pricing_path)
 
     run_max_turns = int(max_turns if max_turns is not None else benchmark_cfg["max_turns"])
+    prompt_variant = "turn_observation_with_memory" if include_memory else "turn_observation"
+    effective_session_lessons = list(session_lessons if session_lessons is not None else (memory_lessons or []))
+    effective_current_seed_lessons = list(current_seed_lessons or [])
+    memory_hygiene: dict[str, Any] | None = None
+    if include_memory:
+        memory_bundle = build_prompt_memory_lessons(
+            session_lessons=effective_session_lessons,
+            current_seed_lessons=effective_current_seed_lessons,
+        )
+        effective_session_lessons = list(memory_bundle["session_lessons"])
+        effective_current_seed_lessons = list(memory_bundle["current_seed_lessons"])
+        memory_hygiene = dict(memory_bundle["stats"])
+
+    session_memory_items = [{"text": str(item)} for item in effective_session_lessons if str(item).strip()]
+    current_seed_memory_items = [{"text": str(item)} for item in effective_current_seed_lessons if str(item).strip()]
+    memory_items = session_memory_items + current_seed_memory_items
 
     world = create_world(seed=seed, scenario_cfg=scenario, rules_cfg=rules_cfg, agent_id=DEFAULT_AGENT_ID)
     initial_tiles = serialize_tiles(world)
@@ -677,6 +700,13 @@ def run_match_once(
             "max_turns": run_max_turns,
             "protocol_version": protocol_version,
             "fix_thinking": fix_thinking,
+            "memory_injected": include_memory,
+            "memory_lesson_count": len(memory_items),
+            "memory_session_lesson_count": len(session_memory_items),
+            "memory_current_seed_lesson_count": len(current_seed_memory_items),
+            "memory_hygiene": memory_hygiene,
+            "attempt_kind": attempt_kind,
+            "adaptive_pair_key": adaptive_pair_key,
         },
     )
 
@@ -723,7 +753,14 @@ def run_match_once(
 
         allowed_actions = compute_allowed_actions(world, DEFAULT_AGENT_ID, rules_cfg)
         observation = build_observation(world, DEFAULT_AGENT_ID, allowed_actions, protocol_version)
-        user_prompt = prompt_loader.render_turn_prompt(observation=observation, include_memory=False)
+        user_prompt = prompt_loader.render_turn_prompt(
+            observation=observation,
+            include_memory=include_memory,
+            memory_summary="No adaptive lessons yet.",
+            lessons=memory_items,
+            session_lessons=session_memory_items,
+            current_seed_lessons=current_seed_memory_items,
+        )
 
         prompts = RenderedPrompts(system_prompt=system_prompt, user_prompt=user_prompt)
         model_metadata = {
@@ -735,6 +772,13 @@ def run_match_once(
             "protocol_version": protocol_version,
             "provider_id": model_binding.provider_id,
             "model_profile": model_binding.model_profile,
+            "memory_injected": include_memory,
+            "memory_lesson_count": len(memory_items),
+            "memory_session_lesson_count": len(session_memory_items),
+            "memory_current_seed_lesson_count": len(current_seed_memory_items),
+            "memory_hygiene": memory_hygiene,
+            "attempt_kind": attempt_kind,
+            "adaptive_pair_key": adaptive_pair_key,
         }
 
         call_started = perf_counter()
@@ -837,6 +881,7 @@ def run_match_once(
             "system_prompt_sha256": prompt_pair_hash(system_prompt, ""),
             "user_prompt_sha256": prompt_pair_hash("", user_prompt),
             "combined_prompt_sha256": prompt_pair_hash(system_prompt, user_prompt),
+            "memory_hygiene": memory_hygiene,
         }
         if log_full_prompts:
             prompt_payload["system_prompt"] = system_prompt
@@ -925,6 +970,30 @@ def run_match_once(
         "model_profile": model_binding.model_profile,
         "model": wrapper.model_name,
         "max_turns": run_max_turns,
+        "attempt_kind": attempt_kind,
+        "adaptive_pair_key": adaptive_pair_key,
+        "memory_injected": include_memory,
+        "memory_lesson_count": len(memory_items),
+        "memory_session_lesson_count": len(session_memory_items),
+        "memory_current_seed_lesson_count": len(current_seed_memory_items),
+        "memory_hygiene": memory_hygiene,
+        "adaptive_seed_reflection_policy_id": (
+            "AIB-AM-v2-seed-reflection-same-seed-rerun" if include_memory else None
+        ),
+        "adaptive_seed_reflection_policy_text": (
+            "Seed reflection is for an immediate rerun on the same seed and does not assume a different next seed."
+            if include_memory
+            else None
+        ),
+        "adaptive_cross_seed_policy_id": (
+            "AIB-AM-v2-cross-seed-transferable" if include_memory else None
+        ),
+        "adaptive_cross_seed_policy_text": (
+            "Cross-seed refinement memory must be transferable, seed-agnostic, and must not include coordinates or map-specific facts."
+            if include_memory
+            else None
+        ),
+        "prompt_variant": prompt_variant,
         "parser_case_mode": parser_case_mode,
         "fix_thinking": fix_thinking,
         "turns_played": len(turn_logs),
@@ -1020,8 +1089,16 @@ def run_match_once(
             "prompt_templates": prompt_metadata["templates"],
             "active_templates": prompt_metadata["active_templates"],
             "prompts_dir": prompt_metadata["prompts_dir"],
+            "prompt_variant": prompt_variant,
             "parser_case_mode": parser_case_mode,
             "fix_thinking": fix_thinking,
+            "memory_injected": include_memory,
+            "memory_lesson_count": len(memory_items),
+            "memory_session_lesson_count": len(session_memory_items),
+            "memory_current_seed_lesson_count": len(current_seed_memory_items),
+            "memory_hygiene": memory_hygiene,
+            "attempt_kind": attempt_kind,
+            "adaptive_pair_key": adaptive_pair_key,
         },
         "config_snapshot": {
             "benchmark": benchmark_cfg,

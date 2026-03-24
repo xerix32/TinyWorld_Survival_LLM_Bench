@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **0.1.35**
+Version: **0.2.2**
 
 TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
 
@@ -22,7 +22,7 @@ TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner f
 - `eat`
 - `drink`
 - `rest`
-- `inspect`
+- `wait`
 
 ## Determinism and fairness
 - Engine is the source of truth for state, validation, scoring, and end conditions.
@@ -115,6 +115,27 @@ python -m bench.run_compare
 - `--runs-root artifacts/runs`
 - `--model-workers 1`
 - `--seed-workers-per-model 1`
+- `--adaptive-memory OFF`
+
+Adaptive-memory mode (optional):
+```bash
+python -m bench.run_compare \
+  --models vercel_gemini_2_5_flash_lite \
+  --num-runs 3 \
+  --adaptive-memory
+```
+
+When `--adaptive-memory` is enabled, each model/seed runs:
+1. initial attempt on seed `N` (baseline/original score)
+2. seed reflection (same model, same-seed rerun lessons, strict JSON)
+3. same-seed rerun on `N` with session lessons + current-seed lessons injected
+4. cross-seed refinement (same model, transferable seed-agnostic lessons, strict JSON)
+5. session memory update for the next seed in the same adaptive session
+
+Adaptive reporting is separate from baseline:
+- baseline totals/averages are computed from initial attempts
+- adaptive totals/averages are computed from memory-injected reruns
+- deltas are reported as adaptive minus baseline
 
 Example model-vs-model compare:
 ```bash
@@ -202,3 +223,10 @@ Each run log includes benchmark identity metadata for fair comparisons:
 - `benchmark_identity.system_prompt_sha256`
 - `benchmark_identity.prompt_templates` (template-path -> sha256)
 - `prompt_versions` (prompt-set/version alias block)
+
+## Adaptive memory principle (v2)
+Adaptive mode uses two distinct policies:
+- **Seed reflection** (same-seed rerun): produce lessons for an immediate rerun on the same seed.
+- **Cross-seed refinement** (future seeds): memory must contain only transferable, seed-agnostic lessons.
+
+Episode-specific facts are allowed in run summaries for analysis, but must not be injected into future-seed memory.

@@ -70,7 +70,7 @@ def compute_allowed_actions(
                 allowed.append(action)
             continue
 
-        if action in {"rest", "inspect"}:
+        if action in {"rest", "wait"}:
             allowed.append(action)
             continue
 

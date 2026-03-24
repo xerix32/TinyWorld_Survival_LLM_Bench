@@ -24,11 +24,21 @@ from urllib.parse import quote
 import webbrowser
 
 from bench.cli_ui import StatusLine, colorize, format_eta, use_color
-from bench.common import _build_run_analytics, load_yaml_file, resolve_artifact_dirs, run_match_once
+from bench.common import (
+    _build_run_analytics,
+    create_model_wrapper,
+    load_yaml_file,
+    resolve_artifact_dirs,
+    run_match_once,
+)
 from bench.pricing import estimate_cost_from_total_tokens, load_pricing_config, resolve_model_pricing
 from bench.view_compare import generate_compare_viewer
 from bench.view_log import build_viewer_payload
+from engine.prompt_loader import PromptLoader
 from engine.version import __version__
+from memory.filter import filter_lessons
+from memory.reflection import run_cross_seed_refinement, run_seed_reflection
+from memory.session import lessons_to_prompt_items, merge_lessons, save_json
 
 
 COMPARE_RUN_FIELDS = [
@@ -62,7 +72,55 @@ COMPARE_RUN_FIELDS = [
     "tokens_used",
     "latency_ms",
     "estimated_cost",
+    "attempt_kind",
+    "memory_injected",
+    "memory_lesson_count",
+    "adaptive_pair_key",
     "log_path",
+]
+
+ADAPTIVE_RUN_FIELDS = COMPARE_RUN_FIELDS
+
+ADAPTIVE_PAIR_FIELDS = [
+    "compare_id",
+    "model_profile",
+    "seed",
+    "adaptive_pair_key",
+    "initial_score",
+    "adaptive_score",
+    "delta_score",
+    "initial_turns_survived",
+    "adaptive_turns_survived",
+    "delta_turns_survived",
+    "initial_invalid_actions",
+    "adaptive_invalid_actions",
+    "delta_invalid_actions",
+    "initial_resources_gathered",
+    "adaptive_resources_gathered",
+    "delta_resources_gathered",
+    "lessons_before_count",
+    "lessons_added_count",
+    "lessons_after_count",
+    "reflection_parse_error",
+    "reflection_path",
+    "memory_snapshot_path",
+]
+
+ADAPTIVE_MODEL_FIELDS = [
+    "model_profile",
+    "runs",
+    "baseline_score_total",
+    "adaptive_score_total",
+    "delta_score_total",
+    "baseline_score_avg",
+    "adaptive_score_avg",
+    "delta_score_avg",
+    "baseline_turns_survived_avg",
+    "adaptive_turns_survived_avg",
+    "delta_turns_survived_avg",
+    "baseline_invalid_actions_avg",
+    "adaptive_invalid_actions_avg",
+    "delta_invalid_actions_avg",
 ]
 
 MODEL_SUMMARY_FIELDS = [
@@ -167,6 +225,7 @@ def _build_run_dirs(runs_root: Path, run_id: str) -> dict[str, Path]:
         "results": run_root / "results",
         "replays": run_root / "replays",
         "checkpoint": run_root / "checkpoint",
+        "memory": run_root / "memory",
     }
     for path in dirs.values():
         path.mkdir(parents=True, exist_ok=True)
@@ -521,6 +580,148 @@ def build_pairwise_summary(
     return pairwise_rows
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_adaptive_feedback(
+    *,
+    initial_summary: dict[str, Any],
+    adaptive_summary: dict[str, Any],
+) -> dict[str, Any]:
+    initial_score = _safe_int(initial_summary.get("final_score"))
+    adaptive_score = _safe_int(adaptive_summary.get("final_score"))
+    initial_turns = _safe_int(initial_summary.get("turns_survived"))
+    adaptive_turns = _safe_int(adaptive_summary.get("turns_survived"))
+    initial_invalid = _safe_int(initial_summary.get("invalid_actions"))
+    adaptive_invalid = _safe_int(adaptive_summary.get("invalid_actions"))
+    initial_resources = _safe_int(initial_summary.get("resources_gathered"))
+    adaptive_resources = _safe_int(adaptive_summary.get("resources_gathered"))
+    return {
+        "score": {"initial": initial_score, "adaptive": adaptive_score, "delta": adaptive_score - initial_score},
+        "turns_survived": {
+            "initial": initial_turns,
+            "adaptive": adaptive_turns,
+            "delta": adaptive_turns - initial_turns,
+        },
+        "invalid_actions": {
+            "initial": initial_invalid,
+            "adaptive": adaptive_invalid,
+            "delta": adaptive_invalid - initial_invalid,
+        },
+        "resources_gathered": {
+            "initial": initial_resources,
+            "adaptive": adaptive_resources,
+            "delta": adaptive_resources - initial_resources,
+        },
+        "end_reason": {
+            "initial": str(initial_summary.get("end_reason", "")),
+            "adaptive": str(adaptive_summary.get("end_reason", "")),
+        },
+        "death_cause": {
+            "initial": str(initial_summary.get("death_cause", "") or ""),
+            "adaptive": str(adaptive_summary.get("death_cause", "") or ""),
+        },
+    }
+
+
+def _adaptive_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    score_total = sum(_safe_int(row.get("final_score")) for row in rows)
+    turns_survived_total = sum(_safe_int(row.get("turns_survived")) for row in rows)
+    invalid_total = sum(_safe_int(row.get("invalid_actions")) for row in rows)
+    resources_total = sum(_safe_int(row.get("resources_gathered")) for row in rows)
+    runs = len(rows)
+    return {
+        "runs": runs,
+        "score_total": score_total,
+        "score_avg": (score_total / runs) if runs > 0 else None,
+        "turns_survived_total": turns_survived_total,
+        "turns_survived_avg": (turns_survived_total / runs) if runs > 0 else None,
+        "invalid_actions_total": invalid_total,
+        "invalid_actions_avg": (invalid_total / runs) if runs > 0 else None,
+        "resources_gathered_total": resources_total,
+        "resources_gathered_avg": (resources_total / runs) if runs > 0 else None,
+    }
+
+
+def _build_adaptive_model_rows(
+    baseline_rows: list[dict[str, Any]],
+    adaptive_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    baseline_by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    adaptive_by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in baseline_rows:
+        baseline_by_model[str(row.get("model_profile", ""))].append(row)
+    for row in adaptive_rows:
+        adaptive_by_model[str(row.get("model_profile", ""))].append(row)
+
+    model_names = sorted(set(baseline_by_model.keys()) | set(adaptive_by_model.keys()))
+    result: list[dict[str, Any]] = []
+    for model in model_names:
+        baseline_totals = _adaptive_totals(baseline_by_model.get(model, []))
+        adaptive_totals = _adaptive_totals(adaptive_by_model.get(model, []))
+        result.append(
+            {
+                "model_profile": model,
+                "runs": adaptive_totals["runs"],
+                "baseline_score_total": baseline_totals["score_total"],
+                "adaptive_score_total": adaptive_totals["score_total"],
+                "delta_score_total": adaptive_totals["score_total"] - baseline_totals["score_total"],
+                "baseline_score_avg": baseline_totals["score_avg"],
+                "adaptive_score_avg": adaptive_totals["score_avg"],
+                "delta_score_avg": (
+                    None
+                    if baseline_totals["score_avg"] is None or adaptive_totals["score_avg"] is None
+                    else adaptive_totals["score_avg"] - baseline_totals["score_avg"]
+                ),
+                "baseline_turns_survived_avg": baseline_totals["turns_survived_avg"],
+                "adaptive_turns_survived_avg": adaptive_totals["turns_survived_avg"],
+                "delta_turns_survived_avg": (
+                    None
+                    if baseline_totals["turns_survived_avg"] is None or adaptive_totals["turns_survived_avg"] is None
+                    else adaptive_totals["turns_survived_avg"] - baseline_totals["turns_survived_avg"]
+                ),
+                "baseline_invalid_actions_avg": baseline_totals["invalid_actions_avg"],
+                "adaptive_invalid_actions_avg": adaptive_totals["invalid_actions_avg"],
+                "delta_invalid_actions_avg": (
+                    None
+                    if baseline_totals["invalid_actions_avg"] is None or adaptive_totals["invalid_actions_avg"] is None
+                    else adaptive_totals["invalid_actions_avg"] - baseline_totals["invalid_actions_avg"]
+                ),
+            }
+        )
+    return result
+
+
+def _build_adaptive_section(
+    *,
+    baseline_rows: list[dict[str, Any]],
+    adaptive_rows: list[dict[str, Any]],
+    adaptive_pair_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    baseline_totals = _adaptive_totals(baseline_rows)
+    adaptive_totals = _adaptive_totals(adaptive_rows)
+    model_rows = _build_adaptive_model_rows(baseline_rows, adaptive_rows)
+
+    return {
+        "enabled": True,
+        "aggregate_adaptive_score": adaptive_totals["score_total"],
+        "baseline_totals": baseline_totals,
+        "adaptive_totals": adaptive_totals,
+        "delta_totals": {
+            "score_total": adaptive_totals["score_total"] - baseline_totals["score_total"],
+            "turns_survived_total": adaptive_totals["turns_survived_total"] - baseline_totals["turns_survived_total"],
+            "invalid_actions_total": adaptive_totals["invalid_actions_total"] - baseline_totals["invalid_actions_total"],
+            "resources_gathered_total": adaptive_totals["resources_gathered_total"] - baseline_totals["resources_gathered_total"],
+        },
+        "models": model_rows,
+        "pairs": adaptive_pair_rows,
+    }
+
+
 def resolved_model_profiles(run_rows: list[dict[str, Any]]) -> list[str]:
     profiles: list[str] = []
     seen: set[str] = set()
@@ -558,6 +759,9 @@ def _compare_paths(dirs: dict[str, Path], compare_id: str) -> dict[str, Path]:
         "runs_csv": dirs["results"] / f"compare_runs_{compare_id}.csv",
         "models_csv": dirs["results"] / f"compare_models_{compare_id}.csv",
         "h2h_csv": dirs["results"] / f"compare_h2h_{compare_id}.csv",
+        "adaptive_runs_csv": dirs["results"] / f"compare_runs_adaptive_{compare_id}.csv",
+        "adaptive_models_csv": dirs["results"] / f"compare_adaptive_models_{compare_id}.csv",
+        "adaptive_pairs_csv": dirs["results"] / f"compare_adaptive_pairs_{compare_id}.csv",
         "compare_json": dirs["results"] / f"compare_{compare_id}.json",
         "checkpoint_json": checkpoint_dir / "compare_state.json",
     }
@@ -573,6 +777,7 @@ def _build_compare_payload(
     scenario: str,
     protocol_version: str,
     status: str,
+    adaptive_section: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     model_summaries = build_model_summaries(run_rows) if run_rows else []
     resolved_profiles = resolved_model_profiles(run_rows)
@@ -601,11 +806,15 @@ def _build_compare_payload(
             "prompt_set_sha256": prompt_hash,
             "compatibility": compatibility,
             "status": status,
+            "adaptive_mode": adaptive_section is not None,
         },
         "models": model_summaries,
         "pairwise": pairwise_rows,
         "runs": run_payloads,
     }
+    if adaptive_section is not None:
+        compare_payload["adaptive"] = adaptive_section
+        compare_payload["meta"]["adaptive_aggregate_score"] = adaptive_section.get("aggregate_adaptive_score")
     return compare_payload, model_summaries, pairwise_rows, resolved_profiles
 
 
@@ -621,7 +830,22 @@ def _persist_compare_outputs(
     run_rows: list[dict[str, Any]],
     run_payloads: list[dict[str, Any]],
     resume_context: dict[str, Any],
+    adaptive_run_rows: list[dict[str, Any]] | None = None,
+    adaptive_pair_rows: list[dict[str, Any]] | None = None,
+    adaptive_memory_by_model: dict[str, list[str]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    adaptive_run_rows = adaptive_run_rows or []
+    adaptive_pair_rows = adaptive_pair_rows or []
+    adaptive_section = None
+    adaptive_model_rows: list[dict[str, Any]] = []
+    if adaptive_run_rows or adaptive_pair_rows:
+        adaptive_section = _build_adaptive_section(
+            baseline_rows=run_rows,
+            adaptive_rows=adaptive_run_rows,
+            adaptive_pair_rows=adaptive_pair_rows,
+        )
+        adaptive_model_rows = list(adaptive_section.get("models", []))
+
     compare_payload, model_summaries, pairwise_rows, resolved_profiles = _build_compare_payload(
         compare_id=compare_id,
         run_rows=run_rows,
@@ -631,11 +855,18 @@ def _persist_compare_outputs(
         scenario=scenario,
         protocol_version=protocol_version,
         status=status,
+        adaptive_section=adaptive_section,
     )
 
     _write_csv(paths["runs_csv"], COMPARE_RUN_FIELDS, run_rows)
     _write_csv(paths["models_csv"], MODEL_SUMMARY_FIELDS, model_summaries)
     _write_csv(paths["h2h_csv"], H2H_FIELDS, pairwise_rows)
+    if adaptive_run_rows:
+        _write_csv(paths["adaptive_runs_csv"], ADAPTIVE_RUN_FIELDS, adaptive_run_rows)
+    if adaptive_model_rows:
+        _write_csv(paths["adaptive_models_csv"], ADAPTIVE_MODEL_FIELDS, adaptive_model_rows)
+    if adaptive_pair_rows:
+        _write_csv(paths["adaptive_pairs_csv"], ADAPTIVE_PAIR_FIELDS, adaptive_pair_rows)
     _write_json(paths["compare_json"], compare_payload)
 
     checkpoint_payload = {
@@ -650,6 +881,9 @@ def _persist_compare_outputs(
         "resume_context": resume_context,
         "run_rows": run_rows,
         "run_payloads": run_payloads,
+        "adaptive_run_rows": adaptive_run_rows,
+        "adaptive_pair_rows": adaptive_pair_rows,
+        "adaptive_memory_by_model": adaptive_memory_by_model or {},
     }
     _write_json(paths["checkpoint_json"], checkpoint_payload)
     return compare_payload, model_summaries, pairwise_rows, resolved_profiles
@@ -663,10 +897,13 @@ def _build_from_logs(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[int], str, str]:
     run_rows: list[dict[str, Any]] = []
     run_payloads: list[dict[str, Any]] = []
+    adaptive_run_rows: list[dict[str, Any]] = []
+    adaptive_pair_rows: list[dict[str, Any]] = []
+    adaptive_memory_by_model: dict[str, list[str]] = {}
 
     profile_order: dict[str, int] = {}
     seed_order: dict[int, int] = {}
-    protocol_version = "AIB-0.1"
+    protocol_version = "AIB-0.1.1"
     scenario = "-"
     pricing_cfg: dict[str, Any] | None = None
     pricing_path = Path(pricing_config_path)
@@ -712,7 +949,7 @@ def _build_from_logs(
                 run_summary=summary,
                 rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
                 initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
-                protocol_version=str(run_log.get("protocol_version", "AIB-0.1")),
+                protocol_version=str(run_log.get("protocol_version", "AIB-0.1.1")),
             )
             summary["analysis_version"] = analysis["analysis_version"]
             summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -767,6 +1004,64 @@ def _build_from_logs(
     ordered_models = sorted(profile_order.keys(), key=lambda p: profile_order[p])
     ordered_seeds = sorted(seed_order.keys(), key=lambda s: seed_order[s])
     return run_rows, run_payloads, ordered_models, ordered_seeds, scenario, protocol_version
+
+
+def _split_attempt_rows(
+    run_rows: list[dict[str, Any]],
+    run_payloads: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    baseline_rows: list[dict[str, Any]] = []
+    baseline_payloads: list[dict[str, Any]] = []
+    adaptive_rows: list[dict[str, Any]] = []
+
+    for idx, row in enumerate(run_rows):
+        attempt_kind = str(row.get("attempt_kind", "standard"))
+        payload = run_payloads[idx] if idx < len(run_payloads) else None
+        if attempt_kind == "adaptive_rerun":
+            adaptive_rows.append(row)
+            continue
+        baseline_rows.append(row)
+        if isinstance(payload, dict):
+            baseline_payloads.append(payload)
+
+    adaptive_pairs: list[dict[str, Any]] = []
+    initial_by_pair: dict[tuple[str, int], dict[str, Any]] = {}
+    for row in baseline_rows:
+        key = (str(row.get("model_profile", "")), _safe_int(row.get("seed")))
+        initial_by_pair[key] = row
+    for row in adaptive_rows:
+        key = (str(row.get("model_profile", "")), _safe_int(row.get("seed")))
+        initial = initial_by_pair.get(key)
+        if initial is None:
+            continue
+        adaptive_pairs.append(
+            {
+                "compare_id": str(row.get("compare_id", "")),
+                "model_profile": key[0],
+                "seed": key[1],
+                "adaptive_pair_key": str(row.get("adaptive_pair_key") or f"{key[0]}__seed{key[1]}"),
+                "initial_score": _safe_int(initial.get("final_score")),
+                "adaptive_score": _safe_int(row.get("final_score")),
+                "delta_score": _safe_int(row.get("final_score")) - _safe_int(initial.get("final_score")),
+                "initial_turns_survived": _safe_int(initial.get("turns_survived")),
+                "adaptive_turns_survived": _safe_int(row.get("turns_survived")),
+                "delta_turns_survived": _safe_int(row.get("turns_survived")) - _safe_int(initial.get("turns_survived")),
+                "initial_invalid_actions": _safe_int(initial.get("invalid_actions")),
+                "adaptive_invalid_actions": _safe_int(row.get("invalid_actions")),
+                "delta_invalid_actions": _safe_int(row.get("invalid_actions")) - _safe_int(initial.get("invalid_actions")),
+                "initial_resources_gathered": _safe_int(initial.get("resources_gathered")),
+                "adaptive_resources_gathered": _safe_int(row.get("resources_gathered")),
+                "delta_resources_gathered": _safe_int(row.get("resources_gathered")) - _safe_int(initial.get("resources_gathered")),
+                "lessons_before_count": None,
+                "lessons_added_count": None,
+                "lessons_after_count": None,
+                "reflection_parse_error": None,
+                "reflection_path": None,
+                "memory_snapshot_path": None,
+            }
+        )
+
+    return baseline_rows, baseline_payloads, adaptive_rows, adaptive_pairs
 
 
 def _parse_port(value: str) -> int:
@@ -832,8 +1127,33 @@ def _compute_eta_text(
     return format_eta(remaining)
 
 
+def _attempt_index(attempt_kind: str) -> int:
+    return 2 if str(attempt_kind) == "adaptive_rerun" else 1
+
+
+def _attempt_label(attempt_kind: str) -> str:
+    return "adaptive_rerun" if _attempt_index(attempt_kind) == 2 else "initial"
+
+
+def _display_job_position(
+    *,
+    job_index: int,
+    job_total: int,
+    adaptive_enabled: bool,
+    attempt_kind: str,
+) -> tuple[int, int]:
+    if not adaptive_enabled:
+        return job_index, job_total
+    attempt_idx = _attempt_index(attempt_kind)
+    return ((job_index - 1) * 2) + attempt_idx, job_total * 2
+
+
 def _job_log_path(logs_dir: Path, job: JobSpec) -> Path:
     return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}.json"
+
+
+def _job_log_path_adaptive(logs_dir: Path, job: JobSpec, attempt_kind: str) -> Path:
+    return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}_{attempt_kind}.json"
 
 
 def _execute_job(
@@ -862,6 +1182,257 @@ def _execute_job(
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
     )
+
+
+def _execute_adaptive_pair(
+    *,
+    job: JobSpec,
+    scenario: str,
+    max_turns: int | None,
+    benchmark_config_path: str,
+    scenarios_config_path: str,
+    providers_config_path: str,
+    prompts_dir: str,
+    output_logs_dir: Path,
+    memory_dir: Path,
+    session_lessons: list[str],
+    progress_callback: Any = None,
+    fix_thinking: bool = False,
+) -> dict[str, Any]:
+    pair_key = f"{job.model_profile}__seed{job.seed}"
+    providers_cfg = load_yaml_file(providers_config_path)
+    model_binding = create_model_wrapper(model_name=job.model_profile, seed=job.seed, providers_cfg=providers_cfg)
+    prompt_loader = PromptLoader(prompts_dir)
+
+    initial_log = run_match_once(
+        seed=job.seed,
+        model_name=job.model_profile,
+        scenario_name=(None if scenario in {"", "-"} else scenario),
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        output_path=_job_log_path_adaptive(output_logs_dir, job, "initial"),
+        progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
+        include_memory=True,
+        # Baseline attempt in adaptive mode must stay clean:
+        # no carry-over session memory injected into `initial`.
+        session_lessons=[],
+        current_seed_lessons=[],
+        attempt_kind="initial",
+        adaptive_pair_key=pair_key,
+    )
+
+    seed_reflection = run_seed_reflection(
+        model_wrapper=model_binding.wrapper,
+        prompt_loader=prompt_loader,
+        run_summary=dict(initial_log.get("run_summary", {})),
+        run_analysis=initial_log.get("run_analysis"),
+        existing_lessons=lessons_to_prompt_items(session_lessons),
+        metadata={
+            "mode": "adaptive_seed_reflection",
+            "seed": job.seed,
+            "model_profile": job.model_profile,
+            "adaptive_pair_key": pair_key,
+        },
+    )
+    parsed_seed_lessons = list(seed_reflection.get("parsed_lessons") or [])
+    parsed_seed_lesson_items = list(seed_reflection.get("parsed_lesson_items") or [])
+    filtered_seed_lessons = filter_lessons(
+        parsed_seed_lessons,
+        context={
+            "seed": job.seed,
+            "model_profile": job.model_profile,
+            "adaptive_pair_key": pair_key,
+            "stage": "seed_reflection",
+        },
+    )
+    pair_lessons = merge_lessons([], filtered_seed_lessons)
+
+    seed_reflections_dir = memory_dir / "seed_reflections"
+    cross_refinements_dir = memory_dir / "cross_seed_refinements"
+    legacy_reflections_dir = memory_dir / "reflections"
+    snapshots_dir = memory_dir / "snapshots"
+    seed_reflection_path = seed_reflections_dir / f"{_safe_slug(job.model_profile)}__seed{job.seed}.json"
+    cross_refinement_path = cross_refinements_dir / f"{_safe_slug(job.model_profile)}__seed{job.seed}.json"
+    reflection_manifest_path = legacy_reflections_dir / f"{_safe_slug(job.model_profile)}__seed{job.seed}.json"
+    memory_snapshot_path = snapshots_dir / f"{_safe_slug(job.model_profile)}__after_seed{job.seed}.json"
+
+    seed_reflection_payload = {
+        "stage": "seed_reflection",
+        "model_profile": job.model_profile,
+        "seed": job.seed,
+        "adaptive_pair_key": pair_key,
+        "session_lessons_before": list(session_lessons),
+        "parsed_lessons": parsed_seed_lessons,
+        "parsed_lesson_items": parsed_seed_lesson_items,
+        "filtered_lessons": filtered_seed_lessons,
+        "pair_lessons": pair_lessons,
+        "parse_error": seed_reflection.get("parse_error"),
+        "raw_output": seed_reflection.get("raw_output"),
+        "metrics": {
+            "tokens_used": seed_reflection.get("tokens_used"),
+            "latency_ms": seed_reflection.get("latency_ms"),
+            "estimated_cost": seed_reflection.get("estimated_cost"),
+        },
+    }
+    save_json(seed_reflection_path, seed_reflection_payload)
+
+    adaptive_log = run_match_once(
+        seed=job.seed,
+        model_name=job.model_profile,
+        scenario_name=(None if scenario in {"", "-"} else scenario),
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        output_path=_job_log_path_adaptive(output_logs_dir, job, "adaptive"),
+        progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
+        include_memory=True,
+        session_lessons=session_lessons,
+        current_seed_lessons=pair_lessons,
+        attempt_kind="adaptive_rerun",
+        adaptive_pair_key=pair_key,
+    )
+
+    initial_summary = dict(initial_log.get("run_summary", {}))
+    adaptive_summary = dict(adaptive_log.get("run_summary", {}))
+    adaptive_feedback = _build_adaptive_feedback(
+        initial_summary=initial_summary,
+        adaptive_summary=adaptive_summary,
+    )
+    cross_refinement = run_cross_seed_refinement(
+        model_wrapper=model_binding.wrapper,
+        prompt_loader=prompt_loader,
+        initial_run_summary=initial_summary,
+        initial_run_analysis=initial_log.get("run_analysis"),
+        rerun_summary=adaptive_summary,
+        rerun_analysis=adaptive_log.get("run_analysis"),
+        existing_lessons=lessons_to_prompt_items(session_lessons),
+        seed_lessons=lessons_to_prompt_items(pair_lessons),
+        adaptive_feedback=adaptive_feedback,
+        metadata={
+            "mode": "adaptive_cross_seed_refinement",
+            "seed": job.seed,
+            "model_profile": job.model_profile,
+            "adaptive_pair_key": pair_key,
+        },
+    )
+    parsed_cross_lessons = list(cross_refinement.get("parsed_lessons") or [])
+    parsed_cross_lesson_items = list(cross_refinement.get("parsed_lesson_items") or [])
+    filtered_cross_lessons = filter_lessons(
+        parsed_cross_lessons,
+        context={
+            "seed": job.seed,
+            "model_profile": job.model_profile,
+            "adaptive_pair_key": pair_key,
+            "stage": "cross_seed_refinement",
+        },
+    )
+    # Cross-seed refinement acts as model-driven synthesis for next-session memory.
+    # If the synthesized output is empty/invalid, keep previous session memory.
+    merged_session_lessons = (
+        merge_lessons([], filtered_cross_lessons)
+        if filtered_cross_lessons
+        else list(session_lessons)
+    )
+
+    cross_refinement_payload = {
+        "stage": "cross_seed_refinement",
+        "model_profile": job.model_profile,
+        "seed": job.seed,
+        "adaptive_pair_key": pair_key,
+        "session_lessons_before": list(session_lessons),
+        "pair_lessons": pair_lessons,
+        "adaptive_feedback": adaptive_feedback,
+        "parsed_lessons": parsed_cross_lessons,
+        "parsed_lesson_items": parsed_cross_lesson_items,
+        "filtered_lessons": filtered_cross_lessons,
+        "session_lessons_after": merged_session_lessons,
+        "parse_error": cross_refinement.get("parse_error"),
+        "raw_output": cross_refinement.get("raw_output"),
+        "metrics": {
+            "tokens_used": cross_refinement.get("tokens_used"),
+            "latency_ms": cross_refinement.get("latency_ms"),
+            "estimated_cost": cross_refinement.get("estimated_cost"),
+        },
+    }
+    save_json(cross_refinement_path, cross_refinement_payload)
+
+    reflection_manifest_payload = {
+        "model_profile": job.model_profile,
+        "seed": job.seed,
+        "adaptive_pair_key": pair_key,
+        "seed_reflection_path": str(seed_reflection_path),
+        "cross_seed_refinement_path": str(cross_refinement_path),
+        "seed_reflection_parse_error": seed_reflection.get("parse_error"),
+        "cross_seed_refinement_parse_error": cross_refinement.get("parse_error"),
+        "session_lessons_before_count": len(session_lessons),
+        "pair_lessons_count": len(pair_lessons),
+        "session_lessons_after_count": len(merged_session_lessons),
+    }
+    save_json(reflection_manifest_path, reflection_manifest_payload)
+
+    save_json(
+        memory_snapshot_path,
+        {
+            "model_profile": job.model_profile,
+            "seed": job.seed,
+            "adaptive_pair_key": pair_key,
+            "session_lessons": merged_session_lessons,
+            "session_lesson_count": len(merged_session_lessons),
+            "pair_lessons": pair_lessons,
+            "pair_lesson_count": len(pair_lessons),
+        },
+    )
+
+    seed_parse_error = seed_reflection.get("parse_error")
+    cross_parse_error = cross_refinement.get("parse_error")
+    combined_parse_error: str | None = None
+    if seed_parse_error and cross_parse_error:
+        combined_parse_error = f"seed:{seed_parse_error};cross:{cross_parse_error}"
+    elif seed_parse_error:
+        combined_parse_error = f"seed:{seed_parse_error}"
+    elif cross_parse_error:
+        combined_parse_error = f"cross:{cross_parse_error}"
+
+    pair_row = {
+        "compare_id": "",
+        "model_profile": job.model_profile,
+        "seed": job.seed,
+        "adaptive_pair_key": pair_key,
+        "initial_score": _safe_int(initial_summary.get("final_score")),
+        "adaptive_score": _safe_int(adaptive_summary.get("final_score")),
+        "delta_score": _safe_int(adaptive_summary.get("final_score")) - _safe_int(initial_summary.get("final_score")),
+        "initial_turns_survived": _safe_int(initial_summary.get("turns_survived")),
+        "adaptive_turns_survived": _safe_int(adaptive_summary.get("turns_survived")),
+        "delta_turns_survived": _safe_int(adaptive_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
+        "initial_invalid_actions": _safe_int(initial_summary.get("invalid_actions")),
+        "adaptive_invalid_actions": _safe_int(adaptive_summary.get("invalid_actions")),
+        "delta_invalid_actions": _safe_int(adaptive_summary.get("invalid_actions")) - _safe_int(initial_summary.get("invalid_actions")),
+        "initial_resources_gathered": _safe_int(initial_summary.get("resources_gathered")),
+        "adaptive_resources_gathered": _safe_int(adaptive_summary.get("resources_gathered")),
+        "delta_resources_gathered": _safe_int(adaptive_summary.get("resources_gathered")) - _safe_int(initial_summary.get("resources_gathered")),
+        "lessons_before_count": len(session_lessons),
+        "lessons_added_count": max(0, len(merged_session_lessons) - len(session_lessons)),
+        "lessons_after_count": len(merged_session_lessons),
+        "reflection_parse_error": combined_parse_error,
+        "reflection_path": str(reflection_manifest_path),
+        "memory_snapshot_path": str(memory_snapshot_path),
+    }
+
+    return {
+        "initial_run_log": initial_log,
+        "adaptive_run_log": adaptive_log,
+        "updated_lessons": merged_session_lessons,
+        "pair_row": pair_row,
+        "reflection_path": str(reflection_manifest_path),
+        "memory_snapshot_path": str(memory_snapshot_path),
+    }
 
 
 def _render_pct(pct: float, *, color_enabled: bool) -> str:
@@ -908,6 +1479,7 @@ def _render_turn_progress_line(
     invalid: int,
     alive: bool,
     eta_text: str,
+    attempt_label: str | None,
     color_enabled: bool,
 ) -> str:
     protocol_text = "ok" if protocol_valid else "bad"
@@ -928,6 +1500,11 @@ def _render_turn_progress_line(
         seed_text = colorize(str(seed), "1;33", color_enabled)
         action_label = colorize("action:", "0;37", color_enabled)
         action_text = colorize(f"{action[:22]:<22}", "1;36", color_enabled)
+        attempt_text = (
+            f"attempt: {colorize(attempt_label, '1;94', color_enabled)}"
+            if attempt_label
+            else None
+        )
 
         protocol_color = "1;32" if protocol_valid else "1;31"
         effect_color = "0;37"
@@ -944,21 +1521,55 @@ def _render_turn_progress_line(
         eta_label = colorize("eta:", "0;37", color_enabled)
         eta_value = colorize(eta_text, "1;97", color_enabled)
 
-        return (
-            f"{pct_text} {job_text} | {turn_text} | "
-            f"{model_label} {model_text} | {seed_label} {seed_text} | "
-            f"{action_label} {action_text} | "
-            f"protocol: {colorize(protocol_text, protocol_color, color_enabled)} | "
-            f"effect: {colorize(effect_text, effect_color, color_enabled)} | "
-            f"score: {score_text} | invalid: {invalid_text} | alive: {alive_text} | {eta_label} {eta_value}"
+        parts = [
+            f"{pct_text} {job_text}",
+            turn_text,
+        ]
+        if attempt_text:
+            parts.append(attempt_text)
+        parts.extend(
+            [
+                f"{model_label} {model_text}",
+                f"{seed_label} {seed_text}",
+                f"{action_label} {action_text}",
+            ]
         )
+        parts.extend(
+            [
+                f"protocol: {colorize(protocol_text, protocol_color, color_enabled)}",
+                f"effect: {colorize(effect_text, effect_color, color_enabled)}",
+                f"score: {score_text}",
+                f"invalid: {invalid_text}",
+                f"alive: {alive_text}",
+                f"{eta_label} {eta_value}",
+            ]
+        )
+        return " | ".join(parts)
 
-    return (
-        f"[{pct:5.1f}%] job {job_index}/{job_total} | turn {turn}/{max_turns} | "
-        f"model: {model_profile} | seed: {seed} | action: {action[:22]:<22} | "
-        f"protocol: {protocol_text:<3} | effect: {effect_text:<7} | "
-        f"score: {score:>4} | invalid: {invalid:>3} | alive: {'yes' if alive else 'no'} | eta: {eta_text}"
+    parts_plain = [
+        f"[{pct:5.1f}%] job {job_index}/{job_total}",
+        f"turn {turn}/{max_turns}",
+    ]
+    if attempt_label:
+        parts_plain.append(f"attempt: {attempt_label}")
+    parts_plain.extend(
+        [
+            f"model: {model_profile}",
+            f"seed: {seed}",
+            f"action: {action[:22]:<22}",
+        ]
     )
+    parts_plain.extend(
+        [
+            f"protocol: {protocol_text:<3}",
+            f"effect: {effect_text:<7}",
+            f"score: {score:>4}",
+            f"invalid: {invalid:>3}",
+            f"alive: {'yes' if alive else 'no'}",
+            f"eta: {eta_text}",
+        ]
+    )
+    return " | ".join(parts_plain)
 
 
 def _render_job_done_line(
@@ -1076,6 +1687,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Resume a previously interrupted compare run from checkpoint JSON.",
     )
+    parser.add_argument(
+        "--adaptive-memory",
+        action="store_true",
+        help="Enable adaptive mode: initial run -> reflection -> same-seed rerun with session memory.",
+    )
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in terminal output.")
     parser.add_argument("--no-viewer", action="store_true", help="Skip compare HTML generation.")
     parser.add_argument("--viewer-output", type=str, default=None, help="Output path for generated compare HTML report.")
@@ -1131,8 +1747,11 @@ def main() -> None:
 
     run_rows: list[dict[str, Any]] = []
     run_payloads: list[dict[str, Any]] = []
+    adaptive_run_rows: list[dict[str, Any]] = []
+    adaptive_pair_rows: list[dict[str, Any]] = []
+    adaptive_memory_by_model: dict[str, list[str]] = {}
     scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
-    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1.1"))
     model_profiles: list[str] = []
     seed_list: list[int] = []
     requested_models: list[str] = []
@@ -1144,6 +1763,17 @@ def main() -> None:
     effective_scenario_arg: str | None = args.scenario
     effective_max_turns = args.max_turns
     effective_fix_thinking = bool(args.fix_thinking)
+    adaptive_enabled = bool(args.adaptive_memory)
+    effective_seed_workers_per_model = int(args.seed_workers_per_model)
+    if adaptive_enabled and effective_seed_workers_per_model != 1:
+        print(
+            colorize(
+                "Adaptive mode enforces per-model seed order; overriding seed_workers_per_model to 1.",
+                "1;93",
+                color_enabled,
+            )
+        )
+        effective_seed_workers_per_model = 1
 
     resume_context: dict[str, Any] = {
         "benchmark_config": effective_benchmark_config_path,
@@ -1153,10 +1783,11 @@ def main() -> None:
         "scenario_arg": effective_scenario_arg,
         "max_turns": effective_max_turns,
         "fix_thinking": effective_fix_thinking,
+        "adaptive_memory": adaptive_enabled,
         "runs_root": str(runs_root),
         "run_id": compare_id,
         "model_workers": args.model_workers,
-        "seed_workers_per_model": args.seed_workers_per_model,
+        "seed_workers_per_model": effective_seed_workers_per_model,
     }
 
     if args.from_logs_glob:
@@ -1171,6 +1802,15 @@ def main() -> None:
         )
         if not run_rows:
             raise SystemExit("Matched logs do not contain valid run_summary entries.")
+
+        baseline_rows, baseline_payloads, adaptive_rows_from_logs, adaptive_pairs_from_logs = _split_attempt_rows(
+            run_rows,
+            run_payloads,
+        )
+        run_rows = baseline_rows
+        run_payloads = baseline_payloads
+        adaptive_run_rows = adaptive_rows_from_logs
+        adaptive_pair_rows = adaptive_pairs_from_logs
 
         for idx, row in enumerate(run_rows, start=1):
             row["job_index"] = idx
@@ -1191,11 +1831,16 @@ def main() -> None:
             run_rows=run_rows,
             run_payloads=run_payloads,
             resume_context=resume_context,
+            adaptive_run_rows=adaptive_run_rows,
+            adaptive_pair_rows=adaptive_pair_rows,
+            adaptive_memory_by_model=adaptive_memory_by_model,
         )
     else:
         completed_keys: set[tuple[str, int]] = set()
         existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         payload_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        adaptive_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        adaptive_pair_by_key: dict[tuple[str, int], dict[str, Any]] = {}
 
         if args.resume:
             resume_path = _resolve_resume_checkpoint(args.resume, runs_root)
@@ -1215,7 +1860,16 @@ def main() -> None:
             checkpoint_paths = checkpoint.get("paths")
             if isinstance(checkpoint_paths, dict):
                 resolved_paths: dict[str, Path] = {}
-                for key in {"runs_csv", "models_csv", "h2h_csv", "compare_json", "checkpoint_json"}:
+                for key in {
+                    "runs_csv",
+                    "models_csv",
+                    "h2h_csv",
+                    "adaptive_runs_csv",
+                    "adaptive_models_csv",
+                    "adaptive_pairs_csv",
+                    "compare_json",
+                    "checkpoint_json",
+                }:
                     if key in checkpoint_paths:
                         resolved_paths[key] = Path(str(checkpoint_paths[key])).resolve()
                 if resolved_paths:
@@ -1230,6 +1884,13 @@ def main() -> None:
             protocol_version = str(checkpoint.get("protocol_version", protocol_version))
             run_rows = list(checkpoint.get("run_rows", []))
             run_payloads = list(checkpoint.get("run_payloads", []))
+            adaptive_run_rows = list(checkpoint.get("adaptive_run_rows", []))
+            adaptive_pair_rows = list(checkpoint.get("adaptive_pair_rows", []))
+            adaptive_memory_by_model = {
+                str(key): [str(item) for item in value]
+                for key, value in dict(checkpoint.get("adaptive_memory_by_model", {})).items()
+                if isinstance(value, list)
+            }
 
             resume_context = dict(checkpoint.get("resume_context", resume_context))
             resume_context["resumed_from"] = str(resume_path)
@@ -1250,7 +1911,13 @@ def main() -> None:
             resume_max_turns = resume_context.get("max_turns", effective_max_turns)
             effective_max_turns = None if resume_max_turns in {None, ""} else int(resume_max_turns)
             effective_fix_thinking = bool(resume_context.get("fix_thinking", effective_fix_thinking))
+            adaptive_enabled = bool(resume_context.get("adaptive_memory", adaptive_enabled))
+            effective_seed_workers_per_model = int(resume_context.get("seed_workers_per_model", effective_seed_workers_per_model))
+            if adaptive_enabled and effective_seed_workers_per_model != 1:
+                effective_seed_workers_per_model = 1
             resume_context["fix_thinking"] = effective_fix_thinking
+            resume_context["adaptive_memory"] = adaptive_enabled
+            resume_context["seed_workers_per_model"] = effective_seed_workers_per_model
             benchmark_cfg = load_yaml_file(effective_benchmark_config_path)
 
             requested_models = list(model_profiles)
@@ -1294,11 +1961,22 @@ def main() -> None:
             if key in jobs_by_key:
                 payload_by_key[key] = payload
 
+        for row in adaptive_run_rows:
+            key = (str(row.get("model_profile", "")), int(row.get("seed", 0)))
+            if key in jobs_by_key:
+                adaptive_by_key[key] = row
+        for row in adaptive_pair_rows:
+            key = (str(row.get("model_profile", "")), int(row.get("seed", 0)))
+            if key in jobs_by_key:
+                adaptive_pair_by_key[key] = row
+
         def _rebuild_ordered_collections() -> None:
-            nonlocal run_rows, run_payloads
+            nonlocal run_rows, run_payloads, adaptive_run_rows, adaptive_pair_rows
             ordered_keys = [(job.model_profile, job.seed) for job in jobs if (job.model_profile, job.seed) in existing_by_key]
             run_rows = [existing_by_key[key] for key in ordered_keys]
             run_payloads = [payload_by_key[key] for key in ordered_keys if key in payload_by_key]
+            adaptive_run_rows = [adaptive_by_key[key] for key in ordered_keys if key in adaptive_by_key]
+            adaptive_pair_rows = [adaptive_pair_by_key[key] for key in ordered_keys if key in adaptive_pair_by_key]
 
         _rebuild_ordered_collections()
         completed_jobs = len(completed_keys)
@@ -1316,11 +1994,30 @@ def main() -> None:
                 run_rows=run_rows,
                 run_payloads=run_payloads,
                 resume_context=resume_context,
+                adaptive_run_rows=adaptive_run_rows,
+                adaptive_pair_rows=adaptive_pair_rows,
+                adaptive_memory_by_model=adaptive_memory_by_model,
+            )
+
+        if adaptive_enabled:
+            save_json(
+                run_dirs["memory"] / "session_memory.json",
+                {
+                    "compare_id": compare_id,
+                    "adaptive_memory": adaptive_memory_by_model,
+                },
             )
 
         _persist_running_state(status="running")
 
-        def _record_job_result(job: JobSpec, run_log: dict[str, Any]) -> dict[str, Any]:
+        def _record_job_result(
+            job: JobSpec,
+            run_log: dict[str, Any],
+            *,
+            adaptive_run_log: dict[str, Any] | None = None,
+            adaptive_pair_row: dict[str, Any] | None = None,
+            updated_lessons: list[str] | None = None,
+        ) -> dict[str, Any]:
             nonlocal scenario, protocol_version, completed_jobs
 
             summary = dict(run_log["run_summary"])
@@ -1352,6 +2049,35 @@ def main() -> None:
                 "replay": build_viewer_payload(run_log=run_log, source_log_path=Path(str(summary["log_path"]))),
             }
 
+            if adaptive_run_log is not None:
+                adaptive_summary = dict(adaptive_run_log.get("run_summary", {}))
+                adaptive_summary.setdefault("protocol_version", adaptive_run_log.get("protocol_version", protocol_version))
+                adaptive_row = {
+                    "compare_id": compare_id,
+                    "run_id": f"{_safe_slug(job.model_profile)}__seed{job.seed}__adaptive",
+                    "job_index": job.job_index,
+                    "job_total": job.job_total,
+                    "model_order": job.model_order,
+                    "seed_order": job.seed_order,
+                    **adaptive_summary,
+                }
+                adaptive_by_key[key] = adaptive_row
+
+            if adaptive_pair_row is not None:
+                pair_row = dict(adaptive_pair_row)
+                pair_row["compare_id"] = compare_id
+                adaptive_pair_by_key[key] = pair_row
+
+            if updated_lessons is not None:
+                adaptive_memory_by_model[job.model_profile] = list(updated_lessons)
+                save_json(
+                    run_dirs["memory"] / "session_memory.json",
+                    {
+                        "compare_id": compare_id,
+                        "adaptive_memory": adaptive_memory_by_model,
+                    },
+                )
+
             _persist_running_state(status="running")
             return summary
 
@@ -1380,7 +2106,8 @@ def main() -> None:
             raise SystemExit(1)
 
         total_jobs = len(jobs)
-        parallel_enabled = not (args.model_workers == 1 and args.seed_workers_per_model == 1)
+        total_progress_units = total_jobs * (2 if adaptive_enabled else 1)
+        parallel_enabled = not (args.model_workers == 1 and effective_seed_workers_per_model == 1)
 
         if not parallel_enabled:
             for job in jobs:
@@ -1390,6 +2117,7 @@ def main() -> None:
 
                 run_progress = {
                     "max_turns": int(effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)),
+                    "attempt_kind": "initial",
                 }
                 completed_before = completed_jobs
 
@@ -1397,12 +2125,23 @@ def main() -> None:
                     event_type = str(event.get("event", ""))
                     if event_type == "run_started":
                         run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
-                        pct = (completed_before / total_jobs) * 100.0
+                        run_progress["attempt_kind"] = str(event.get("attempt_kind", run_progress["attempt_kind"]))
+                        attempt_kind = str(run_progress["attempt_kind"])
+                        display_job_index, display_job_total = _display_job_position(
+                            job_index=job.job_index,
+                            job_total=job.job_total,
+                            adaptive_enabled=adaptive_enabled,
+                            attempt_kind=attempt_kind,
+                        )
+                        completed_units_before = completed_before * (2 if adaptive_enabled else 1)
+                        if adaptive_enabled:
+                            completed_units_before += _attempt_index(attempt_kind) - 1
+                        pct = (completed_units_before / max(1, total_progress_units)) * 100.0
                         status_line.write(
                             _render_turn_progress_line(
                                 pct=pct,
-                                job_index=job.job_index,
-                                job_total=job.job_total,
+                                job_index=display_job_index,
+                                job_total=display_job_total,
                                 turn=0,
                                 max_turns=run_progress["max_turns"],
                                 model_profile=job.model_profile,
@@ -1414,11 +2153,12 @@ def main() -> None:
                                 invalid=0,
                                 alive=True,
                                 eta_text=_compute_eta_text(
-                                    completed_jobs=completed_before,
-                                    total_jobs=total_jobs,
+                                    completed_jobs=completed_units_before,
+                                    total_jobs=total_progress_units,
                                     started_at=compare_started_at,
                                     baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                                 ),
+                                attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
                                 color_enabled=color_enabled,
                             )
                         )
@@ -1429,8 +2169,18 @@ def main() -> None:
                     turn = int(event.get("turn", 0))
                     max_turns = int(event.get("max_turns", run_progress["max_turns"]))
                     run_progress["max_turns"] = max_turns
+                    attempt_kind = str(run_progress.get("attempt_kind", "initial"))
+                    display_job_index, display_job_total = _display_job_position(
+                        job_index=job.job_index,
+                        job_total=job.job_total,
+                        adaptive_enabled=adaptive_enabled,
+                        attempt_kind=attempt_kind,
+                    )
                     run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
-                    overall_fraction = (completed_before + run_fraction) / total_jobs
+                    completed_units_before = completed_before * (2 if adaptive_enabled else 1)
+                    if adaptive_enabled:
+                        completed_units_before += _attempt_index(attempt_kind) - 1
+                    overall_fraction = (completed_units_before + run_fraction) / max(1, total_progress_units)
                     pct = overall_fraction * 100.0
                     eta_text = "--"
                     if overall_fraction > 0:
@@ -1441,8 +2191,8 @@ def main() -> None:
                     status_line.write(
                         _render_turn_progress_line(
                             pct=pct,
-                            job_index=job.job_index,
-                            job_total=job.job_total,
+                            job_index=display_job_index,
+                            job_total=display_job_total,
                             turn=turn,
                             max_turns=max_turns,
                             model_profile=job.model_profile,
@@ -1454,23 +2204,43 @@ def main() -> None:
                             invalid=int(event.get("invalid_actions", 0)),
                             alive=bool(event.get("alive", True)),
                             eta_text=eta_text,
+                            attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
                             color_enabled=color_enabled,
                         )
                     )
 
                 try:
-                    run_log = _execute_job(
-                        job=job,
-                        scenario=scenario,
-                        max_turns=effective_max_turns,
-                        benchmark_config_path=effective_benchmark_config_path,
-                        scenarios_config_path=effective_scenarios_config_path,
-                        providers_config_path=effective_providers_config_path,
-                        prompts_dir=effective_prompts_dir,
-                        output_logs_dir=run_dirs["logs"],
-                        progress_callback=on_progress,
-                        fix_thinking=effective_fix_thinking,
-                    )
+                    if adaptive_enabled:
+                        session_lessons = list(adaptive_memory_by_model.get(job.model_profile, []))
+                        adaptive_result = _execute_adaptive_pair(
+                            job=job,
+                            scenario=scenario,
+                            max_turns=effective_max_turns,
+                            benchmark_config_path=effective_benchmark_config_path,
+                            scenarios_config_path=effective_scenarios_config_path,
+                            providers_config_path=effective_providers_config_path,
+                            prompts_dir=effective_prompts_dir,
+                            output_logs_dir=run_dirs["logs"],
+                            memory_dir=run_dirs["memory"],
+                            session_lessons=session_lessons,
+                            progress_callback=on_progress,
+                            fix_thinking=effective_fix_thinking,
+                        )
+                        run_log = adaptive_result["initial_run_log"]
+                    else:
+                        adaptive_result = None
+                        run_log = _execute_job(
+                            job=job,
+                            scenario=scenario,
+                            max_turns=effective_max_turns,
+                            benchmark_config_path=effective_benchmark_config_path,
+                            scenarios_config_path=effective_scenarios_config_path,
+                            providers_config_path=effective_providers_config_path,
+                            prompts_dir=effective_prompts_dir,
+                            output_logs_dir=run_dirs["logs"],
+                            progress_callback=on_progress,
+                            fix_thinking=effective_fix_thinking,
+                        )
                 except KeyboardInterrupt:
                     _persist_running_state(status="interrupted")
                     status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
@@ -1480,19 +2250,29 @@ def main() -> None:
                 except Exception as exc:
                     _fail_and_exit(exc, job)
 
-                summary = _record_job_result(job, run_log)
+                if adaptive_enabled and adaptive_result is not None:
+                    summary = _record_job_result(
+                        job,
+                        run_log,
+                        adaptive_run_log=adaptive_result.get("adaptive_run_log"),
+                        adaptive_pair_row=adaptive_result.get("pair_row"),
+                        updated_lessons=adaptive_result.get("updated_lessons"),
+                    )
+                else:
+                    summary = _record_job_result(job, run_log)
                 eta_text = _compute_eta_text(
-                    completed_jobs=completed_jobs,
-                    total_jobs=total_jobs,
+                    completed_jobs=(completed_jobs * (2 if adaptive_enabled else 1)),
+                    total_jobs=total_progress_units,
                     started_at=compare_started_at,
                     baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                 )
-                pct_after = (completed_jobs / total_jobs) * 100.0
+                completed_units = completed_jobs * (2 if adaptive_enabled else 1)
+                pct_after = (completed_units / max(1, total_progress_units)) * 100.0
                 status_line.write(
                     _render_job_done_line(
                         pct=pct_after,
-                        job_index=job.job_index,
-                        job_total=job.job_total,
+                        job_index=completed_units,
+                        job_total=total_progress_units,
                         model_profile=job.model_profile,
                         seed=job.seed,
                         score=int(summary["final_score"]),
@@ -1512,7 +2292,7 @@ def main() -> None:
             if pending_model_order:
                 status_line.write(
                     colorize(
-                        f"Parallel mode: model_workers={args.model_workers}, seed_workers_per_model={args.seed_workers_per_model}",
+                        f"Parallel mode: model_workers={args.model_workers}, seed_workers_per_model={effective_seed_workers_per_model}",
                         "0;37",
                         color_enabled,
                     )
@@ -1540,10 +2320,16 @@ def main() -> None:
                     max_turns_local = int(snapshot.get("max_turns", 0))
                     turn_local = int(snapshot.get("turn", 0))
                     if max_turns_local > 0:
-                        partial += max(0.0, min(1.0, float(turn_local) / float(max_turns_local)))
-                if total_jobs <= 0:
+                        run_fraction = max(0.0, min(1.0, float(turn_local) / float(max_turns_local)))
+                        if adaptive_enabled:
+                            attempt_kind = str(snapshot.get("attempt_kind", "initial"))
+                            partial += float(_attempt_index(attempt_kind) - 1) + run_fraction
+                        else:
+                            partial += run_fraction
+                if total_progress_units <= 0:
                     return 0.0
-                return max(0.0, min(1.0, (completed_jobs + partial) / total_jobs))
+                completed_units = completed_jobs * (2 if adaptive_enabled else 1)
+                return max(0.0, min(1.0, (completed_units + partial) / total_progress_units))
 
             def _render_parallel_heartbeat_line() -> str | None:
                 with progress_lock:
@@ -1559,6 +2345,13 @@ def main() -> None:
                     selected = dict(live_progress[selected_key])
 
                 selected_job = jobs_by_key[selected_key]
+                selected_attempt_kind = str(selected.get("attempt_kind", "initial"))
+                display_job_index, display_job_total = _display_job_position(
+                    job_index=selected_job.job_index,
+                    job_total=selected_job.job_total,
+                    adaptive_enabled=adaptive_enabled,
+                    attempt_kind=selected_attempt_kind,
+                )
                 fraction = _current_overall_fraction()
                 pct = fraction * 100.0
                 eta_text = "--"
@@ -1569,8 +2362,8 @@ def main() -> None:
 
                 return _render_turn_progress_line(
                     pct=pct,
-                    job_index=selected_job.job_index,
-                    job_total=selected_job.job_total,
+                    job_index=display_job_index,
+                    job_total=display_job_total,
                     turn=int(selected.get("turn", 0)),
                     max_turns=int(selected.get("max_turns", 1)),
                     model_profile=selected_job.model_profile,
@@ -1582,17 +2375,18 @@ def main() -> None:
                     invalid=int(selected.get("invalid", 0)),
                     alive=bool(selected.get("alive", True)),
                     eta_text=eta_text,
+                    attempt_label=(_attempt_label(selected_attempt_kind) if adaptive_enabled else None),
                     color_enabled=color_enabled,
                 )
 
             with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max(1, args.model_workers * args.seed_workers_per_model)
+                max_workers=max(1, args.model_workers * effective_seed_workers_per_model)
             ) as executor:
                 future_to_job: dict[concurrent.futures.Future[dict[str, Any]], JobSpec] = {}
 
                 def submit_for_model(model_profile: str) -> None:
                     pending_jobs = pending_jobs_by_model[model_profile]
-                    while running_per_model[model_profile] < args.seed_workers_per_model and next_seed_index[model_profile] < len(pending_jobs):
+                    while running_per_model[model_profile] < effective_seed_workers_per_model and next_seed_index[model_profile] < len(pending_jobs):
                         job = pending_jobs[next_seed_index[model_profile]]
                         next_seed_index[model_profile] += 1
                         key = (job.model_profile, job.seed)
@@ -1609,6 +2403,7 @@ def main() -> None:
                                 "score": 0,
                                 "invalid": 0,
                                 "alive": True,
+                                "attempt_kind": "initial",
                                 "updated_at": time.monotonic(),
                             }
 
@@ -1625,6 +2420,7 @@ def main() -> None:
                                     "score": 0,
                                     "invalid": 0,
                                     "alive": True,
+                                    "attempt_kind": str(event.get("attempt_kind", "initial")),
                                 }
                             elif event_type == "turn_completed":
                                 update = {
@@ -1644,19 +2440,37 @@ def main() -> None:
                                 if event_key in live_progress:
                                     live_progress[event_key].update(update)
 
-                        future = executor.submit(
-                            _execute_job,
-                            job=job,
-                            scenario=scenario,
-                            max_turns=effective_max_turns,
-                            benchmark_config_path=effective_benchmark_config_path,
-                            scenarios_config_path=effective_scenarios_config_path,
-                            providers_config_path=effective_providers_config_path,
-                            prompts_dir=effective_prompts_dir,
-                            output_logs_dir=run_dirs["logs"],
-                            progress_callback=on_progress,
-                            fix_thinking=effective_fix_thinking,
-                        )
+                        if adaptive_enabled:
+                            session_lessons = list(adaptive_memory_by_model.get(model_profile, []))
+                            future = executor.submit(
+                                _execute_adaptive_pair,
+                                job=job,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                output_logs_dir=run_dirs["logs"],
+                                memory_dir=run_dirs["memory"],
+                                session_lessons=session_lessons,
+                                progress_callback=on_progress,
+                                fix_thinking=effective_fix_thinking,
+                            )
+                        else:
+                            future = executor.submit(
+                                _execute_job,
+                                job=job,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                output_logs_dir=run_dirs["logs"],
+                                progress_callback=on_progress,
+                                fix_thinking=effective_fix_thinking,
+                            )
                         future_to_job[future] = job
                         running_per_model[model_profile] += 1
 
@@ -1694,25 +2508,39 @@ def main() -> None:
                         with progress_lock:
                             live_progress.pop((job.model_profile, job.seed), None)
                         try:
-                            run_log = future.result()
+                            result_payload = future.result()
                         except Exception as exc:
                             for pending_future in future_to_job:
                                 pending_future.cancel()
                             _fail_and_exit(exc, job)
-                        summary = _record_job_result(job, run_log)
+                        if adaptive_enabled:
+                            adaptive_result = dict(result_payload)
+                            run_log = dict(adaptive_result.get("initial_run_log", {}))
+                            summary = _record_job_result(
+                                job,
+                                run_log,
+                                adaptive_run_log=adaptive_result.get("adaptive_run_log"),
+                                adaptive_pair_row=adaptive_result.get("pair_row"),
+                                updated_lessons=adaptive_result.get("updated_lessons"),
+                            )
+                        else:
+                            run_log = dict(result_payload)
+                            summary = _record_job_result(job, run_log)
 
                         pct_after = (completed_jobs / total_jobs) * 100.0
                         eta_text = _compute_eta_text(
-                            completed_jobs=completed_jobs,
-                            total_jobs=total_jobs,
+                            completed_jobs=(completed_jobs * (2 if adaptive_enabled else 1)),
+                            total_jobs=total_progress_units,
                             started_at=compare_started_at,
                             baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                         )
+                        completed_units = completed_jobs * (2 if adaptive_enabled else 1)
+                        pct_after = (completed_units / max(1, total_progress_units)) * 100.0
                         status_line.write(
                             _render_job_done_line(
                                 pct=pct_after,
-                                job_index=job.job_index,
-                                job_total=job.job_total,
+                                job_index=completed_units,
+                                job_total=total_progress_units,
                                 model_profile=job.model_profile,
                                 seed=job.seed,
                                 score=int(summary["final_score"]),
@@ -1737,6 +2565,9 @@ def main() -> None:
     runs_csv = paths["runs_csv"]
     models_csv = paths["models_csv"]
     h2h_csv = paths["h2h_csv"]
+    adaptive_runs_csv = paths["adaptive_runs_csv"]
+    adaptive_models_csv = paths["adaptive_models_csv"]
+    adaptive_pairs_csv = paths["adaptive_pairs_csv"]
 
     print()
     print(colorize("COMPARE SUMMARY", "1;32", color_enabled))
@@ -1820,11 +2651,71 @@ def main() -> None:
         color_enabled=color_enabled,
     )
 
+    adaptive_section = compare_payload.get("adaptive") if isinstance(compare_payload, dict) else None
+    if isinstance(adaptive_section, dict):
+        baseline_totals = dict(adaptive_section.get("baseline_totals", {}))
+        adaptive_totals = dict(adaptive_section.get("adaptive_totals", {}))
+        delta_totals = dict(adaptive_section.get("delta_totals", {}))
+        adaptive_pairs = list(adaptive_section.get("pairs", []))
+        _print_section("Adaptive Session", color_enabled)
+        pair_model_count = len({str(pair.get("model_profile", "")) for pair in adaptive_pairs})
+        for pair in sorted(
+            adaptive_pairs,
+            key=lambda item: (
+                str(item.get("model_profile", "")),
+                _safe_int(item.get("seed"), default=0),
+                str(item.get("adaptive_pair_key", "")),
+            ),
+        ):
+            seed = _safe_int(pair.get("seed"), default=0)
+            model_profile = str(pair.get("model_profile", "")).strip()
+            baseline_score = _safe_int(pair.get("initial_score"))
+            adaptive_score = _safe_int(pair.get("adaptive_score"))
+            delta_score = adaptive_score - baseline_score
+            label = f"Seed {seed}" if pair_model_count <= 1 else f"{model_profile} seed {seed}"
+            value = f"score {baseline_score} -> adaptive {adaptive_score} ({delta_score:+d})"
+            value_color = "1;92" if delta_score > 0 else ("1;91" if delta_score < 0 else "1;97")
+            _print_row(
+                label,
+                value,
+                color_enabled=color_enabled,
+                value_color=value_color,
+            )
+
+        _print_row(
+            "Baseline score total",
+            str(_safe_int(baseline_totals.get("score_total"))),
+            color_enabled=color_enabled,
+        )
+        _print_row(
+            "Adaptive score total",
+            str(_safe_int(adaptive_totals.get("score_total"))),
+            color_enabled=color_enabled,
+            value_color="1;92",
+        )
+        delta_score_total = _safe_int(delta_totals.get("score_total"))
+        delta_color = "1;92" if delta_score_total >= 0 else "1;91"
+        _print_row(
+            "Adaptive delta",
+            f"{delta_score_total:+d}",
+            color_enabled=color_enabled,
+            value_color=delta_color,
+        )
+
     _print_section("Artifacts", color_enabled)
     _print_row("Compare JSON", _short_path(compare_json), color_enabled=color_enabled, value_color="1;94")
     _print_row("Runs CSV", _short_path(runs_csv), color_enabled=color_enabled, value_color="1;94")
     _print_row("Models CSV", _short_path(models_csv), color_enabled=color_enabled, value_color="1;94")
     _print_row("H2H CSV", _short_path(h2h_csv), color_enabled=color_enabled, value_color="1;94")
+    if adaptive_runs_csv.exists():
+        _print_row("Adaptive runs CSV", _short_path(adaptive_runs_csv), color_enabled=color_enabled, value_color="1;94")
+    if adaptive_models_csv.exists():
+        _print_row("Adaptive models CSV", _short_path(adaptive_models_csv), color_enabled=color_enabled, value_color="1;94")
+    if adaptive_pairs_csv.exists():
+        _print_row("Adaptive pairs CSV", _short_path(adaptive_pairs_csv), color_enabled=color_enabled, value_color="1;94")
+    session_memory_path = run_dirs["memory"] / "session_memory.json"
+    if session_memory_path.exists():
+        _print_row("Session memory", _short_path(session_memory_path), color_enabled=color_enabled, value_color="1;94")
     _print_row("Checkpoint", _short_path(paths["checkpoint_json"]), color_enabled=color_enabled, value_color="1;94")
 
     if not args.no_viewer:

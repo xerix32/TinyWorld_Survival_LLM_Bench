@@ -8,12 +8,12 @@ from analysis.failure_archetypes import label_for, get_thresholds
 from analysis.summary_builder import build_deterministic_summaries
 
 
-RUN_ANALYSIS_SCHEMA_VERSION = "AIB-RA-AIB-0.1-v1"
-RUN_ANALYSIS_VERSION = "AIB-AN-AIB-0.1-v1"
+RUN_ANALYSIS_SCHEMA_VERSION = "AIB-RA-AIB-0.1.1-v1"
+RUN_ANALYSIS_VERSION = "AIB-AN-AIB-0.1.1-v1"
 
 
 _MOVE_ACTIONS = {"move north", "move south", "move east", "move west"}
-_WAIT_ACTIONS = {"rest", "inspect"}
+_WAIT_ACTIONS = {"rest", "wait"}
 
 
 def _as_int(value: Any, default: int = 0) -> int:
