@@ -9,6 +9,7 @@ import yaml
 
 from bench.common import load_yaml_file, run_match_once
 from bench.run_compare import (
+    _assert_adaptive_prompt_hash_consistency,
     _build_compatibility_report,
     _build_jobs,
     _build_from_logs,
@@ -140,6 +141,37 @@ def test_build_compatibility_report_detects_mixed_versions() -> None:
     assert "mixed_prompt_hash" in warning_codes
     assert "mixed_bench_version" in warning_codes
     assert "mixed_engine_version" in warning_codes
+
+
+def test_adaptive_prompt_hash_guard_allows_uniform_hash() -> None:
+    rows = [
+        {"prompt_set_sha256": "hash_a"},
+        {"prompt_set_sha256": "hash_a"},
+    ]
+    adaptive_rows = [{"prompt_set_sha256": "hash_a"}]
+    _assert_adaptive_prompt_hash_consistency(
+        adaptive_enabled=True,
+        run_rows=rows,
+        adaptive_run_rows=adaptive_rows,
+    )
+
+
+def test_adaptive_prompt_hash_guard_raises_on_mixed_hashes() -> None:
+    rows = [{"prompt_set_sha256": "hash_a"}]
+    adaptive_rows = [{"prompt_set_sha256": "hash_b"}]
+    try:
+        _assert_adaptive_prompt_hash_consistency(
+            adaptive_enabled=True,
+            run_rows=rows,
+            adaptive_run_rows=adaptive_rows,
+        )
+    except RuntimeError as exc:
+        text = str(exc)
+        assert "mixed prompt_set_sha256" in text
+        assert "hash_a" in text
+        assert "hash_b" in text
+    else:
+        raise AssertionError("expected RuntimeError on mixed adaptive prompt hashes")
 
 
 def test_run_compare_smoke_dummy_cli(tmp_path: Path, monkeypatch) -> None:
@@ -383,7 +415,8 @@ def test_run_compare_adaptive_memory_smoke(tmp_path: Path, monkeypatch) -> None:
     assert payload["adaptive"].get("enabled") is True
     assert payload.get("meta", {}).get("adaptive_aggregate_score") is not None
 
-    with next(results_dir.glob("compare_runs_*.csv")).open("r", encoding="utf-8", newline="") as handle:
+    baseline_csv = next(p for p in results_dir.glob("compare_runs_*.csv") if "adaptive" not in p.name)
+    with baseline_csv.open("r", encoding="utf-8", newline="") as handle:
         baseline_rows = list(csv.DictReader(handle))
     with next(results_dir.glob("compare_runs_adaptive_*.csv")).open("r", encoding="utf-8", newline="") as handle:
         adaptive_rows = list(csv.DictReader(handle))
@@ -391,9 +424,10 @@ def test_run_compare_adaptive_memory_smoke(tmp_path: Path, monkeypatch) -> None:
         pair_rows = list(csv.DictReader(handle))
 
     assert len(baseline_rows) == 2
-    assert len(adaptive_rows) == 2
+    assert len(adaptive_rows) == 4  # 2 control + 2 adaptive
     assert len(pair_rows) == 2
     assert len(list(logs_dir.glob("*_initial.json"))) == 2
+    assert len(list(logs_dir.glob("*_control.json"))) == 2
     assert len(list(logs_dir.glob("*_adaptive.json"))) == 2
 
 
@@ -469,14 +503,21 @@ def test_adaptive_initial_attempt_stays_memory_clean(tmp_path: Path, monkeypatch
     seed2_initial = json.loads(
         (logs_dir / "run_seed2_dummy_v0_1_initial.json").read_text(encoding="utf-8")
     )
+    seed2_control = json.loads(
+        (logs_dir / "run_seed2_dummy_v0_1_control.json").read_text(encoding="utf-8")
+    )
     seed2_adaptive = json.loads(
         (logs_dir / "run_seed2_dummy_v0_1_adaptive.json").read_text(encoding="utf-8")
     )
 
     initial_identity = dict(seed2_initial.get("benchmark_identity", {}))
+    control_identity = dict(seed2_control.get("benchmark_identity", {}))
     adaptive_identity = dict(seed2_adaptive.get("benchmark_identity", {}))
     assert int(initial_identity.get("memory_session_lesson_count") or 0) == 0
     assert int(initial_identity.get("memory_current_seed_lesson_count") or 0) == 0
+    # Control rerun must also have zero memory (it measures pure LLM variance)
+    assert int(control_identity.get("memory_session_lesson_count") or 0) == 0
+    assert int(control_identity.get("memory_current_seed_lesson_count") or 0) == 0
     assert int(adaptive_identity.get("memory_session_lesson_count") or 0) == 0
     assert int(adaptive_identity.get("memory_current_seed_lesson_count") or 0) >= 1
 
@@ -503,12 +544,23 @@ def test_run_compare_adaptive_resume_from_checkpoint(tmp_path: Path, monkeypatch
 
     seed1_pair_key = "dummy_v0_1__seed1"
     seed1_initial_log = dirs["logs"] / "run_seed1_dummy_v0_1_initial.json"
+    seed1_control_log = dirs["logs"] / "run_seed1_dummy_v0_1_control.json"
     seed1_adaptive_log = dirs["logs"] / "run_seed1_dummy_v0_1_adaptive.json"
     run_match_once(
         seed=1,
         model_name="dummy_v0_1",
         output_path=seed1_initial_log,
         attempt_kind="initial",
+        adaptive_pair_key=seed1_pair_key,
+    )
+    run_match_once(
+        seed=1,
+        model_name="dummy_v0_1",
+        output_path=seed1_control_log,
+        include_memory=True,
+        session_lessons=[],
+        current_seed_lessons=[],
+        attempt_kind="control_rerun",
         adaptive_pair_key=seed1_pair_key,
     )
     run_match_once(
@@ -525,6 +577,10 @@ def test_run_compare_adaptive_resume_from_checkpoint(tmp_path: Path, monkeypatch
         compare_id=compare_id,
         log_paths=[seed1_initial_log],
     )
+    control_rows, _, _, _, _, _ = _build_from_logs(
+        compare_id=compare_id,
+        log_paths=[seed1_control_log],
+    )
     adaptive_rows, _, _, _, _, _ = _build_from_logs(
         compare_id=compare_id,
         log_paths=[seed1_adaptive_log],
@@ -532,31 +588,42 @@ def test_run_compare_adaptive_resume_from_checkpoint(tmp_path: Path, monkeypatch
     for row in initial_rows:
         row["job_index"] = 1
         row["job_total"] = 2
+    for row in control_rows:
+        row["job_index"] = 1
+        row["job_total"] = 2
     for row in adaptive_rows:
         row["job_index"] = 1
         row["job_total"] = 2
 
+    initial_score = int(initial_rows[0]["final_score"])
+    adaptive_score = int(adaptive_rows[0]["final_score"])
     adaptive_pair_rows = [
         {
             "compare_id": compare_id,
             "model_profile": "dummy_v0_1",
             "seed": 1,
             "adaptive_pair_key": seed1_pair_key,
-            "initial_score": int(initial_rows[0]["final_score"]),
-            "adaptive_score": int(adaptive_rows[0]["final_score"]),
-            "delta_score": int(adaptive_rows[0]["final_score"]) - int(initial_rows[0]["final_score"]),
+            "initial_score": initial_score,
+            "control_score": initial_score,
+            "adaptive_score": adaptive_score,
+            "control_delta": 0,
+            "adaptive_delta": adaptive_score - initial_score,
+            "memory_effect": adaptive_score - initial_score,
             "initial_turns_survived": int(initial_rows[0]["turns_survived"]),
+            "control_turns_survived": int(initial_rows[0]["turns_survived"]),
             "adaptive_turns_survived": int(adaptive_rows[0]["turns_survived"]),
-            "delta_turns_survived": int(adaptive_rows[0]["turns_survived"]) - int(initial_rows[0]["turns_survived"]),
+            "control_delta_turns": 0,
+            "adaptive_delta_turns": int(adaptive_rows[0]["turns_survived"]) - int(initial_rows[0]["turns_survived"]),
             "initial_invalid_actions": int(initial_rows[0]["invalid_actions"]),
+            "control_invalid_actions": int(initial_rows[0]["invalid_actions"]),
             "adaptive_invalid_actions": int(adaptive_rows[0]["invalid_actions"]),
-            "delta_invalid_actions": int(adaptive_rows[0]["invalid_actions"]) - int(initial_rows[0]["invalid_actions"]),
             "initial_resources_gathered": int(initial_rows[0]["resources_gathered"]),
+            "control_resources_gathered": int(initial_rows[0]["resources_gathered"]),
             "adaptive_resources_gathered": int(adaptive_rows[0]["resources_gathered"]),
-            "delta_resources_gathered": int(adaptive_rows[0]["resources_gathered"]) - int(initial_rows[0]["resources_gathered"]),
             "lessons_before_count": 0,
             "lessons_added_count": 1,
             "lessons_after_count": 1,
+            "memory_promoted": False,
             "reflection_parse_error": None,
             "reflection_path": None,
             "memory_snapshot_path": None,
@@ -588,7 +655,7 @@ def test_run_compare_adaptive_resume_from_checkpoint(tmp_path: Path, monkeypatch
         },
         "run_rows": initial_rows,
         "run_payloads": initial_payloads,
-        "adaptive_run_rows": adaptive_rows,
+        "adaptive_run_rows": control_rows + adaptive_rows,
         "adaptive_pair_rows": adaptive_pair_rows,
         "adaptive_memory_by_model": {"dummy_v0_1": ["Prioritize water when thirst pressure rises."]},
     }

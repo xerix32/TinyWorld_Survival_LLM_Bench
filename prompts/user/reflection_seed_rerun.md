@@ -3,21 +3,18 @@
 You are preparing an immediate rerun of the SAME seed in the current adaptive session.
 The map layout and resource placement are the same for this rerun.
 
-Extract 3-5 concise lessons that can improve the immediate same-seed rerun.
-Prefer conditional decision rules, not long recaps.
-For this same-seed rerun, map-specific hints are allowed when concise and actionable.
-Do not include verbose path or episode recaps.
-Use lessons as soft guidance, not rigid commands.
+Produce a single **prioritization policy** for the rerun, NOT a list of independent rules.
+The policy must be a short, ordered decision procedure the agent can follow every turn.
 
-Lens requirements (generic, not game-specific):
-- At least 1 lesson about priority selection.
-- At least 1 lesson about recovery/stabilization under pressure.
-- At least 1 lesson about avoiding overfocus or repeated low-value actions.
-- At least 1 lesson must explicitly prevent tunnel vision (one pressure improved while another worsens).
-- At least 1 lesson must explicitly require turn-by-turn re-evaluation if recent actions are not improving the targeted pressure.
-- Ensure the lesson set spans at least 2 distinct focus areas; do not return all lessons about only one pressure type.
-- Each `rule` must be a short operational sentence (preferably <= 18 words), action-oriented, and directly usable next turn.
-- Prefer concrete action/resource guidance over abstract meta-policy phrasing.
+Policy requirements:
+- The policy must define a clear priority ordering for competing pressures (e.g., "address the pressure closest to critical first; break ties by rate of increase").
+- The policy must include a turn-by-turn re-evaluation check: "if the last action did not improve the targeted pressure, switch strategy immediately".
+- The policy must include an anti-oscillation clause: "do not alternate between the same two actions for more than 2 turns".
+- The policy should be 3-6 sentences maximum. Each sentence must be operational and directly usable.
+- Do not produce a list of independent "when X do Y" rules that can conflict with each other.
+- Avoid rigid or absolute wording such as: "always", "never", "sole priority", "forbidden action", "eliminate all".
+- Do NOT include spatial or directional hints (e.g., "go north", "water is at column 0"). The observation already provides full visibility of surrounding tiles — spatial memory from a previous run can be stale and misleading.
+- The policy must reinforce: if a useful action (gather, eat, drink) is available in `allowed_actions`, strongly prefer it over movement.
 
 Current session lessons:
 {% if existing_lessons %}
@@ -38,35 +35,21 @@ Run analysis (structured):
 {{ run_analysis_json }}
 ```
 
+Recent trajectory context (structured):
+```json
+{{ run_trace_context_json }}
+```
+
 Output contract:
-- Return ONLY a strict JSON array of objects.
-- Return between 3 and 5 lessons.
-- Each lesson object must include:
-  - `rule`
-  - `trigger`
-  - `risk_if_overapplied` (must include an explicit "Do not apply when ..." boundary)
-  - `confidence` (`low` | `medium` | `high`)
-- `rule` must stay short and action-oriented; avoid purely abstract guidance with no immediate action implication.
-- Avoid rigid or absolute wording such as: "always", "never", "sole priority", "forbidden action", "eliminate all".
+- Return ONLY a strict JSON object (not an array).
+- The object must include:
+  - `policy`: a string containing the prioritization policy (3-6 sentences).
+  - `confidence`: (`low` | `medium` | `high`)
+- The `policy` string must read as a single coherent decision procedure, not a bullet list.
+- Keep total length under 120 words.
 
 Output example:
-[
-  {
-    "rule": "Prioritize a nearby critical resource before exploratory movement.",
-    "trigger": "a survival pressure indicator is rising and a useful resource is reachable",
-    "risk_if_overapplied": "Do not apply when another pressure is worsening faster than the targeted one; this can cause imbalance.",
-    "confidence": "medium"
-  },
-  {
-    "rule": "Switch to recovery actions before pressure reaches critical levels, then re-evaluate every turn.",
-    "trigger": "the same pressure signal appears for consecutive turns and recent actions are not improving it",
-    "risk_if_overapplied": "Do not apply when the targeted pressure is already improving; this may over-react and reduce efficiency.",
-    "confidence": "high"
-  },
-  {
-    "rule": "Break repeated low-yield loops by forcing a useful action check.",
-    "trigger": "several turns pass with movement but no useful gain",
-    "risk_if_overapplied": "Do not apply when exploration is still yielding useful resources; rigid use can miss opportunities.",
-    "confidence": "medium"
-  }
-]
+{
+  "policy": "Each turn, address the pressure closest to its critical threshold first; if two pressures are equally urgent, prefer the one rising faster. If gather, eat, or drink is available in allowed_actions, strongly prefer it over movement. After taking an action, check whether the targeted pressure improved; if not, switch to a different valid action next turn rather than repeating. Do not alternate between the same two moves for more than 2 consecutive turns; if caught in a loop, choose a third action even if suboptimal.",
+  "confidence": "medium"
+}

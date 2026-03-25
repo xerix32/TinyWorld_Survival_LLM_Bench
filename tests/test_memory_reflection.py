@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from memory.filter import filter_lessons
 from memory.reflection import parse_reflection_lessons
 from memory.session import merge_lessons
@@ -110,6 +112,43 @@ def test_parse_reflection_lessons_rejects_wrong_cardinality() -> None:
     lessons, error = parse_reflection_lessons(raw)
     assert lessons == []
     assert error == "too_few_lessons"
+
+
+def test_parse_seed_reflection_policy_accepts_object_format() -> None:
+    from memory.reflection import parse_seed_reflection_policy
+
+    raw = json.dumps({
+        "policy": "Address the pressure closest to critical first. Re-evaluate each turn.",
+        "hints": ["Water is west.", "Food is north."],
+        "confidence": "high",
+    })
+    lessons, error = parse_seed_reflection_policy(raw)
+    assert error is None
+    assert len(lessons) == 3
+    assert "closest to critical" in lessons[0]
+    assert "Water is west." in lessons[1]
+
+
+def test_parse_seed_reflection_policy_fallback_to_array() -> None:
+    from memory.reflection import parse_seed_reflection_policy
+
+    raw = json.dumps([
+        {"rule": "Do X", "trigger": "when Y", "risk_if_overapplied": "Z", "confidence": "high"},
+        {"rule": "Do A", "trigger": "when B", "risk_if_overapplied": "C", "confidence": "medium"},
+        {"rule": "Do D", "trigger": "when E", "risk_if_overapplied": "F", "confidence": "low"},
+    ])
+    lessons, error = parse_seed_reflection_policy(raw)
+    assert error is None
+    assert len(lessons) == 3
+
+
+def test_parse_seed_reflection_policy_rejects_missing_policy() -> None:
+    from memory.reflection import parse_seed_reflection_policy
+
+    raw = json.dumps({"hints": ["something"]})
+    lessons, error = parse_seed_reflection_policy(raw)
+    assert lessons == []
+    assert error == "missing_policy"
 
 
 def test_filter_lessons_is_pass_through_for_intra_seed_stage() -> None:

@@ -129,11 +129,13 @@ class PromptLoader:
         *,
         run_summary: dict[str, Any],
         run_analysis: dict[str, Any] | None,
+        run_trace_context: dict[str, Any] | None = None,
         existing_lessons: list[dict[str, Any]] | None = None,
     ) -> str:
         context = {
             "run_summary_json": to_canonical_json(run_summary or {}),
             "run_analysis_json": to_canonical_json(run_analysis or {}),
+            "run_trace_context_json": to_canonical_json(run_trace_context or {}),
             "existing_lessons": existing_lessons or [],
         }
         return self.render_template("user/reflection_seed_rerun.md", context)
@@ -143,8 +145,10 @@ class PromptLoader:
         *,
         initial_run_summary: dict[str, Any],
         initial_run_analysis: dict[str, Any] | None,
+        initial_run_trace_context: dict[str, Any] | None = None,
         rerun_summary: dict[str, Any],
         rerun_analysis: dict[str, Any] | None,
+        rerun_trace_context: dict[str, Any] | None = None,
         existing_lessons: list[dict[str, Any]] | None = None,
         seed_lessons: list[dict[str, Any]] | None = None,
         adaptive_feedback: dict[str, Any] | None = None,
@@ -152,8 +156,10 @@ class PromptLoader:
         context = {
             "initial_run_summary_json": to_canonical_json(initial_run_summary or {}),
             "initial_run_analysis_json": to_canonical_json(initial_run_analysis or {}),
+            "initial_run_trace_context_json": to_canonical_json(initial_run_trace_context or {}),
             "rerun_summary_json": to_canonical_json(rerun_summary or {}),
             "rerun_analysis_json": to_canonical_json(rerun_analysis or {}),
+            "rerun_trace_context_json": to_canonical_json(rerun_trace_context or {}),
             "existing_lessons": existing_lessons or [],
             "seed_lessons": seed_lessons or [],
             "adaptive_feedback_json": to_canonical_json(adaptive_feedback or {}),

@@ -1,9 +1,14 @@
 version: 0.2.1
-protocol_version: AIB-0.1.1
+protocol_version: AIB-0.1.2
 pricing_config_path: configs/pricing.yaml
 default_scenario: v0_1_basic
 max_turns: 50
 invalid_action_policy: waste_turn
+
+observation:
+  history_window: 1
+  discovery_window: 10
+  path_window: 10
 
 parser:
   case_mode: case_insensitive

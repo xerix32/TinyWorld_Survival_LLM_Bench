@@ -118,6 +118,12 @@ model_profiles:
     temperature: 0.2
     max_tokens: 12000
 
+  vercel_glm_4_6:
+    provider: vercel_gateway
+    model: zai/glm-4.6
+    temperature: 0.2
+    max_tokens: 12000
+
   vercel_gpt_4_1_nano:
     provider: vercel_gateway
     model: openai/gpt-4.1-nano

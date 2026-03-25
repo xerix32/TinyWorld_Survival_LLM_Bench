@@ -89,17 +89,22 @@ ADAPTIVE_PAIR_FIELDS = [
     "seed",
     "adaptive_pair_key",
     "initial_score",
+    "control_score",
     "adaptive_score",
-    "delta_score",
+    "control_delta",
+    "adaptive_delta",
+    "memory_effect",
     "initial_turns_survived",
+    "control_turns_survived",
     "adaptive_turns_survived",
-    "delta_turns_survived",
+    "control_delta_turns",
+    "adaptive_delta_turns",
     "initial_invalid_actions",
+    "control_invalid_actions",
     "adaptive_invalid_actions",
-    "delta_invalid_actions",
     "initial_resources_gathered",
+    "control_resources_gathered",
     "adaptive_resources_gathered",
-    "delta_resources_gathered",
     "lessons_before_count",
     "lessons_added_count",
     "lessons_after_count",
@@ -172,6 +177,12 @@ class JobSpec:
     seed: int
     job_index: int
     job_total: int
+
+
+@dataclass(frozen=True)
+class AdaptiveFutureSpec:
+    kind: str  # "initial" | "adaptive_followup"
+    job: JobSpec
 
 
 def parse_models(raw: str) -> list[str]:
@@ -283,6 +294,107 @@ def _print_row(
     label_text = colorize(f"{label:<22}", label_color, color_enabled)
     value_text = colorize(value, value_color, color_enabled)
     print(f"  {label_text} {value_text}")
+
+
+def _print_start_identity(
+    *,
+    color_enabled: bool,
+    protocol_version: str,
+    scenario: str,
+    run_id: str,
+    run_root: Path,
+    model_workers: int,
+    seed_workers_per_model: int,
+) -> None:
+    _print_section("Identity", color_enabled)
+    _print_row("Protocol", protocol_version, color_enabled=color_enabled)
+    _print_row("Scenario", scenario, color_enabled=color_enabled)
+    _print_row("Run ID", run_id, color_enabled=color_enabled, value_color="1;93")
+    _print_row("Run root", _short_path(run_root), color_enabled=color_enabled, value_color="1;94")
+    _print_row("Parallel Per Model", str(model_workers), color_enabled=color_enabled)
+    _print_row("Parallel per Seed", str(seed_workers_per_model), color_enabled=color_enabled)
+    print()
+
+
+def _print_adaptive_live_snapshot(
+    *,
+    status_line: StatusLine,
+    color_enabled: bool,
+    model_profiles: list[str],
+    seed_list: list[int],
+    initial_rows_by_key: dict[tuple[str, int], dict[str, Any]],
+    control_rows_by_key: dict[tuple[str, int], dict[str, Any]],
+    adaptive_rows_by_key: dict[tuple[str, int], dict[str, Any]],
+    adaptive_pairs_by_key: dict[tuple[str, int], dict[str, Any]] | None = None,
+    previous_line_count: int,
+) -> int:
+    def _maybe_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    status_line.clear()
+    lines: list[str] = [
+        "",
+        colorize("Adaptive Session (live)", "1;35", color_enabled),
+    ]
+    single_model = len(model_profiles) <= 1
+    for model_profile in model_profiles:
+        for seed in seed_list:
+            key = (model_profile, int(seed))
+            pair_row = dict((adaptive_pairs_by_key or {}).get(key, {}))
+            initial_score = _maybe_int(dict(initial_rows_by_key.get(key, {})).get("final_score"))
+            control_score = _maybe_int(dict(control_rows_by_key.get(key, {})).get("final_score"))
+            adaptive_score = _maybe_int(dict(adaptive_rows_by_key.get(key, {})).get("final_score"))
+            if initial_score is None:
+                initial_score = _maybe_int(pair_row.get("initial_score"))
+            if control_score is None:
+                control_score = _maybe_int(pair_row.get("control_score"))
+            if adaptive_score is None:
+                adaptive_score = _maybe_int(pair_row.get("adaptive_score"))
+
+            variance_text = "--"
+            memory_text = "--"
+            value_color = "0;37"
+
+            if initial_score is not None and control_score is not None:
+                variance_delta = int(control_score) - int(initial_score)
+                variance_text = f"{variance_delta:+d}"
+                value_color = "1;92" if variance_delta > 0 else ("1;91" if variance_delta < 0 else "1;97")
+
+            if control_score is not None and adaptive_score is not None:
+                memory_effect = int(adaptive_score) - int(control_score)
+                memory_text = f"{memory_effect:+d}"
+                value_color = "1;92" if memory_effect > 0 else ("1;91" if memory_effect < 0 else "1;97")
+
+            label = f"Seed {seed}" if single_model else f"{model_profile} seed {seed}"
+            value = (
+                f"baseline={initial_score if initial_score is not None else '--'}  "
+                f"rerun={control_score if control_score is not None else '--'}  "
+                f"rerun+mem={adaptive_score if adaptive_score is not None else '--'}  "
+                f"variance={variance_text}  memory={memory_text}"
+            )
+            label_text = colorize(f"{label:<22}", "1;36", color_enabled)
+            value_text = colorize(value, value_color, color_enabled)
+            lines.append(f"  {label_text} {value_text}")
+    lines.append("")
+
+    supports_inplace = sys.stdout.isatty()
+    if not supports_inplace and previous_line_count > 0:
+        # Non-interactive output: avoid appending a full panel snapshot every update.
+        return previous_line_count
+
+    if supports_inplace and previous_line_count > 0:
+        sys.stdout.write(f"\x1b[{previous_line_count}A")
+        for _ in range(previous_line_count):
+            sys.stdout.write("\x1b[2K\x1b[1B")
+        sys.stdout.write(f"\x1b[{previous_line_count}A")
+
+    for line in lines:
+        sys.stdout.write(line + "\n")
+    sys.stdout.flush()
+    return len(lines)
 
 
 def _is_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -419,6 +531,27 @@ def _build_compatibility_report(run_rows: list[dict[str, Any]], fallback_protoco
         "bench_versions": bench_versions,
         "engine_versions": engine_versions,
     }
+
+
+def _assert_adaptive_prompt_hash_consistency(
+    *,
+    adaptive_enabled: bool,
+    run_rows: list[dict[str, Any]],
+    adaptive_run_rows: list[dict[str, Any]],
+) -> None:
+    if not adaptive_enabled:
+        return
+    prompt_hashes, _ = _normalized_unique_strings(
+        list(run_rows) + list(adaptive_run_rows),
+        "prompt_set_sha256",
+    )
+    if len(prompt_hashes) <= 1:
+        return
+    raise RuntimeError(
+        "adaptive compare aborted: mixed prompt_set_sha256 detected within the same compare run: "
+        + ", ".join(prompt_hashes)
+        + ". Keep prompt files stable while compare is running."
+    )
 
 
 def _elapsed_seconds_from_run_rows(run_rows: list[dict[str, Any]]) -> float:
@@ -628,6 +761,49 @@ def _build_adaptive_feedback(
             "initial": str(initial_summary.get("death_cause", "") or ""),
             "adaptive": str(adaptive_summary.get("death_cause", "") or ""),
         },
+    }
+
+
+def _build_reflection_trace_context(
+    *,
+    run_log: dict[str, Any],
+    history_window: int = 10,
+) -> dict[str, Any]:
+    turn_logs = list(run_log.get("turn_logs", []))
+    recent_turns: list[dict[str, Any]] = []
+    for turn_log in turn_logs[-history_window:]:
+        action_result = turn_log.get("action_result", {}) if isinstance(turn_log, dict) else {}
+        validation = turn_log.get("validation_result", {}) if isinstance(turn_log, dict) else {}
+        score_delta = turn_log.get("score_delta", {}) if isinstance(turn_log, dict) else {}
+        survival_delta = (
+            turn_log.get("world_result_delta", {}).get("survival_delta", {})
+            if isinstance(turn_log, dict)
+            else {}
+        )
+        recent_turns.append(
+            {
+                "turn": int(turn_log.get("turn", 0)),
+                "action": str(action_result.get("applied") or action_result.get("requested") or ""),
+                "valid": bool(validation.get("is_valid", False)),
+                "result": str(action_result.get("message") or ""),
+                "score_delta_total": int(score_delta.get("total", 0)),
+                "energy_after": int(survival_delta.get("energy_after", 0)),
+                "hunger_after": int(survival_delta.get("hunger_after", 0)),
+                "thirst_after": int(survival_delta.get("thirst_after", 0)),
+            }
+        )
+
+    latest_observation = {}
+    if turn_logs:
+        latest_observation = dict(turn_logs[-1].get("observation", {}))
+    known_map = latest_observation.get("known_map", {})
+    recent_discoveries = latest_observation.get("recent_discoveries", [])
+
+    return {
+        "history_window": int(history_window),
+        "recent_turns": recent_turns,
+        "recent_discoveries": list(recent_discoveries or []),
+        "known_map": dict(known_map) if isinstance(known_map, dict) else {},
     }
 
 
@@ -906,7 +1082,7 @@ def _build_from_logs(
 
     profile_order: dict[str, int] = {}
     seed_order: dict[int, int] = {}
-    protocol_version = "AIB-0.1.1"
+    protocol_version = "AIB-0.1.2"
     scenario = "-"
     pricing_cfg: dict[str, Any] | None = None
     pricing_path = Path(pricing_config_path)
@@ -952,7 +1128,7 @@ def _build_from_logs(
                 run_summary=summary,
                 rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
                 initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
-                protocol_version=str(run_log.get("protocol_version", "AIB-0.1.1")),
+                protocol_version=str(run_log.get("protocol_version", "AIB-0.1.2")),
             )
             summary["analysis_version"] = analysis["analysis_version"]
             summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -1135,7 +1311,11 @@ def _attempt_index(attempt_kind: str) -> int:
 
 
 def _attempt_label(attempt_kind: str) -> str:
-    return "adaptive_rerun" if _attempt_index(attempt_kind) == 2 else "initial"
+    if attempt_kind == "control_rerun":
+        return "rerun (control)"
+    if attempt_kind == "adaptive_rerun":
+        return "rerun (adaptive)"
+    return "initial"
 
 
 def _display_job_position(
@@ -1157,6 +1337,20 @@ def _job_log_path(logs_dir: Path, job: JobSpec) -> Path:
 
 def _job_log_path_adaptive(logs_dir: Path, job: JobSpec, attempt_kind: str) -> Path:
     return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}_{attempt_kind}.json"
+
+
+def _load_run_log_from_summary(summary_row: dict[str, Any]) -> dict[str, Any]:
+    raw_path = str(summary_row.get("log_path", "")).strip()
+    if not raw_path:
+        raise RuntimeError("missing log_path for completed initial attempt")
+    log_path = Path(raw_path).resolve()
+    if not log_path.exists():
+        raise RuntimeError(f"initial log not found for adaptive resume: {log_path}")
+    with log_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict) or "run_summary" not in payload:
+        raise RuntimeError(f"invalid run log payload for adaptive resume: {log_path}")
+    return payload
 
 
 def _extract_prompt_rules(
@@ -1199,6 +1393,7 @@ def _execute_job(
     scenarios_config_path: str,
     providers_config_path: str,
     prompts_dir: str,
+    history_window: int | None,
     output_logs_dir: Path,
     progress_callback: Any = None,
     fix_thinking: bool = False,
@@ -1212,13 +1407,14 @@ def _execute_job(
         scenarios_config_path=scenarios_config_path,
         providers_config_path=providers_config_path,
         prompts_dir=prompts_dir,
+        history_window=history_window,
         output_path=_job_log_path(output_logs_dir, job),
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
     )
 
 
-def _execute_adaptive_pair(
+def _execute_adaptive_initial(
     *,
     job: JobSpec,
     scenario: str,
@@ -1227,29 +1423,14 @@ def _execute_adaptive_pair(
     scenarios_config_path: str,
     providers_config_path: str,
     prompts_dir: str,
+    history_window: int | None,
     output_logs_dir: Path,
     memory_dir: Path,
     session_lessons: list[str],
     progress_callback: Any = None,
     fix_thinking: bool = False,
 ) -> dict[str, Any]:
-    def _emit_progress_with_extras(
-        event: dict[str, Any],
-        *,
-        baseline_score_reference: int | None = None,
-    ) -> None:
-        if progress_callback is None:
-            return
-        payload = dict(event)
-        if baseline_score_reference is not None:
-            payload["baseline_score_reference"] = int(baseline_score_reference)
-        progress_callback(payload)
-
     pair_key = f"{job.model_profile}__seed{job.seed}"
-    providers_cfg = load_yaml_file(providers_config_path)
-    model_binding = create_model_wrapper(model_name=job.model_profile, seed=job.seed, providers_cfg=providers_cfg)
-    prompt_loader = PromptLoader(prompts_dir)
-
     initial_log = run_match_once(
         seed=job.seed,
         model_name=job.model_profile,
@@ -1259,8 +1440,9 @@ def _execute_adaptive_pair(
         scenarios_config_path=scenarios_config_path,
         providers_config_path=providers_config_path,
         prompts_dir=prompts_dir,
+        history_window=history_window,
         output_path=_job_log_path_adaptive(output_logs_dir, job, "initial"),
-        progress_callback=lambda event: _emit_progress_with_extras(event),
+        progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         include_memory=True,
         # Baseline attempt in adaptive mode must stay clean:
@@ -1270,15 +1452,69 @@ def _execute_adaptive_pair(
         attempt_kind="initial",
         adaptive_pair_key=pair_key,
     )
+    return {"initial_run_log": initial_log}
+
+
+def _execute_adaptive_followup(
+    *,
+    job: JobSpec,
+    scenario: str,
+    max_turns: int | None,
+    benchmark_config_path: str,
+    scenarios_config_path: str,
+    providers_config_path: str,
+    prompts_dir: str,
+    history_window: int | None,
+    output_logs_dir: Path,
+    memory_dir: Path,
+    session_lessons: list[str],
+    initial_log: dict[str, Any],
+    progress_callback: Any = None,
+    fix_thinking: bool = False,
+) -> dict[str, Any]:
+    pair_key = f"{job.model_profile}__seed{job.seed}"
     initial_score_reference = _safe_int(
         dict(initial_log.get("run_summary", {})).get("final_score")
     )
+
+    def _emit_progress_with_extras(event: dict[str, Any]) -> None:
+        if progress_callback is None:
+            return
+        payload = dict(event)
+        payload["baseline_score_reference"] = int(initial_score_reference)
+        progress_callback(payload)
+
+    # --- Control rerun: same seed, no memory (measures LLM variance) ---
+    control_log = run_match_once(
+        seed=job.seed,
+        model_name=job.model_profile,
+        scenario_name=(None if scenario in {"", "-"} else scenario),
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        history_window=history_window,
+        output_path=_job_log_path_adaptive(output_logs_dir, job, "control"),
+        progress_callback=_emit_progress_with_extras,
+        fix_thinking=fix_thinking,
+        include_memory=True,
+        session_lessons=[],
+        current_seed_lessons=[],
+        attempt_kind="control_rerun",
+        adaptive_pair_key=pair_key,
+    )
+
+    providers_cfg = load_yaml_file(providers_config_path)
+    model_binding = create_model_wrapper(model_name=job.model_profile, seed=job.seed, providers_cfg=providers_cfg)
+    prompt_loader = PromptLoader(prompts_dir)
 
     seed_reflection = run_seed_reflection(
         model_wrapper=model_binding.wrapper,
         prompt_loader=prompt_loader,
         run_summary=dict(initial_log.get("run_summary", {})),
         run_analysis=initial_log.get("run_analysis"),
+        run_trace_context=_build_reflection_trace_context(run_log=initial_log, history_window=10),
         existing_lessons=lessons_to_prompt_items(session_lessons),
         metadata={
             "mode": "adaptive_seed_reflection",
@@ -1333,6 +1569,11 @@ def _execute_adaptive_pair(
     }
     save_json(seed_reflection_path, seed_reflection_payload)
 
+    # Pass discovered tiles from initial run to adaptive rerun
+    initial_discovered = initial_log.get("discovered_tiles")
+    if not isinstance(initial_discovered, dict):
+        initial_discovered = None
+
     adaptive_log = run_match_once(
         seed=job.seed,
         model_name=job.model_profile,
@@ -1342,15 +1583,14 @@ def _execute_adaptive_pair(
         scenarios_config_path=scenarios_config_path,
         providers_config_path=providers_config_path,
         prompts_dir=prompts_dir,
+        history_window=history_window,
         output_path=_job_log_path_adaptive(output_logs_dir, job, "adaptive"),
-        progress_callback=lambda event: _emit_progress_with_extras(
-            event,
-            baseline_score_reference=initial_score_reference,
-        ),
+        progress_callback=_emit_progress_with_extras,
         fix_thinking=fix_thinking,
         include_memory=True,
         session_lessons=session_lessons,
         current_seed_lessons=pair_lessons,
+        prior_discovered_tiles=initial_discovered,
         attempt_kind="adaptive_rerun",
         adaptive_pair_key=pair_key,
     )
@@ -1366,8 +1606,10 @@ def _execute_adaptive_pair(
         prompt_loader=prompt_loader,
         initial_run_summary=initial_summary,
         initial_run_analysis=initial_log.get("run_analysis"),
+        initial_run_trace_context=_build_reflection_trace_context(run_log=initial_log, history_window=10),
         rerun_summary=adaptive_summary,
         rerun_analysis=adaptive_log.get("run_analysis"),
+        rerun_trace_context=_build_reflection_trace_context(run_log=adaptive_log, history_window=10),
         existing_lessons=lessons_to_prompt_items(session_lessons),
         seed_lessons=lessons_to_prompt_items(pair_lessons),
         adaptive_feedback=adaptive_feedback,
@@ -1471,23 +1713,33 @@ def _execute_adaptive_pair(
     elif cross_parse_error:
         combined_parse_error = f"cross:{cross_parse_error}"
 
+    control_summary = dict(control_log.get("run_summary", {}))
+    initial_s = _safe_int(initial_summary.get("final_score"))
+    control_s = _safe_int(control_summary.get("final_score"))
+    adaptive_s = _safe_int(adaptive_summary.get("final_score"))
+
     pair_row = {
         "compare_id": "",
         "model_profile": job.model_profile,
         "seed": job.seed,
         "adaptive_pair_key": pair_key,
-        "initial_score": _safe_int(initial_summary.get("final_score")),
-        "adaptive_score": _safe_int(adaptive_summary.get("final_score")),
-        "delta_score": _safe_int(adaptive_summary.get("final_score")) - _safe_int(initial_summary.get("final_score")),
+        "initial_score": initial_s,
+        "control_score": control_s,
+        "adaptive_score": adaptive_s,
+        "control_delta": control_s - initial_s,
+        "adaptive_delta": adaptive_s - initial_s,
+        "memory_effect": adaptive_s - control_s,
         "initial_turns_survived": _safe_int(initial_summary.get("turns_survived")),
+        "control_turns_survived": _safe_int(control_summary.get("turns_survived")),
         "adaptive_turns_survived": _safe_int(adaptive_summary.get("turns_survived")),
-        "delta_turns_survived": _safe_int(adaptive_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
+        "control_delta_turns": _safe_int(control_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
+        "adaptive_delta_turns": _safe_int(adaptive_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
         "initial_invalid_actions": _safe_int(initial_summary.get("invalid_actions")),
+        "control_invalid_actions": _safe_int(control_summary.get("invalid_actions")),
         "adaptive_invalid_actions": _safe_int(adaptive_summary.get("invalid_actions")),
-        "delta_invalid_actions": _safe_int(adaptive_summary.get("invalid_actions")) - _safe_int(initial_summary.get("invalid_actions")),
         "initial_resources_gathered": _safe_int(initial_summary.get("resources_gathered")),
+        "control_resources_gathered": _safe_int(control_summary.get("resources_gathered")),
         "adaptive_resources_gathered": _safe_int(adaptive_summary.get("resources_gathered")),
-        "delta_resources_gathered": _safe_int(adaptive_summary.get("resources_gathered")) - _safe_int(initial_summary.get("resources_gathered")),
         "lessons_before_count": len(session_lessons),
         "lessons_added_count": max(0, len(merged_session_lessons) - len(session_lessons)),
         "lessons_after_count": len(merged_session_lessons),
@@ -1499,11 +1751,65 @@ def _execute_adaptive_pair(
 
     return {
         "initial_run_log": initial_log,
+        "control_run_log": control_log,
         "adaptive_run_log": adaptive_log,
         "updated_lessons": merged_session_lessons,
         "pair_row": pair_row,
         "reflection_path": str(reflection_manifest_path),
         "memory_snapshot_path": str(memory_snapshot_path),
+    }
+
+
+def _execute_adaptive_pair(
+    *,
+    job: JobSpec,
+    scenario: str,
+    max_turns: int | None,
+    benchmark_config_path: str,
+    scenarios_config_path: str,
+    providers_config_path: str,
+    prompts_dir: str,
+    history_window: int | None,
+    output_logs_dir: Path,
+    memory_dir: Path,
+    session_lessons: list[str],
+    progress_callback: Any = None,
+    fix_thinking: bool = False,
+) -> dict[str, Any]:
+    initial_result = _execute_adaptive_initial(
+        job=job,
+        scenario=scenario,
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        history_window=history_window,
+        output_logs_dir=output_logs_dir,
+        memory_dir=memory_dir,
+        session_lessons=session_lessons,
+        progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
+    )
+    followup_result = _execute_adaptive_followup(
+        job=job,
+        scenario=scenario,
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        history_window=history_window,
+        output_logs_dir=output_logs_dir,
+        memory_dir=memory_dir,
+        session_lessons=session_lessons,
+        initial_log=dict(initial_result["initial_run_log"]),
+        progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
+    )
+    return {
+        "initial_run_log": dict(initial_result["initial_run_log"]),
+        **followup_result,
     }
 
 
@@ -1754,6 +2060,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Turn limit override. If omitted, uses benchmark config value.",
     )
     parser.add_argument(
+        "--history-window",
+        type=int,
+        default=None,
+        help=(
+            "Override observation history window (recent turns injected in observation). "
+            "Use 0 to disable; if omitted, uses benchmark config default."
+        ),
+    )
+    parser.add_argument(
         "--benchmark-config",
         type=str,
         default="configs/benchmark.yaml",
@@ -1837,6 +2152,8 @@ def main() -> None:
         parser.error("--model-workers must be >= 1")
     if args.seed_workers_per_model < 1:
         parser.error("--seed-workers-per-model must be >= 1")
+    if args.history_window is not None and args.history_window < 0:
+        parser.error("--history-window must be >= 0")
 
     color_enabled = use_color(disable_color=args.no_color)
     status_line = StatusLine(enabled=True)
@@ -1861,7 +2178,7 @@ def main() -> None:
     adaptive_pair_rows: list[dict[str, Any]] = []
     adaptive_memory_by_model: dict[str, list[str]] = {}
     scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
-    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1.1"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1.2"))
     model_profiles: list[str] = []
     seed_list: list[int] = []
     requested_models: list[str] = []
@@ -1872,18 +2189,10 @@ def main() -> None:
     effective_prompts_dir = str(Path(args.prompts_dir).resolve())
     effective_scenario_arg: str | None = args.scenario
     effective_max_turns = args.max_turns
+    effective_history_window = args.history_window
     effective_fix_thinking = bool(args.fix_thinking)
     adaptive_enabled = bool(args.adaptive_memory)
     effective_seed_workers_per_model = int(args.seed_workers_per_model)
-    if adaptive_enabled and effective_seed_workers_per_model != 1:
-        print(
-            colorize(
-                "Adaptive mode enforces per-model seed order; overriding seed_workers_per_model to 1.",
-                "1;93",
-                color_enabled,
-            )
-        )
-        effective_seed_workers_per_model = 1
 
     resume_context: dict[str, Any] = {
         "benchmark_config": effective_benchmark_config_path,
@@ -1892,6 +2201,7 @@ def main() -> None:
         "prompts_dir": effective_prompts_dir,
         "scenario_arg": effective_scenario_arg,
         "max_turns": effective_max_turns,
+        "history_window": effective_history_window,
         "fix_thinking": effective_fix_thinking,
         "adaptive_memory": adaptive_enabled,
         "runs_root": str(runs_root),
@@ -1922,6 +2232,12 @@ def main() -> None:
         adaptive_run_rows = adaptive_rows_from_logs
         adaptive_pair_rows = adaptive_pairs_from_logs
 
+        _assert_adaptive_prompt_hash_consistency(
+            adaptive_enabled=adaptive_enabled,
+            run_rows=run_rows,
+            adaptive_run_rows=adaptive_run_rows,
+        )
+
         for idx, row in enumerate(run_rows, start=1):
             row["job_index"] = idx
             row["job_total"] = len(run_rows)
@@ -1929,6 +2245,16 @@ def main() -> None:
         requested_models = list(model_profiles)
         resume_context["from_logs_glob"] = args.from_logs_glob
         resume_context["run_id"] = compare_id
+
+        _print_start_identity(
+            color_enabled=color_enabled,
+            protocol_version=protocol_version,
+            scenario=scenario,
+            run_id=compare_id,
+            run_root=run_dirs["run_root"],
+            model_workers=args.model_workers,
+            seed_workers_per_model=effective_seed_workers_per_model,
+        )
 
         compare_payload, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
             paths=paths,
@@ -1946,9 +2272,13 @@ def main() -> None:
             adaptive_memory_by_model=adaptive_memory_by_model,
         )
     else:
+        completed_initial_keys: set[tuple[str, int]] = set()
         completed_keys: set[tuple[str, int]] = set()
+        completed_jobs = 0
+        completed_units = 0
         existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         payload_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        control_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_pair_by_key: dict[tuple[str, int], dict[str, Any]] = {}
 
@@ -2020,11 +2350,16 @@ def main() -> None:
             effective_scenario_arg = None if resume_scenario in {None, ""} else str(resume_scenario)
             resume_max_turns = resume_context.get("max_turns", effective_max_turns)
             effective_max_turns = None if resume_max_turns in {None, ""} else int(resume_max_turns)
+            resume_history_window = resume_context.get("history_window", effective_history_window)
+            effective_history_window = (
+                None
+                if resume_history_window in {None, ""}
+                else int(resume_history_window)
+            )
             effective_fix_thinking = bool(resume_context.get("fix_thinking", effective_fix_thinking))
             adaptive_enabled = bool(resume_context.get("adaptive_memory", adaptive_enabled))
             effective_seed_workers_per_model = int(resume_context.get("seed_workers_per_model", effective_seed_workers_per_model))
-            if adaptive_enabled and effective_seed_workers_per_model != 1:
-                effective_seed_workers_per_model = 1
+            resume_context["history_window"] = effective_history_window
             resume_context["fix_thinking"] = effective_fix_thinking
             resume_context["adaptive_memory"] = adaptive_enabled
             resume_context["seed_workers_per_model"] = effective_seed_workers_per_model
@@ -2050,6 +2385,16 @@ def main() -> None:
         if not seed_list:
             raise SystemExit("No seeds available for compare execution.")
 
+        _print_start_identity(
+            color_enabled=color_enabled,
+            protocol_version=protocol_version,
+            scenario=scenario,
+            run_id=compare_id,
+            run_root=run_dirs["run_root"],
+            model_workers=args.model_workers,
+            seed_workers_per_model=effective_seed_workers_per_model,
+        )
+
         jobs = _build_jobs(model_profiles, seed_list)
         jobs_by_key = {(job.model_profile, job.seed): job for job in jobs}
 
@@ -2063,7 +2408,6 @@ def main() -> None:
             row["model_order"] = job.model_order
             row["seed_order"] = job.seed_order
             existing_by_key[key] = row
-            completed_keys.add(key)
 
         for payload in run_payloads:
             summary = payload.get("summary", {})
@@ -2074,7 +2418,14 @@ def main() -> None:
         for row in adaptive_run_rows:
             key = (str(row.get("model_profile", "")), int(row.get("seed", 0)))
             if key in jobs_by_key:
-                adaptive_by_key[key] = row
+                attempt_kind = str(row.get("attempt_kind", "")).strip()
+                if attempt_kind == "control_rerun":
+                    control_by_key[key] = row
+                elif attempt_kind == "adaptive_rerun":
+                    adaptive_by_key[key] = row
+                else:
+                    # Backward-compatibility fallback for legacy artifacts.
+                    adaptive_by_key[key] = row
         for row in adaptive_pair_rows:
             key = (str(row.get("model_profile", "")), int(row.get("seed", 0)))
             if key in jobs_by_key:
@@ -2085,11 +2436,32 @@ def main() -> None:
             ordered_keys = [(job.model_profile, job.seed) for job in jobs if (job.model_profile, job.seed) in existing_by_key]
             run_rows = [existing_by_key[key] for key in ordered_keys]
             run_payloads = [payload_by_key[key] for key in ordered_keys if key in payload_by_key]
-            adaptive_run_rows = [adaptive_by_key[key] for key in ordered_keys if key in adaptive_by_key]
+            control_rows = [control_by_key[key] for key in ordered_keys if key in control_by_key]
+            adaptive_only_rows = [adaptive_by_key[key] for key in ordered_keys if key in adaptive_by_key]
+            adaptive_run_rows = control_rows + adaptive_only_rows
             adaptive_pair_rows = [adaptive_pair_by_key[key] for key in ordered_keys if key in adaptive_pair_by_key]
 
+        def _refresh_completion_counters() -> None:
+            nonlocal completed_initial_keys, completed_keys, completed_jobs, completed_units
+            completed_initial_keys = set(existing_by_key.keys())
+            if adaptive_enabled:
+                completed_keys = {
+                    key for key in completed_initial_keys
+                    if key in adaptive_by_key and key in adaptive_pair_by_key
+                }
+                completed_units = len(completed_initial_keys) + len(completed_keys)
+            else:
+                completed_keys = set(completed_initial_keys)
+                completed_units = len(completed_keys)
+            completed_jobs = len(completed_keys)
+
         _rebuild_ordered_collections()
-        completed_jobs = len(completed_keys)
+        _refresh_completion_counters()
+        _assert_adaptive_prompt_hash_consistency(
+            adaptive_enabled=adaptive_enabled,
+            run_rows=run_rows,
+            adaptive_run_rows=adaptive_run_rows,
+        )
 
         def _persist_running_state(status: str = "running") -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
             _rebuild_ordered_collections()
@@ -2109,6 +2481,24 @@ def main() -> None:
                 adaptive_memory_by_model=adaptive_memory_by_model,
             )
 
+        adaptive_live_line_count = 0
+
+        def _refresh_adaptive_live_panel() -> None:
+            nonlocal adaptive_live_line_count
+            if not adaptive_enabled:
+                return
+            adaptive_live_line_count = _print_adaptive_live_snapshot(
+                status_line=status_line,
+                color_enabled=color_enabled,
+                model_profiles=model_profiles,
+                seed_list=seed_list,
+                initial_rows_by_key=existing_by_key,
+                control_rows_by_key=control_by_key,
+                adaptive_rows_by_key=adaptive_by_key,
+                adaptive_pairs_by_key=adaptive_pair_by_key,
+                previous_line_count=adaptive_live_line_count,
+            )
+
         if adaptive_enabled:
             save_json(
                 run_dirs["memory"] / "session_memory.json",
@@ -2119,16 +2509,15 @@ def main() -> None:
             )
 
         _persist_running_state(status="running")
+        _refresh_adaptive_live_panel()
 
-        def _record_job_result(
+        def _record_initial_result(
             job: JobSpec,
             run_log: dict[str, Any],
             *,
-            adaptive_run_log: dict[str, Any] | None = None,
-            adaptive_pair_row: dict[str, Any] | None = None,
-            updated_lessons: list[str] | None = None,
+            persist_state: bool = True,
         ) -> dict[str, Any]:
-            nonlocal scenario, protocol_version, completed_jobs
+            nonlocal scenario, protocol_version
 
             summary = dict(run_log["run_summary"])
             scenario = str(run_log.get("scenario", scenario))
@@ -2146,8 +2535,6 @@ def main() -> None:
             }
             key = (job.model_profile, job.seed)
             existing_by_key[key] = run_row
-            completed_keys.add(key)
-            completed_jobs = len(completed_keys)
 
             payload_by_key[key] = {
                 "run_id": run_row["run_id"],
@@ -2159,19 +2546,54 @@ def main() -> None:
                 "replay": build_viewer_payload(run_log=run_log, source_log_path=Path(str(summary["log_path"]))),
             }
 
-            if adaptive_run_log is not None:
-                adaptive_summary = dict(adaptive_run_log.get("run_summary", {}))
-                adaptive_summary.setdefault("protocol_version", adaptive_run_log.get("protocol_version", protocol_version))
-                adaptive_row = {
+            _refresh_completion_counters()
+            _assert_adaptive_prompt_hash_consistency(
+                adaptive_enabled=adaptive_enabled,
+                run_rows=run_rows,
+                adaptive_run_rows=adaptive_run_rows,
+            )
+            if persist_state:
+                _persist_running_state(status="running")
+            _refresh_adaptive_live_panel()
+            return summary
+
+        def _record_adaptive_result(
+            job: JobSpec,
+            *,
+            control_run_log: dict[str, Any] | None = None,
+            adaptive_run_log: dict[str, Any],
+            adaptive_pair_row: dict[str, Any] | None,
+            updated_lessons: list[str] | None,
+            persist_state: bool = True,
+        ) -> None:
+            key = (job.model_profile, job.seed)
+
+            if control_run_log is not None:
+                control_summary = dict(control_run_log.get("run_summary", {}))
+                control_summary.setdefault("protocol_version", control_run_log.get("protocol_version", protocol_version))
+                control_row = {
                     "compare_id": compare_id,
-                    "run_id": f"{_safe_slug(job.model_profile)}__seed{job.seed}__adaptive",
+                    "run_id": f"{_safe_slug(job.model_profile)}__seed{job.seed}__control",
                     "job_index": job.job_index,
                     "job_total": job.job_total,
                     "model_order": job.model_order,
                     "seed_order": job.seed_order,
-                    **adaptive_summary,
+                    **control_summary,
                 }
-                adaptive_by_key[key] = adaptive_row
+                control_by_key[key] = control_row
+
+            adaptive_summary = dict(adaptive_run_log.get("run_summary", {}))
+            adaptive_summary.setdefault("protocol_version", adaptive_run_log.get("protocol_version", protocol_version))
+            adaptive_row = {
+                "compare_id": compare_id,
+                "run_id": f"{_safe_slug(job.model_profile)}__seed{job.seed}__adaptive",
+                "job_index": job.job_index,
+                "job_total": job.job_total,
+                "model_order": job.model_order,
+                "seed_order": job.seed_order,
+                **adaptive_summary,
+            }
+            adaptive_by_key[key] = adaptive_row
 
             if adaptive_pair_row is not None:
                 pair_row = dict(adaptive_pair_row)
@@ -2188,8 +2610,15 @@ def main() -> None:
                     },
                 )
 
-            _persist_running_state(status="running")
-            return summary
+            _refresh_completion_counters()
+            _assert_adaptive_prompt_hash_consistency(
+                adaptive_enabled=adaptive_enabled,
+                run_rows=run_rows,
+                adaptive_run_rows=adaptive_run_rows,
+            )
+            if persist_state:
+                _persist_running_state(status="running")
+            _refresh_adaptive_live_panel()
 
         def _fail_and_exit(exc: Exception, job: JobSpec) -> None:
             _persist_running_state(status="failed")
@@ -2225,123 +2654,142 @@ def main() -> None:
                 if key in completed_keys:
                     continue
 
-                run_progress = {
-                    "max_turns": int(effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)),
-                    "attempt_kind": "initial",
-                    "baseline_score_reference": None,
-                    "energy": None,
-                    "energy_max": None,
-                }
-                completed_before = completed_jobs
+                def _build_progress_callback(*, completed_units_before: int) -> Any:
+                    run_progress = {
+                        "max_turns": int(
+                            effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)
+                        ),
+                        "attempt_kind": "initial",
+                        "baseline_score_reference": None,
+                        "energy": None,
+                        "energy_max": None,
+                    }
 
-                def on_progress(event: dict[str, Any]) -> None:
-                    event_type = str(event.get("event", ""))
-                    if event_type == "run_started":
-                        run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
-                        run_progress["attempt_kind"] = str(event.get("attempt_kind", run_progress["attempt_kind"]))
-                        run_progress["energy"] = None
-                        run_progress["energy_max"] = None
+                    def on_progress(event: dict[str, Any]) -> None:
+                        event_type = str(event.get("event", ""))
+                        if event_type == "run_started":
+                            run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
+                            run_progress["attempt_kind"] = str(event.get("attempt_kind", run_progress["attempt_kind"]))
+                            run_progress["energy"] = None
+                            run_progress["energy_max"] = None
+                            if "baseline_score_reference" in event:
+                                run_progress["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                            attempt_kind = str(run_progress["attempt_kind"])
+                            display_job_index, display_job_total = _display_job_position(
+                                job_index=job.job_index,
+                                job_total=job.job_total,
+                                adaptive_enabled=adaptive_enabled,
+                                attempt_kind=attempt_kind,
+                            )
+                            pct = (completed_units_before / max(1, total_progress_units)) * 100.0
+                            status_line.write(
+                                _render_turn_progress_line(
+                                    pct=pct,
+                                    job_index=display_job_index,
+                                    job_total=display_job_total,
+                                    turn=0,
+                                    max_turns=run_progress["max_turns"],
+                                    model_profile=job.model_profile,
+                                    seed=job.seed,
+                                    action="(initializing)",
+                                    protocol_valid=True,
+                                    effect_applied=False,
+                                    score=0,
+                                    baseline_score_reference=run_progress.get("baseline_score_reference"),
+                                    invalid=0,
+                                    alive=True,
+                                    energy=run_progress.get("energy"),
+                                    energy_max=run_progress.get("energy_max"),
+                                    eta_text=_compute_eta_text(
+                                        completed_jobs=completed_units_before,
+                                        total_jobs=total_progress_units,
+                                        started_at=compare_started_at,
+                                        baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
+                                    ),
+                                    attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
+                                    color_enabled=color_enabled,
+                                )
+                            )
+                            return
+                        if event_type != "turn_completed":
+                            return
+
+                        turn = int(event.get("turn", 0))
+                        max_turns = int(event.get("max_turns", run_progress["max_turns"]))
+                        run_progress["max_turns"] = max_turns
                         if "baseline_score_reference" in event:
                             run_progress["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
-                        attempt_kind = str(run_progress["attempt_kind"])
+                        if "energy" in event:
+                            run_progress["energy"] = _safe_int(event.get("energy"))
+                        if "energy_max" in event:
+                            run_progress["energy_max"] = _safe_int(event.get("energy_max"))
+                        attempt_kind = str(run_progress.get("attempt_kind", "initial"))
                         display_job_index, display_job_total = _display_job_position(
                             job_index=job.job_index,
                             job_total=job.job_total,
                             adaptive_enabled=adaptive_enabled,
                             attempt_kind=attempt_kind,
                         )
-                        completed_units_before = completed_before * (2 if adaptive_enabled else 1)
-                        if adaptive_enabled:
-                            completed_units_before += _attempt_index(attempt_kind) - 1
-                        pct = (completed_units_before / max(1, total_progress_units)) * 100.0
+                        run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
+                        overall_fraction = (completed_units_before + run_fraction) / max(1, total_progress_units)
+                        pct = overall_fraction * 100.0
+                        eta_text = "--"
+                        if overall_fraction > 0:
+                            elapsed = eta_elapsed_baseline_seconds + max(0.0, time.monotonic() - compare_started_at)
+                            remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
+                            eta_text = format_eta(remaining)
+
                         status_line.write(
                             _render_turn_progress_line(
                                 pct=pct,
                                 job_index=display_job_index,
                                 job_total=display_job_total,
-                                turn=0,
-                                max_turns=run_progress["max_turns"],
+                                turn=turn,
+                                max_turns=max_turns,
                                 model_profile=job.model_profile,
                                 seed=job.seed,
-                                action="(initializing)",
-                                protocol_valid=True,
-                                effect_applied=False,
-                                score=0,
+                                action=str(event.get("action") or "-"),
+                                protocol_valid=bool(event.get("protocol_valid", False)),
+                                effect_applied=bool(event.get("action_effect_applied", False)),
+                                score=int(event.get("cumulative_score", 0)),
                                 baseline_score_reference=run_progress.get("baseline_score_reference"),
-                                invalid=0,
-                                alive=True,
+                                invalid=int(event.get("invalid_actions", 0)),
+                                alive=bool(event.get("alive", True)),
                                 energy=run_progress.get("energy"),
                                 energy_max=run_progress.get("energy_max"),
-                                eta_text=_compute_eta_text(
-                                    completed_jobs=completed_units_before,
-                                    total_jobs=total_progress_units,
-                                    started_at=compare_started_at,
-                                    baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
-                                ),
+                                eta_text=eta_text,
                                 attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
                                 color_enabled=color_enabled,
                             )
                         )
-                        return
-                    if event_type != "turn_completed":
-                        return
 
-                    turn = int(event.get("turn", 0))
-                    max_turns = int(event.get("max_turns", run_progress["max_turns"]))
-                    run_progress["max_turns"] = max_turns
-                    if "baseline_score_reference" in event:
-                        run_progress["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
-                    if "energy" in event:
-                        run_progress["energy"] = _safe_int(event.get("energy"))
-                    if "energy_max" in event:
-                        run_progress["energy_max"] = _safe_int(event.get("energy_max"))
-                    attempt_kind = str(run_progress.get("attempt_kind", "initial"))
-                    display_job_index, display_job_total = _display_job_position(
-                        job_index=job.job_index,
-                        job_total=job.job_total,
-                        adaptive_enabled=adaptive_enabled,
-                        attempt_kind=attempt_kind,
-                    )
-                    run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
-                    completed_units_before = completed_before * (2 if adaptive_enabled else 1)
-                    if adaptive_enabled:
-                        completed_units_before += _attempt_index(attempt_kind) - 1
-                    overall_fraction = (completed_units_before + run_fraction) / max(1, total_progress_units)
-                    pct = overall_fraction * 100.0
-                    eta_text = "--"
-                    if overall_fraction > 0:
-                        elapsed = eta_elapsed_baseline_seconds + max(0.0, time.monotonic() - compare_started_at)
-                        remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
-                        eta_text = format_eta(remaining)
-
-                    status_line.write(
-                        _render_turn_progress_line(
-                            pct=pct,
-                            job_index=display_job_index,
-                            job_total=display_job_total,
-                            turn=turn,
-                            max_turns=max_turns,
-                            model_profile=job.model_profile,
-                            seed=job.seed,
-                            action=str(event.get("action") or "-"),
-                            protocol_valid=bool(event.get("protocol_valid", False)),
-                            effect_applied=bool(event.get("action_effect_applied", False)),
-                            score=int(event.get("cumulative_score", 0)),
-                            baseline_score_reference=run_progress.get("baseline_score_reference"),
-                            invalid=int(event.get("invalid_actions", 0)),
-                            alive=bool(event.get("alive", True)),
-                            energy=run_progress.get("energy"),
-                            energy_max=run_progress.get("energy_max"),
-                            eta_text=eta_text,
-                            attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
-                            color_enabled=color_enabled,
-                        )
-                    )
+                    return on_progress
 
                 try:
                     if adaptive_enabled:
+                        if key in completed_initial_keys:
+                            run_log = _load_run_log_from_summary(existing_by_key[key])
+                        else:
+                            initial_result = _execute_adaptive_initial(
+                                job=job,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
+                                output_logs_dir=run_dirs["logs"],
+                                memory_dir=run_dirs["memory"],
+                                session_lessons=[],
+                                progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                fix_thinking=effective_fix_thinking,
+                            )
+                            run_log = dict(initial_result["initial_run_log"])
+                            _record_initial_result(job, run_log)
+
                         session_lessons = list(adaptive_memory_by_model.get(job.model_profile, []))
-                        adaptive_result = _execute_adaptive_pair(
+                        adaptive_result = _execute_adaptive_followup(
                             job=job,
                             scenario=scenario,
                             max_turns=effective_max_turns,
@@ -2349,15 +2797,23 @@ def main() -> None:
                             scenarios_config_path=effective_scenarios_config_path,
                             providers_config_path=effective_providers_config_path,
                             prompts_dir=effective_prompts_dir,
+                            history_window=effective_history_window,
                             output_logs_dir=run_dirs["logs"],
                             memory_dir=run_dirs["memory"],
                             session_lessons=session_lessons,
-                            progress_callback=on_progress,
+                            initial_log=run_log,
+                            progress_callback=_build_progress_callback(completed_units_before=completed_units),
                             fix_thinking=effective_fix_thinking,
                         )
-                        run_log = adaptive_result["initial_run_log"]
+                        _record_adaptive_result(
+                            job,
+                            control_run_log=adaptive_result.get("control_run_log"),
+                            adaptive_run_log=dict(adaptive_result.get("adaptive_run_log", {})),
+                            adaptive_pair_row=adaptive_result.get("pair_row"),
+                            updated_lessons=adaptive_result.get("updated_lessons"),
+                        )
+                        summary = dict(run_log["run_summary"])
                     else:
-                        adaptive_result = None
                         run_log = _execute_job(
                             job=job,
                             scenario=scenario,
@@ -2366,10 +2822,12 @@ def main() -> None:
                             scenarios_config_path=effective_scenarios_config_path,
                             providers_config_path=effective_providers_config_path,
                             prompts_dir=effective_prompts_dir,
+                            history_window=effective_history_window,
                             output_logs_dir=run_dirs["logs"],
-                            progress_callback=on_progress,
+                            progress_callback=_build_progress_callback(completed_units_before=completed_units),
                             fix_thinking=effective_fix_thinking,
                         )
+                        summary = _record_initial_result(job, run_log)
                 except KeyboardInterrupt:
                     _persist_running_state(status="interrupted")
                     status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
@@ -2379,23 +2837,12 @@ def main() -> None:
                 except Exception as exc:
                     _fail_and_exit(exc, job)
 
-                if adaptive_enabled and adaptive_result is not None:
-                    summary = _record_job_result(
-                        job,
-                        run_log,
-                        adaptive_run_log=adaptive_result.get("adaptive_run_log"),
-                        adaptive_pair_row=adaptive_result.get("pair_row"),
-                        updated_lessons=adaptive_result.get("updated_lessons"),
-                    )
-                else:
-                    summary = _record_job_result(job, run_log)
                 eta_text = _compute_eta_text(
-                    completed_jobs=(completed_jobs * (2 if adaptive_enabled else 1)),
+                    completed_jobs=completed_units,
                     total_jobs=total_progress_units,
                     started_at=compare_started_at,
                     baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                 )
-                completed_units = completed_jobs * (2 if adaptive_enabled else 1)
                 pct_after = (completed_units / max(1, total_progress_units)) * 100.0
                 status_line.write(
                     _render_job_done_line(
@@ -2414,10 +2861,14 @@ def main() -> None:
             status_line.finish(colorize("[100.0%] compare run completed", "36", color_enabled))
         else:
             pending_jobs_by_model: dict[str, list[JobSpec]] = {
-                profile: [job for job in jobs if job.model_profile == profile and (job.model_profile, job.seed) not in completed_keys]
+                profile: [job for job in jobs if job.model_profile == profile]
                 for profile in model_profiles
             }
-            pending_model_order = [profile for profile in model_profiles if pending_jobs_by_model.get(profile)]
+            pending_model_order = [
+                profile
+                for profile in model_profiles
+                if any((job.model_profile, job.seed) not in completed_keys for job in pending_jobs_by_model.get(profile, []))
+            ]
             if pending_model_order:
                 status_line.write(
                     colorize(
@@ -2430,9 +2881,12 @@ def main() -> None:
             active_models: list[str] = []
             model_cursor = 0
             next_seed_index: dict[str, int] = {profile: 0 for profile in pending_model_order}
-            running_per_model: dict[str, int] = {profile: 0 for profile in pending_model_order}
+            running_initial_per_model: dict[str, int] = {profile: 0 for profile in pending_model_order}
+            running_tasks_per_model: dict[str, int] = {profile: 0 for profile in pending_model_order}
+            adaptive_next_index: dict[str, int] = {profile: 0 for profile in pending_model_order}
+            adaptive_running_per_model: dict[str, bool] = {profile: False for profile in pending_model_order}
             progress_lock = threading.Lock()
-            live_progress: dict[tuple[str, int], dict[str, Any]] = {}
+            live_progress: dict[tuple[str, int, str], dict[str, Any]] = {}
 
             def activate_models() -> None:
                 nonlocal model_cursor
@@ -2448,16 +2902,18 @@ def main() -> None:
                 for snapshot in snapshots:
                     max_turns_local = int(snapshot.get("max_turns", 0))
                     turn_local = int(snapshot.get("turn", 0))
+                    attempt_kind = str(snapshot.get("attempt_kind", "initial"))
                     if max_turns_local > 0:
-                        run_fraction = max(0.0, min(1.0, float(turn_local) / float(max_turns_local)))
-                        if adaptive_enabled:
-                            attempt_kind = str(snapshot.get("attempt_kind", "initial"))
-                            partial += float(_attempt_index(attempt_kind) - 1) + run_fraction
+                        if adaptive_enabled and attempt_kind == "adaptive_rerun" and turn_local <= 0:
+                            # Adaptive followup has a deterministic pre-run reflection stage
+                            # with no turn events; assign a small fixed progress credit
+                            # to avoid massively inflated ETA during that stage.
+                            partial += 0.15
                         else:
+                            run_fraction = max(0.0, min(1.0, float(turn_local) / float(max_turns_local)))
                             partial += run_fraction
                 if total_progress_units <= 0:
                     return 0.0
-                completed_units = completed_jobs * (2 if adaptive_enabled else 1)
                 return max(0.0, min(1.0, (completed_units + partial) / total_progress_units))
 
             def _render_parallel_heartbeat_line() -> str | None:
@@ -2468,12 +2924,12 @@ def main() -> None:
                         live_progress.keys(),
                         key=lambda key: (
                             float(live_progress[key].get("updated_at", 0.0)),
-                            -jobs_by_key[key].job_index,
+                            -jobs_by_key[(key[0], key[1])].job_index,
                         ),
                     )
                     selected = dict(live_progress[selected_key])
 
-                selected_job = jobs_by_key[selected_key]
+                selected_job = jobs_by_key[(selected_key[0], selected_key[1])]
                 selected_attempt_kind = str(selected.get("attempt_kind", "initial"))
                 display_job_index, display_job_total = _display_job_position(
                     job_index=selected_job.job_index,
@@ -2501,7 +2957,14 @@ def main() -> None:
                     protocol_valid=bool(selected.get("protocol_valid", True)),
                     effect_applied=bool(selected.get("effect_applied", False)),
                     score=int(selected.get("score", 0)),
-                    baseline_score_reference=_safe_int(selected.get("baseline_score_reference")),
+                    baseline_score_reference=(
+                        _safe_int(selected.get("baseline_score_reference"))
+                        if (
+                            selected_attempt_kind == "adaptive_rerun"
+                            and selected.get("baseline_score_reference") is not None
+                        )
+                        else None
+                    ),
                     invalid=int(selected.get("invalid", 0)),
                     alive=bool(selected.get("alive", True)),
                     energy=_safe_int(selected.get("energy")),
@@ -2514,21 +2977,57 @@ def main() -> None:
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=max(1, args.model_workers * effective_seed_workers_per_model)
             ) as executor:
-                future_to_job: dict[concurrent.futures.Future[dict[str, Any]], JobSpec] = {}
+                future_to_spec: dict[concurrent.futures.Future[dict[str, Any]], AdaptiveFutureSpec] = {}
 
-                def submit_for_model(model_profile: str) -> None:
+                def _model_has_pending_work(model_profile: str) -> bool:
                     pending_jobs = pending_jobs_by_model[model_profile]
-                    while running_per_model[model_profile] < effective_seed_workers_per_model and next_seed_index[model_profile] < len(pending_jobs):
-                        job = pending_jobs[next_seed_index[model_profile]]
-                        next_seed_index[model_profile] += 1
+                    return any((job.model_profile, job.seed) not in completed_keys for job in pending_jobs)
+
+                def _advance_adaptive_cursor(model_profile: str) -> None:
+                    pending_jobs = pending_jobs_by_model[model_profile]
+                    while adaptive_next_index[model_profile] < len(pending_jobs):
+                        job = pending_jobs[adaptive_next_index[model_profile]]
                         key = (job.model_profile, job.seed)
-                        default_max_turns = int(
-                            effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)
-                        )
-                        with progress_lock:
-                            live_progress[key] = {
+                        if key in completed_keys:
+                            adaptive_next_index[model_profile] += 1
+                            continue
+                        break
+
+                def _register_live_slot(*, job: JobSpec, attempt_kind: str) -> tuple[str, int, str]:
+                    key = (job.model_profile, job.seed, attempt_kind)
+                    default_max_turns = int(
+                        effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)
+                    )
+                    with progress_lock:
+                        live_progress[key] = {
+                            "turn": 0,
+                            "max_turns": default_max_turns,
+                            "action": "(initializing)",
+                            "protocol_valid": True,
+                            "effect_applied": False,
+                            "score": 0,
+                            "invalid": 0,
+                            "alive": True,
+                            "energy": None,
+                            "energy_max": None,
+                            "baseline_score_reference": None,
+                            "attempt_kind": attempt_kind,
+                            "updated_at": time.monotonic(),
+                        }
+                    return key
+
+                def _make_progress_callback(
+                    *,
+                    live_key: tuple[str, int, str],
+                    default_max_turns: int,
+                ) -> Any:
+                    def on_progress(event: dict[str, Any], *, event_key: tuple[str, int, str] = live_key) -> None:
+                        event_type = str(event.get("event", ""))
+                        update: dict[str, Any] = {}
+                        if event_type == "run_started":
+                            update = {
                                 "turn": 0,
-                                "max_turns": default_max_turns,
+                                "max_turns": int(event.get("max_turns", default_max_turns)),
                                 "action": "(initializing)",
                                 "protocol_valid": True,
                                 "effect_applied": False,
@@ -2537,56 +3036,56 @@ def main() -> None:
                                 "alive": True,
                                 "energy": None,
                                 "energy_max": None,
-                                "baseline_score_reference": None,
-                                "attempt_kind": "initial",
-                                "updated_at": time.monotonic(),
+                                "attempt_kind": str(event.get("attempt_kind", "initial")),
                             }
+                            if "baseline_score_reference" in event:
+                                update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                        elif event_type == "turn_completed":
+                            update = {
+                                "turn": int(event.get("turn", 0)),
+                                "max_turns": int(event.get("max_turns", default_max_turns)),
+                                "action": str(event.get("action") or "-"),
+                                "protocol_valid": bool(event.get("protocol_valid", False)),
+                                "effect_applied": bool(event.get("action_effect_applied", False)),
+                                "score": int(event.get("cumulative_score", 0)),
+                                "invalid": int(event.get("invalid_actions", 0)),
+                                "alive": bool(event.get("alive", True)),
+                                "energy": _safe_int(event.get("energy")),
+                                "energy_max": _safe_int(event.get("energy_max")),
+                            }
+                            if "baseline_score_reference" in event:
+                                update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                        if not update:
+                            return
+                        update["updated_at"] = time.monotonic()
+                        with progress_lock:
+                            if event_key in live_progress:
+                                live_progress[event_key].update(update)
 
-                        def on_progress(event: dict[str, Any], *, event_key: tuple[str, int] = key) -> None:
-                            event_type = str(event.get("event", ""))
-                            update: dict[str, Any] = {}
-                            if event_type == "run_started":
-                                update = {
-                                    "turn": 0,
-                                    "max_turns": int(event.get("max_turns", default_max_turns)),
-                                    "action": "(initializing)",
-                                    "protocol_valid": True,
-                                    "effect_applied": False,
-                                    "score": 0,
-                                    "invalid": 0,
-                                    "alive": True,
-                                    "energy": None,
-                                    "energy_max": None,
-                                    "attempt_kind": str(event.get("attempt_kind", "initial")),
-                                }
-                                if "baseline_score_reference" in event:
-                                    update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
-                            elif event_type == "turn_completed":
-                                update = {
-                                    "turn": int(event.get("turn", 0)),
-                                    "max_turns": int(event.get("max_turns", default_max_turns)),
-                                    "action": str(event.get("action") or "-"),
-                                    "protocol_valid": bool(event.get("protocol_valid", False)),
-                                    "effect_applied": bool(event.get("action_effect_applied", False)),
-                                    "score": int(event.get("cumulative_score", 0)),
-                                    "invalid": int(event.get("invalid_actions", 0)),
-                                    "alive": bool(event.get("alive", True)),
-                                    "energy": _safe_int(event.get("energy")),
-                                    "energy_max": _safe_int(event.get("energy_max")),
-                                }
-                                if "baseline_score_reference" in event:
-                                    update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
-                            if not update:
-                                return
-                            update["updated_at"] = time.monotonic()
-                            with progress_lock:
-                                if event_key in live_progress:
-                                    live_progress[event_key].update(update)
+                    return on_progress
 
+                def submit_initial_for_model(model_profile: str) -> None:
+                    pending_jobs = pending_jobs_by_model[model_profile]
+                    while (
+                        running_initial_per_model[model_profile] < effective_seed_workers_per_model
+                        and next_seed_index[model_profile] < len(pending_jobs)
+                    ):
+                        job = pending_jobs[next_seed_index[model_profile]]
+                        next_seed_index[model_profile] += 1
+                        key = (job.model_profile, job.seed)
+                        if key in completed_initial_keys:
+                            continue
+                        default_max_turns = int(
+                            effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)
+                        )
+                        live_key = _register_live_slot(job=job, attempt_kind="initial")
+                        callback = _make_progress_callback(
+                            live_key=live_key,
+                            default_max_turns=default_max_turns,
+                        )
                         if adaptive_enabled:
-                            session_lessons = list(adaptive_memory_by_model.get(model_profile, []))
                             future = executor.submit(
-                                _execute_adaptive_pair,
+                                _execute_adaptive_initial,
                                 job=job,
                                 scenario=scenario,
                                 max_turns=effective_max_turns,
@@ -2594,10 +3093,11 @@ def main() -> None:
                                 scenarios_config_path=effective_scenarios_config_path,
                                 providers_config_path=effective_providers_config_path,
                                 prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
                                 output_logs_dir=run_dirs["logs"],
                                 memory_dir=run_dirs["memory"],
-                                session_lessons=session_lessons,
-                                progress_callback=on_progress,
+                                session_lessons=[],
+                                progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                             )
                         else:
@@ -2610,26 +3110,78 @@ def main() -> None:
                                 scenarios_config_path=effective_scenarios_config_path,
                                 providers_config_path=effective_providers_config_path,
                                 prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
                                 output_logs_dir=run_dirs["logs"],
-                                progress_callback=on_progress,
+                                progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                             )
-                        future_to_job[future] = job
-                        running_per_model[model_profile] += 1
+                        future_to_spec[future] = AdaptiveFutureSpec(
+                            kind="initial",
+                            job=job,
+                        )
+                        running_initial_per_model[model_profile] += 1
+                        running_tasks_per_model[model_profile] += 1
+
+                def submit_adaptive_for_model(model_profile: str) -> None:
+                    if not adaptive_enabled:
+                        return
+                    if adaptive_running_per_model[model_profile]:
+                        return
+                    _advance_adaptive_cursor(model_profile)
+                    pending_jobs = pending_jobs_by_model[model_profile]
+                    if adaptive_next_index[model_profile] >= len(pending_jobs):
+                        return
+                    job = pending_jobs[adaptive_next_index[model_profile]]
+                    key = (job.model_profile, job.seed)
+                    if key not in completed_initial_keys or key in completed_keys:
+                        return
+                    default_max_turns = int(
+                        effective_max_turns if effective_max_turns is not None else benchmark_cfg.get("max_turns", 50)
+                    )
+                    live_key = _register_live_slot(job=job, attempt_kind="adaptive_rerun")
+                    session_lessons = list(adaptive_memory_by_model.get(model_profile, []))
+                    initial_log = _load_run_log_from_summary(existing_by_key[key])
+                    future = executor.submit(
+                        _execute_adaptive_followup,
+                        job=job,
+                        scenario=scenario,
+                        max_turns=effective_max_turns,
+                        benchmark_config_path=effective_benchmark_config_path,
+                        scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
+                                output_logs_dir=run_dirs["logs"],
+                        memory_dir=run_dirs["memory"],
+                        session_lessons=session_lessons,
+                        initial_log=initial_log,
+                        progress_callback=_make_progress_callback(
+                            live_key=live_key,
+                            default_max_turns=default_max_turns,
+                        ),
+                        fix_thinking=effective_fix_thinking,
+                    )
+                    future_to_spec[future] = AdaptiveFutureSpec(
+                        kind="adaptive_followup",
+                        job=job,
+                    )
+                    adaptive_running_per_model[model_profile] = True
+                    running_tasks_per_model[model_profile] += 1
 
                 activate_models()
                 for model in list(active_models):
-                    submit_for_model(model)
+                    submit_initial_for_model(model)
+                    submit_adaptive_for_model(model)
 
-                while future_to_job:
+                while future_to_spec:
                     try:
                         done, _ = concurrent.futures.wait(
-                            set(future_to_job.keys()),
+                            set(future_to_spec.keys()),
                             timeout=0.6,
                             return_when=concurrent.futures.FIRST_COMPLETED,
                         )
                     except KeyboardInterrupt:
-                        for future in future_to_job:
+                        for future in future_to_spec:
                             future.cancel()
                         _persist_running_state(status="interrupted")
                         status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
@@ -2646,59 +3198,93 @@ def main() -> None:
                         continue
 
                     for future in done:
-                        job = future_to_job.pop(future)
-                        running_per_model[job.model_profile] -= 1
+                        spec = future_to_spec.pop(future)
+                        job = spec.job
+                        model_profile = job.model_profile
+                        running_tasks_per_model[model_profile] = max(0, running_tasks_per_model[model_profile] - 1)
+                        if spec.kind == "initial":
+                            running_initial_per_model[model_profile] = max(0, running_initial_per_model[model_profile] - 1)
+                        elif spec.kind == "adaptive_followup":
+                            adaptive_running_per_model[model_profile] = False
                         with progress_lock:
-                            live_progress.pop((job.model_profile, job.seed), None)
+                            live_progress.pop((job.model_profile, job.seed, "initial"), None)
+                            live_progress.pop((job.model_profile, job.seed, "adaptive_rerun"), None)
                         try:
                             result_payload = future.result()
                         except Exception as exc:
-                            for pending_future in future_to_job:
+                            for pending_future in future_to_spec:
                                 pending_future.cancel()
                             _fail_and_exit(exc, job)
-                        if adaptive_enabled:
-                            adaptive_result = dict(result_payload)
-                            run_log = dict(adaptive_result.get("initial_run_log", {}))
-                            summary = _record_job_result(
-                                job,
-                                run_log,
-                                adaptive_run_log=adaptive_result.get("adaptive_run_log"),
-                                adaptive_pair_row=adaptive_result.get("pair_row"),
-                                updated_lessons=adaptive_result.get("updated_lessons"),
-                            )
-                        else:
-                            run_log = dict(result_payload)
-                            summary = _record_job_result(job, run_log)
 
-                        pct_after = (completed_jobs / total_jobs) * 100.0
-                        eta_text = _compute_eta_text(
-                            completed_jobs=(completed_jobs * (2 if adaptive_enabled else 1)),
-                            total_jobs=total_progress_units,
-                            started_at=compare_started_at,
-                            baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
-                        )
-                        completed_units = completed_jobs * (2 if adaptive_enabled else 1)
-                        pct_after = (completed_units / max(1, total_progress_units)) * 100.0
-                        status_line.write(
-                            _render_job_done_line(
-                                pct=pct_after,
-                                job_index=completed_units,
-                                job_total=total_progress_units,
-                                model_profile=job.model_profile,
-                                seed=job.seed,
-                                score=int(summary["final_score"]),
-                                status=("dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"),
-                                eta_text=eta_text,
-                                color_enabled=color_enabled,
+                        try:
+                            if spec.kind == "initial":
+                                if adaptive_enabled:
+                                    run_log = dict(result_payload.get("initial_run_log", {}))
+                                    summary = _record_initial_result(job, run_log)
+                                else:
+                                    run_log = dict(result_payload)
+                                    summary = _record_initial_result(job, run_log)
+                            else:
+                                adaptive_result = dict(result_payload)
+                                summary = dict(existing_by_key[(job.model_profile, job.seed)])
+                                _record_adaptive_result(
+                                    job,
+                                    control_run_log=adaptive_result.get("control_run_log"),
+                                    adaptive_run_log=dict(adaptive_result.get("adaptive_run_log", {})),
+                                    adaptive_pair_row=adaptive_result.get("pair_row"),
+                                    updated_lessons=adaptive_result.get("updated_lessons"),
+                                )
+                                adaptive_next_index[model_profile] += 1
+
+                            eta_text = _compute_eta_text(
+                                completed_jobs=completed_units,
+                                total_jobs=total_progress_units,
+                                started_at=compare_started_at,
+                                baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                             )
-                        )
+                            pct_after = (completed_units / max(1, total_progress_units)) * 100.0
+                            if not adaptive_enabled or spec.kind == "adaptive_followup":
+                                status_line.write(
+                                    _render_job_done_line(
+                                        pct=pct_after,
+                                        job_index=completed_units,
+                                        job_total=total_progress_units,
+                                        model_profile=job.model_profile,
+                                        seed=job.seed,
+                                        score=int(summary["final_score"]),
+                                        status=("dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"),
+                                        eta_text=eta_text,
+                                        color_enabled=color_enabled,
+                                    )
+                                )
+                            else:
+                                status_line.write(
+                                    _render_job_done_line(
+                                        pct=pct_after,
+                                        job_index=completed_units,
+                                        job_total=total_progress_units,
+                                        model_profile=job.model_profile,
+                                        seed=job.seed,
+                                        score=int(summary["final_score"]),
+                                        status="initial_done",
+                                        eta_text=eta_text,
+                                        color_enabled=color_enabled,
+                                    )
+                                )
+                        except Exception as exc:
+                            for pending_future in future_to_spec:
+                                pending_future.cancel()
+                            _fail_and_exit(exc, job)
 
                     for model in list(active_models):
-                        if running_per_model[model] == 0 and next_seed_index[model] >= len(pending_jobs_by_model[model]):
+                        submit_initial_for_model(model)
+                        submit_adaptive_for_model(model)
+                        if running_tasks_per_model[model] == 0 and not _model_has_pending_work(model):
                             active_models.remove(model)
                     activate_models()
                     for model in list(active_models):
-                        submit_for_model(model)
+                        submit_initial_for_model(model)
+                        submit_adaptive_for_model(model)
 
             status_line.finish(colorize("[100.0%] compare run completed", "36", color_enabled))
 
@@ -2800,7 +3386,7 @@ def main() -> None:
         adaptive_totals = dict(adaptive_section.get("adaptive_totals", {}))
         delta_totals = dict(adaptive_section.get("delta_totals", {}))
         adaptive_pairs = list(adaptive_section.get("pairs", []))
-        _print_section("Adaptive Session", color_enabled)
+        _print_section("Adaptive Memory (per seed)", color_enabled)
         pair_model_count = len({str(pair.get("model_profile", "")) for pair in adaptive_pairs})
         for pair in sorted(
             adaptive_pairs,
@@ -2813,11 +3399,16 @@ def main() -> None:
             seed = _safe_int(pair.get("seed"), default=0)
             model_profile = str(pair.get("model_profile", "")).strip()
             baseline_score = _safe_int(pair.get("initial_score"))
+            control_score = _safe_int(pair.get("control_score"))
             adaptive_score = _safe_int(pair.get("adaptive_score"))
-            delta_score = adaptive_score - baseline_score
+            variance_delta = control_score - baseline_score
+            mem_effect = adaptive_score - control_score
             label = f"Seed {seed}" if pair_model_count <= 1 else f"{model_profile} seed {seed}"
-            value = f"score {baseline_score} -> adaptive {adaptive_score} ({delta_score:+d})"
-            value_color = "1;92" if delta_score > 0 else ("1;91" if delta_score < 0 else "1;97")
+            value = (
+                f"baseline={baseline_score}  rerun={control_score}  rerun+mem={adaptive_score}  "
+                f"variance={variance_delta:+d}  memory={mem_effect:+d}"
+            )
+            value_color = "1;92" if mem_effect > 0 else ("1;91" if mem_effect < 0 else "1;97")
             _print_row(
                 label,
                 value,
@@ -2825,25 +3416,34 @@ def main() -> None:
                 value_color=value_color,
             )
 
-        _print_row(
-            "Baseline score total",
-            str(_safe_int(baseline_totals.get("score_total"))),
-            color_enabled=color_enabled,
-        )
-        _print_row(
-            "Adaptive score total",
-            str(_safe_int(adaptive_totals.get("score_total"))),
-            color_enabled=color_enabled,
-            value_color="1;92",
-        )
-        delta_score_total = _safe_int(delta_totals.get("score_total"))
-        delta_color = "1;92" if delta_score_total >= 0 else "1;91"
-        _print_row(
-            "Adaptive delta",
-            f"{delta_score_total:+d}",
-            color_enabled=color_enabled,
-            value_color=delta_color,
-        )
+        # --- Summary and statistical power warning ---
+        _print_section("Adaptive Memory (summary)", color_enabled)
+        control_deltas = [_safe_int(p.get("control_delta")) for p in adaptive_pairs if p.get("control_score") is not None]
+        memory_effects = [_safe_int(p.get("memory_effect")) for p in adaptive_pairs if p.get("control_score") is not None]
+        if control_deltas:
+            avg_control = sum(control_deltas) / len(control_deltas)
+            avg_mem_effect = sum(memory_effects) / len(memory_effects) if memory_effects else 0.0
+            variance = sum((d - avg_control) ** 2 for d in control_deltas) / len(control_deltas) if len(control_deltas) > 1 else 0.0
+            std_control = variance ** 0.5
+            _print_row(
+                "Avg variance (no memory)",
+                f"{avg_control:+.1f}  (stdev {std_control:.1f})",
+                color_enabled=color_enabled,
+            )
+            mem_color = "1;92" if avg_mem_effect > 0 else ("1;91" if avg_mem_effect < 0 else "1;97")
+            _print_row(
+                "Avg memory effect",
+                f"{avg_mem_effect:+.1f}",
+                color_enabled=color_enabled,
+                value_color=mem_color,
+            )
+            if len(control_deltas) >= 2 and std_control > 0 and abs(avg_mem_effect) < 2 * std_control:
+                _print_row(
+                    "WARNING",
+                    f"Low statistical power: |memory effect| ({abs(avg_mem_effect):.1f}) < 2x variance stdev ({2*std_control:.1f})",
+                    color_enabled=color_enabled,
+                    value_color="1;93",
+                )
 
     _print_section("Artifacts", color_enabled)
     _print_row("Compare JSON", _short_path(compare_json), color_enabled=color_enabled, value_color="1;94")

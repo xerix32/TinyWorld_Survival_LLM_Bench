@@ -15,7 +15,7 @@ import yaml
 
 from analysis.run_analyzer import build_run_analysis
 from engine.actions import ActionOutcome, apply_action
-from engine.observation import build_observation
+from engine.observation import build_observation, get_visible_tiles
 from engine.parser import parse_action
 from engine.prompt_loader import PromptLoader
 from engine.rules import apply_end_of_turn, compute_allowed_actions
@@ -281,6 +281,103 @@ def _death_cause_from_survival(update: Any | None) -> tuple[str | None, str | No
     return "energy_depletion", "Energy was depleted to zero."
 
 
+_OSCILLATION_MIN_LENGTH = 4
+
+
+def _detect_oscillation(recent_actions: list[str]) -> str | None:
+    """Return a warning string if the last N actions form a repeating 2-action cycle."""
+    n = len(recent_actions)
+    if n < _OSCILLATION_MIN_LENGTH:
+        return None
+    # Check if the last N actions alternate between exactly 2 actions (A-B-A-B...)
+    for window in (min(n, 8), min(n, 6), _OSCILLATION_MIN_LENGTH):
+        if window > n:
+            continue
+        tail = recent_actions[-window:]
+        a, b = tail[0], tail[1]
+        if a == b:
+            continue
+        if all(tail[i] == (a if i % 2 == 0 else b) for i in range(window)):
+            return (
+                f"You have been alternating between '{a}' and '{b}' "
+                f"for the last {window} turns. This pattern is unproductive. "
+                f"Choose a different action."
+            )
+    return None
+
+
+def _build_recent_turns_snapshot(
+    turn_logs: list[dict[str, Any]],
+    history_window: int,
+) -> list[dict[str, Any]]:
+    if history_window <= 0:
+        return []
+    if not turn_logs:
+        return []
+
+    snapshot: list[dict[str, Any]] = []
+    for turn_log in turn_logs[-history_window:]:
+        action_result = turn_log.get("action_result", {}) if isinstance(turn_log, dict) else {}
+        validation = turn_log.get("validation_result", {}) if isinstance(turn_log, dict) else {}
+        score_delta = turn_log.get("score_delta", {}) if isinstance(turn_log, dict) else {}
+        survival_delta = (
+            turn_log.get("world_result_delta", {}).get("survival_delta", {})
+            if isinstance(turn_log, dict)
+            else {}
+        )
+        snapshot.append(
+            {
+                "turn": int(turn_log.get("turn", 0)),
+                "action": str(action_result.get("applied") or action_result.get("requested") or ""),
+                "valid": bool(validation.get("is_valid", False)),
+                "result": str(action_result.get("message") or ""),
+                "score_delta_total": int(score_delta.get("total", 0)),
+                "energy_after": int(survival_delta.get("energy_after", 0)),
+                "hunger_after": int(survival_delta.get("hunger_after", 0)),
+                "thirst_after": int(survival_delta.get("thirst_after", 0)),
+            }
+        )
+    return snapshot
+
+
+def _tail_path_steps(path_history: list[tuple[int, int]], path_window: int) -> list[dict[str, int]]:
+    if path_window <= 0 or not path_history:
+        return []
+    return [{"x": int(x), "y": int(y)} for x, y in path_history[-path_window:]]
+
+
+def _update_discovery_state(
+    *,
+    turn: int,
+    visible_tiles: list[dict[str, Any]],
+    discovered_tiles: dict[tuple[int, int], str],
+    recent_discoveries: list[dict[str, Any]],
+    discovery_window: int,
+) -> None:
+    for tile in visible_tiles:
+        x = int(tile["x"])
+        y = int(tile["y"])
+        tile_type = str(tile["type"])
+        key = (x, y)
+        previous = discovered_tiles.get(key)
+        discovered_tiles[key] = tile_type
+        if previous is None and tile_type != "empty":
+            recent_discoveries.append(
+                {
+                    "turn": turn,
+                    "x": x,
+                    "y": y,
+                    "type": tile_type,
+                    "source": "vision",
+                }
+            )
+
+    if discovery_window == 0:
+        recent_discoveries.clear()
+    elif len(recent_discoveries) > discovery_window:
+        del recent_discoveries[:-discovery_window]
+
+
 def _emit_progress(
     progress_callback: Callable[[dict[str, Any]], None] | None,
     payload: dict[str, Any],
@@ -543,7 +640,7 @@ def _build_run_analytics(
     effective_protocol_version = str(
         protocol_version
         or run_summary.get("protocol_version")
-        or "AIB-0.1.1"
+        or "AIB-0.1.2"
     )
     run_identity = {
         "protocol_version": effective_protocol_version,
@@ -623,6 +720,8 @@ def run_match_once(
     memory_lessons: list[str] | None = None,
     session_lessons: list[str] | None = None,
     current_seed_lessons: list[str] | None = None,
+    history_window: int | None = None,
+    prior_discovered_tiles: dict[str, str] | None = None,
     attempt_kind: str = "standard",
     adaptive_pair_key: str | None = None,
 ) -> dict[str, Any]:
@@ -642,6 +741,17 @@ def run_match_once(
     rules_cfg = benchmark_cfg["rules"]
     scoring_cfg = benchmark_cfg["scoring"]
     protocol_version = benchmark_cfg["protocol_version"]
+    observation_cfg = benchmark_cfg.get("observation", {})
+    cfg_history_window = int(observation_cfg.get("history_window", 1))
+    cfg_discovery_window = int(observation_cfg.get("discovery_window", 10))
+    cfg_path_window = int(observation_cfg.get("path_window", 10))
+    effective_history_window = cfg_history_window if history_window is None else int(history_window)
+    if effective_history_window < 0:
+        raise ValueError("history_window must be >= 0")
+    if cfg_discovery_window < 0:
+        raise ValueError("observation.discovery_window must be >= 0")
+    if cfg_path_window < 0:
+        raise ValueError("observation.path_window must be >= 0")
     pricing_config_path = benchmark_cfg.get("pricing_config_path", "configs/pricing.yaml")
 
     pricing_cfg: dict[str, Any] | None = None
@@ -705,6 +815,9 @@ def run_match_once(
             "memory_session_lesson_count": len(session_memory_items),
             "memory_current_seed_lesson_count": len(current_seed_memory_items),
             "memory_hygiene": memory_hygiene,
+            "history_window": effective_history_window,
+            "discovery_window": cfg_discovery_window,
+            "path_window": cfg_path_window,
             "attempt_kind": attempt_kind,
             "adaptive_pair_key": adaptive_pair_key,
         },
@@ -735,6 +848,16 @@ def run_match_once(
     estimated_cost_fallback_used = False
     latency_sum_ms = 0.0
     last_survival_update: Any | None = None
+    recent_actions: list[str] = []
+    discovered_tiles: dict[tuple[int, int], str] = {}
+    if prior_discovered_tiles:
+        for key, tile_type in prior_discovered_tiles.items():
+            parts = key.split(",")
+            if len(parts) == 2:
+                discovered_tiles[(int(parts[0]), int(parts[1]))] = tile_type
+    recent_discoveries: list[dict[str, Any]] = []
+    start_agent = world.agents[DEFAULT_AGENT_ID]
+    path_history: list[tuple[int, int]] = [(int(start_agent.position.x), int(start_agent.position.y))]
 
     for turn in range(1, run_max_turns + 1):
         agent = world.agents[DEFAULT_AGENT_ID]
@@ -752,7 +875,37 @@ def run_match_once(
         )
 
         allowed_actions = compute_allowed_actions(world, DEFAULT_AGENT_ID, rules_cfg)
-        observation = build_observation(world, DEFAULT_AGENT_ID, allowed_actions, protocol_version)
+        visible_tiles = get_visible_tiles(
+            world,
+            x=agent.position.x,
+            y=agent.position.y,
+        )
+        _update_discovery_state(
+            turn=turn,
+            visible_tiles=visible_tiles,
+            discovered_tiles=discovered_tiles,
+            recent_discoveries=recent_discoveries,
+            discovery_window=cfg_discovery_window,
+        )
+        recent_turns = _build_recent_turns_snapshot(turn_logs, effective_history_window)
+        path_last_steps = _tail_path_steps(path_history, cfg_path_window)
+        observation = build_observation(
+            world,
+            DEFAULT_AGENT_ID,
+            allowed_actions,
+            protocol_version,
+            recent_turns=recent_turns,
+            recent_discoveries=list(recent_discoveries),
+            discovered_tiles=discovered_tiles,
+            path_last_steps=path_last_steps,
+            visible_tiles=visible_tiles,
+        )
+
+        # Oscillation detection: warn if the last 4+ actions alternate between the same 2 actions
+        oscillation_warning = _detect_oscillation(recent_actions)
+        if oscillation_warning:
+            observation["warnings"] = observation.get("warnings", []) + [oscillation_warning]
+
         user_prompt = prompt_loader.render_turn_prompt(
             observation=observation,
             include_memory=include_memory,
@@ -840,6 +993,8 @@ def run_match_once(
             fix_thinking=fix_thinking,
         )
 
+        recent_actions.append(parse_result.action if parse_result.action else parse_result.normalized_output)
+
         if parse_result.valid and parse_result.action is not None:
             action_outcome = apply_action(
                 world=world,
@@ -876,6 +1031,8 @@ def run_match_once(
         score_events = action_score_events + survival_score_events
 
         apply_score(world.agents[DEFAULT_AGENT_ID], turn_score_delta)
+        agent_after_turn = world.agents[DEFAULT_AGENT_ID]
+        path_history.append((int(agent_after_turn.position.x), int(agent_after_turn.position.y)))
 
         prompt_payload: dict[str, Any] = {
             "system_prompt_sha256": prompt_pair_hash(system_prompt, ""),
@@ -979,6 +1136,9 @@ def run_match_once(
         "memory_session_lesson_count": len(session_memory_items),
         "memory_current_seed_lesson_count": len(current_seed_memory_items),
         "memory_hygiene": memory_hygiene,
+        "history_window": effective_history_window,
+        "discovery_window": cfg_discovery_window,
+        "path_window": cfg_path_window,
         "adaptive_seed_reflection_policy_id": (
             "AIB-AM-v2-seed-reflection-same-seed-rerun" if include_memory else None
         ),
@@ -1099,6 +1259,9 @@ def run_match_once(
             "memory_session_lesson_count": len(session_memory_items),
             "memory_current_seed_lesson_count": len(current_seed_memory_items),
             "memory_hygiene": memory_hygiene,
+            "history_window": effective_history_window,
+            "discovery_window": cfg_discovery_window,
+            "path_window": cfg_path_window,
             "attempt_kind": attempt_kind,
             "adaptive_pair_key": adaptive_pair_key,
         },
@@ -1114,6 +1277,7 @@ def run_match_once(
             "initial_tiles": initial_tiles,
             "final_tiles": serialize_tiles(world),
         },
+        "discovered_tiles": {f"{x},{y}": t for (x, y), t in discovered_tiles.items()},
     }
 
     if output_path is None:

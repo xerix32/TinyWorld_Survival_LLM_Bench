@@ -6,5 +6,5 @@
 - gather: collect a resource from your current tile.
 - eat: consume 1 food from inventory to reduce hunger.
 - drink: consume 1 water from inventory to reduce thirst.
-- rest: recover some energy.
+- rest: immediate +12 energy (capped at max), then normal end-of-turn updates still apply.
 - wait: spend a turn without a direct action (pass turn).

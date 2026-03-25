@@ -177,19 +177,66 @@ def parse_reflection_lessons(
     return [_lesson_item_to_text(item) for item in items], None
 
 
+def parse_seed_reflection_policy(
+    raw_text: str,
+) -> tuple[list[str], str | None]:
+    """Parse the new policy-based seed reflection format.
+
+    Returns a list of lesson strings (policy + hints) and an optional error.
+    """
+    text = str(raw_text or "").strip()
+    if not text:
+        return [], "empty_output"
+    text = _unwrap_single_json_fence(text)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return [], "invalid_json"
+
+    if isinstance(parsed, list):
+        # Fallback: model returned old array format — use legacy parser
+        items, error = parse_reflection_lesson_items(raw_text)
+        if error is not None:
+            return [], error
+        return [_lesson_item_to_text(item) for item in items], None
+
+    if not isinstance(parsed, dict):
+        return [], "not_object"
+
+    policy = normalize_lesson_text(str(parsed.get("policy", "")))
+    if not policy:
+        return [], "missing_policy"
+
+    lessons: list[str] = [policy]
+    hints = parsed.get("hints", [])
+    if isinstance(hints, list):
+        for hint in hints:
+            h = normalize_lesson_text(str(hint))
+            if h:
+                lessons.append(h)
+
+    return lessons, None
+
+
 def _run_reflection_call(
     *,
     model_wrapper: BaseModelWrapper,
     system_prompt: str,
     user_prompt: str,
     metadata: dict[str, Any] | None = None,
+    parse_as_policy: bool = False,
 ) -> dict[str, Any]:
     response: ModelResponse = model_wrapper.generate(
         prompts=RenderedPrompts(system_prompt=system_prompt, user_prompt=user_prompt),
         metadata=metadata or {},
     )
-    lesson_items, parse_error = parse_reflection_lesson_items(response.raw_text)
-    lessons = [_lesson_item_to_text(item) for item in lesson_items] if parse_error is None else []
+    if parse_as_policy:
+        lessons, parse_error = parse_seed_reflection_policy(response.raw_text)
+        lesson_items: list[dict[str, str]] = []
+    else:
+        lesson_items, parse_error = parse_reflection_lesson_items(response.raw_text)
+        lessons = [_lesson_item_to_text(item) for item in lesson_items] if parse_error is None else []
     return {
         "raw_output": response.raw_text,
         "parsed_lessons": lessons,
@@ -208,6 +255,7 @@ def run_seed_reflection(
     prompt_loader: PromptLoader,
     run_summary: dict[str, Any],
     run_analysis: dict[str, Any] | None,
+    run_trace_context: dict[str, Any] | None = None,
     existing_lessons: list[dict[str, Any]] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -215,6 +263,7 @@ def run_seed_reflection(
     user_prompt = prompt_loader.render_seed_reflection_prompt(
         run_summary=run_summary,
         run_analysis=run_analysis,
+        run_trace_context=run_trace_context,
         existing_lessons=existing_lessons or [],
     )
     return _run_reflection_call(
@@ -222,6 +271,7 @@ def run_seed_reflection(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         metadata=metadata,
+        parse_as_policy=True,
     )
 
 
@@ -231,8 +281,10 @@ def run_cross_seed_refinement(
     prompt_loader: PromptLoader,
     initial_run_summary: dict[str, Any],
     initial_run_analysis: dict[str, Any] | None,
+    initial_run_trace_context: dict[str, Any] | None,
     rerun_summary: dict[str, Any],
     rerun_analysis: dict[str, Any] | None,
+    rerun_trace_context: dict[str, Any] | None,
     existing_lessons: list[dict[str, Any]] | None = None,
     seed_lessons: list[dict[str, Any]] | None = None,
     adaptive_feedback: dict[str, Any] | None = None,
@@ -242,8 +294,10 @@ def run_cross_seed_refinement(
     user_prompt = prompt_loader.render_cross_seed_refinement_prompt(
         initial_run_summary=initial_run_summary,
         initial_run_analysis=initial_run_analysis,
+        initial_run_trace_context=initial_run_trace_context,
         rerun_summary=rerun_summary,
         rerun_analysis=rerun_analysis,
+        rerun_trace_context=rerun_trace_context,
         existing_lessons=existing_lessons or [],
         seed_lessons=seed_lessons or [],
         adaptive_feedback=adaptive_feedback or {},

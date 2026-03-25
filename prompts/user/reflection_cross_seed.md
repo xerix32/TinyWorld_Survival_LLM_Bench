@@ -41,6 +41,11 @@ Initial attempt analysis:
 {{ initial_run_analysis_json }}
 ```
 
+Initial attempt trajectory context:
+```json
+{{ initial_run_trace_context_json }}
+```
+
 Adaptive rerun summary:
 ```json
 {{ rerun_summary_json }}
@@ -49,6 +54,11 @@ Adaptive rerun summary:
 Adaptive rerun analysis:
 ```json
 {{ rerun_analysis_json }}
+```
+
+Adaptive rerun trajectory context:
+```json
+{{ rerun_trace_context_json }}
 ```
 
 Outcome deltas (neutral numeric feedback):

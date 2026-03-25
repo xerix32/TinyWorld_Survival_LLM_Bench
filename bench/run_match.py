@@ -251,6 +251,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Turn limit override. If omitted, uses benchmark config value.",
     )
+    parser.add_argument(
+        "--history-window",
+        type=int,
+        default=None,
+        help=(
+            "Override observation history window (recent turns injected in observation). "
+            "Use 0 to disable; if omitted, uses benchmark config default."
+        ),
+    )
     parser.add_argument("--output", type=str, default=None, help="Output path for run JSON log.")
     parser.add_argument(
         "--benchmark-config",
@@ -301,6 +310,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.serve is not None and args.no_viewer:
         parser.error("--serve requires viewer generation; remove --no-viewer.")
+    if args.history_window is not None and args.history_window < 0:
+        parser.error("--history-window must be >= 0")
 
     color_enabled = use_color(disable_color=args.no_color)
     status_line = StatusLine(enabled=True)
@@ -314,7 +325,7 @@ def main() -> None:
 
         if event_type == "run_started":
             run_started_at = time.monotonic()
-            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1.1")), "1;96", color_enabled)
+            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1.2")), "1;96", color_enabled)
             model_value = colorize(str(event["model"]), "1;97", color_enabled)
             profile_value = colorize(str(event["model_profile"]), "1;95", color_enabled)
             provider_value = colorize(str(event["provider_id"]), "1;94", color_enabled)
@@ -434,6 +445,7 @@ def main() -> None:
             scenarios_config_path=args.scenarios_config,
             providers_config_path=args.providers_config,
             prompts_dir=args.prompts_dir,
+            history_window=args.history_window,
             output_path=args.output,
             progress_callback=on_progress,
             fix_thinking=args.fix_thinking,
