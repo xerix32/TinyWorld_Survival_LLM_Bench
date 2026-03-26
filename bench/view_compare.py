@@ -1542,10 +1542,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-sort-key=\"rank\">#</th>
                 <th>Model</th>
                 <th data-tip=\"Average score across all runs\" class=\"tip-down\" data-sort-key=\"avg_final_score\" data-sort-desc=\"1\">Avg Score</th>
+                <th data-tip=\"Average score with adaptive memory (higher = memory helps)\" class=\"tip-down adaptive-col\" data-sort-key=\"adaptive_avg_score\" data-sort-desc=\"1\" style=\"display:none\">Adaptive</th>
                 <th data-tip=\"Score spread: worst to best run. Dot = average.\" class=\"tip-down\">Range</th>
                 <th data-tip=\"Percentage of runs where agent survived all turns\" class=\"tip-down\" data-sort-key=\"survival_pct\" data-sort-desc=\"1\">Survival</th>
                 <th data-tip=\"Average API response time per turn\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Latency</th>
-                <th data-tip=\"Estimated total cost across all runs\" class=\"tip-down\" data-sort-key=\"estimated_cost_total\">Cost</th>
+                <th data-tip=\"Estimated total cost across all runs\" class=\"tip-down\" data-sort-key=\"estimated_cost_grand_total\">Cost</th>
                 <th data-tip=\"Score points per dollar spent (higher = better value)\" class=\"tip-down\" data-sort-key=\"score_per_cost\" data-sort-desc=\"1\">Score/$</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
               </tr>
@@ -1616,6 +1617,29 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               </tr>
             </thead>
             <tbody id=\"h2hBody\"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class=\"panel\" id=\"adaptiveLearningPanel\" style=\"display:none\">
+        <div class=\"panel-title\" data-tip=\"Adaptive Learning KPIs: how well each model iterates and improves its strategy across seeds. Higher composite score = better adaptive learner.\" class=\"tip-down\">Adaptive Learning Leaderboard</div>
+        <div id=\"adaptiveLearningGrid\" class=\"badge-race-grid\"></div>
+        <div class=\"table-wrap\" style=\"margin-top:16px\">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Model</th>
+                <th data-kpi-sort=\"avg_memory_effect\" data-tip=\"Average memory effect across all seeds\" class=\"tip-down\" style=\"cursor:pointer\">Avg Mem</th>
+                <th data-kpi-sort=\"composite_score\" data-tip=\"Composite score: weighted blend of PDI (60%), MPR (30%), SMER (10%) — empirically calibrated to predict memory benefit\" class=\"tip-down\" style=\"cursor:pointer\">Score ▼</th>
+                <th data-kpi-sort=\"pdi\" data-tip=\"Policy Diversity Index: how much the policy text evolves across seeds (0=identical, 1=completely different)\" class=\"tip-down\" style=\"cursor:pointer\">PDI</th>
+                <th data-kpi-sort=\"mpr\" data-tip=\"Memory Promotion Rate: fraction of seeds where reflections were promoted to memory\" class=\"tip-down\" style=\"cursor:pointer\">MPR</th>
+                <th data-kpi-sort=\"smer\" data-tip=\"Session Memory Evolution Rate: average lesson changes per seed transition\" class=\"tip-down\" style=\"cursor:pointer\">SMER</th>
+                <th data-kpi-sort=\"ccs\" data-tip=\"Confidence Calibration Score: correlation between stated confidence and actual memory effect (-1..+1)\" class=\"tip-down\" style=\"cursor:pointer\">CCS</th>
+                <th data-tip=\"Memory effect per seed\" class=\"tip-down\">Per Seed</th>
+              </tr>
+            </thead>
+            <tbody id=\"adaptiveLearningBody\"></tbody>
           </table>
         </div>
       </div>
@@ -1810,7 +1834,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       '#10b981', // emerald
     ];
     const models = Array.isArray(DATA.models) ? DATA.models : [];
-    models.forEach((m, i) => { m._color = MODEL_COLORS[i % MODEL_COLORS.length]; });
+    models.forEach((m, i) => {
+      m._color = MODEL_COLORS[i % MODEL_COLORS.length];
+      // Fallback for older JSON without grand_total fields
+      if (m.estimated_cost_grand_total == null && m.estimated_cost_total != null) {
+        m.estimated_cost_grand_total = m.estimated_cost_total;
+      }
+    });
     const pairwise = Array.isArray(DATA.pairwise) ? DATA.pairwise : [];
     const runs = Array.isArray(DATA.runs) ? DATA.runs : [];
     const meta = DATA.meta || {};
@@ -1821,6 +1851,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         .map(row => [String(row?.model_profile || ''), Number(row?.adaptive_score_avg)])
         .filter((entry) => Number.isFinite(entry[1]))
     );
+    const hasAdaptive = adaptiveAvgByProfile.size > 0;
 
     let selectedRunIndex = 0;
     let filteredRunIndexes = [];
@@ -2073,7 +2104,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const compatibility = (meta.compatibility && typeof meta.compatibility === 'object') ? meta.compatibility : {};
       const compatibilityWarnings = Array.isArray(compatibility.warnings) ? compatibility.warnings : [];
       const modelCosts = models
-        .map(modelRow => Number(modelRow?.estimated_cost_total))
+        .map(modelRow => Number(modelRow?.estimated_cost_grand_total))
         .filter(value => Number.isFinite(value));
       const totalModelCost = modelCosts.length > 0
         ? modelCosts.reduce((sum, value) => sum + value, 0)
@@ -2235,7 +2266,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function modelScorePerCost(m) {
       const score = Number(m.avg_final_score ?? 0);
-      const cost = Number(m.estimated_cost_total ?? 0);
+      const cost = Number(m.estimated_cost_grand_total ?? 0);
       if (cost <= 0 || score <= 0) return null;
       const runs = Number(m.num_runs ?? 1);
       const costPerRun = cost / runs;
@@ -2250,7 +2281,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const score = Number(m.avg_final_score ?? 0);
       const coverage = Number(m.avg_coverage_pct ?? 0);
       const latency = modelLatencyPerTurn(m);
-      const cost = Number(m.estimated_cost_total ?? 0);
+      const cost = Number(m.estimated_cost_grand_total ?? 0);
       const numRuns = Number(m.num_runs ?? 1);
       const costPerRun = cost / numRuns;
       if (score <= 0 || costPerRun <= 0 || !latency) return null;
@@ -2259,7 +2290,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const maxCov = Math.max(...allModels.map(x => Number(x.avg_coverage_pct ?? 0)), 1);
       const minLat = Math.min(...allModels.map(x => modelLatencyPerTurn(x) ?? Infinity));
       const maxCostPerRun = Math.max(...allModels.map(x => {
-        const c = Number(x.estimated_cost_total ?? 0) / Number(x.num_runs ?? 1);
+        const c = Number(x.estimated_cost_grand_total ?? 0) / Number(x.num_runs ?? 1);
         return c > 0 ? c : 0;
       }));
 
@@ -2332,9 +2363,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }
 
       // Cheapest
-      const withCost = models.filter(m => m.estimated_cost_total != null && m.estimated_cost_total > 0);
+      const withCost = models.filter(m => m.estimated_cost_grand_total != null && m.estimated_cost_grand_total > 0);
       if (withCost.length) {
-        sorted(withCost, (a, b) => a.estimated_cost_total - b.estimated_cost_total)[0]
+        sorted(withCost, (a, b) => a.estimated_cost_grand_total - b.estimated_cost_grand_total)[0]
           .badges.push({ label: '💰 Cheapest', cls: 'badge-cheap', tip: 'Lowest total estimated cost across all runs' });
       }
 
@@ -2406,7 +2437,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const m = models[0];
       const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
       const latency = formatDurationFromMs(modelLatencyPerTurn(m));
-      const cost = formatUsd(m.estimated_cost_total, 'n/a');
+      const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
       const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
       const hasAdaptiveStats = adaptiveAvgByProfile.size > 0;
       const adaptiveAvgScore = adaptiveAvgScoreForModel(m.model_profile);
@@ -2458,13 +2489,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const chartMax = globalMax + (globalMax - globalMin) * 0.15 || 1;
       const chartSpan = chartMax - chartMin || 1;
 
+      // Show/hide adaptive column
+      document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
+
       el.innerHTML = models.map((m, i) => {
         const avg = Number(m.avg_final_score ?? 0);
         const best = Number(m.best_final_score ?? avg);
         const worst = Number(m.worst_final_score ?? avg);
         const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
         const latency = formatDurationFromMs(modelLatencyPerTurn(m));
-        const cost = formatUsd(m.estimated_cost_total, 'n/a');
+        const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
         const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
         const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
 
@@ -2483,10 +2517,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class="range-dot" style="left:${avgPct}%;background:${mColor}"></div>
             </div>`;
 
+        // Adaptive score cell
+        let adaptiveCell = '';
+        if (hasAdaptive) {
+          const adaptiveAvg = adaptiveAvgByProfile.get(m.model_profile);
+          if (adaptiveAvg != null) {
+            const delta = adaptiveAvg - avg;
+            const deltaColor = delta > 0 ? 'var(--green)' : (delta < 0 ? 'var(--red)' : 'var(--text-secondary)');
+            const deltaStr = delta >= 0 ? '+' + formatFloat(delta, 1) : formatFloat(delta, 1);
+            adaptiveCell = `<td class="adaptive-col" data-tip="Baseline ${formatFloat(avg, 1)} → Adaptive ${formatFloat(adaptiveAvg, 1)} (${deltaStr})" style="font-weight:700">${formatFloat(adaptiveAvg, 2)} <span style="color:${deltaColor};font-size:0.8em;font-weight:600">${deltaStr}</span></td>`;
+          } else {
+            adaptiveCell = '<td class="adaptive-col" style="color:var(--text-dim)">–</td>';
+          }
+        }
+        // Store adaptive_avg_score on model for sorting
+        m.adaptive_avg_score = adaptiveAvgByProfile.get(m.model_profile) ?? null;
+
         return `<tr>
           <td class="lb-rank">${m.rank}</td>
           <td class="lb-model"><span style="color:${mColor}">${m.model_profile}</span> ${renderBadges(m, 2)}</td>
           <td class="lb-score">${formatFloat(avg, 2)}</td>
+          ${adaptiveCell}
           <td><div class="range-bar-wrap">${rangeBar}</div></td>
           <td>${survivalRate}%</td>
           <td>${latency}</td>
@@ -2683,6 +2734,127 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           ${rows}
         </div>`;
       }).join('');
+    }
+
+    /* ── Adaptive Learning Leaderboard ── */
+    function renderAdaptiveLearning() {
+      const panel = document.getElementById('adaptiveLearningPanel');
+      const grid = document.getElementById('adaptiveLearningGrid');
+      const tbody = document.getElementById('adaptiveLearningBody');
+      if (!panel || !grid || !tbody) return;
+
+      const kpis = adaptiveSection?.learning_kpis;
+      if (!Array.isArray(kpis) || !kpis.length) { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+
+      // Assign colors from model list
+      const colorMap = new Map(models.map(m => [m.model_profile, m._color || '#888']));
+
+      // Badge-race style bars for the 5 KPIs + composite
+      const races = [
+        { label: 'Composite Score',   key: 'composite_score', fmt: v => v.toFixed(3), tip: 'Weighted: 60% PDI + 30% MPR + 10% SMER', signed: false },
+        { label: 'Policy Diversity',  key: 'pdi',             fmt: v => v.toFixed(3), tip: 'How much the policy evolves across seeds', signed: false },
+        { label: 'Promotion Rate',    key: 'mpr',             fmt: v => (v * 100).toFixed(0) + '%', tip: 'Seeds promoted to memory', signed: false },
+        { label: 'Memory Evolution',  key: 'smer',            fmt: v => v.toFixed(1), tip: 'Lesson changes per seed transition', signed: false },
+        { label: 'Confidence Calib.', key: 'ccs',             fmt: v => (v >= 0 ? '+' : '') + v.toFixed(3), tip: 'Confidence↔effect correlation (-1..+1)', signed: true },
+        { label: 'Memory Effect',     key: 'avg_memory_effect', fmt: v => (v >= 0 ? '+' : '') + v.toFixed(1), tip: 'Average score gained from memory', signed: true },
+      ];
+
+      grid.innerHTML = races.map(race => {
+        const ranked = [...kpis].sort((a, b) => (b[race.key] ?? 0) - (a[race.key] ?? 0));
+        const vals = ranked.map(r => r[race.key] ?? 0);
+
+        let rows;
+        if (race.signed) {
+          // Diverging bar: center line, green right for positive, red left for negative
+          const maxAbs = Math.max(...vals.map(Math.abs), 0.001);
+          rows = ranked.map((r, rank) => {
+            const val = r[race.key] ?? 0;
+            const color = colorMap.get(r.model_profile) || '#888';
+            const halfPct = (Math.abs(val) / maxAbs * 50).toFixed(1);
+            const isPos = val >= 0;
+            const barColor = isPos ? 'var(--green)' : 'var(--red)';
+            const opacity = rank === 0 ? '1' : '0.7';
+            // Left half = negative space, right half = positive space
+            const barStyle = isPos
+              ? 'left:50%;width:' + halfPct + '%;background:' + barColor + ';opacity:' + opacity
+              : 'right:50%;width:' + halfPct + '%;background:' + barColor + ';opacity:' + opacity;
+            return '<div class="badge-race-row" data-tip="' + r.model_profile + ': ' + race.fmt(val) + '">' +
+              '<div class="badge-race-name" style="color:' + color + '">' + r.model_profile.replace(/^vercel_/, '') + '</div>' +
+              '<div class="badge-race-track" style="position:relative">' +
+                '<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border-bright);z-index:1"></div>' +
+                '<div class="badge-race-fill" style="position:absolute;' + barStyle + ';height:100%;border-radius:3px"></div>' +
+              '</div>' +
+              '<div class="badge-race-val">' + race.fmt(val) + '</div>' +
+            '</div>';
+          }).join('');
+        } else {
+          // Standard bar: left to right, larger = better
+          const maxVal = Math.max(...vals, 0.001);
+          rows = ranked.map((r, rank) => {
+            const val = r[race.key] ?? 0;
+            const color = colorMap.get(r.model_profile) || '#888';
+            const pct = Math.max(2, val / maxVal * 100).toFixed(1);
+            const isWinner = rank === 0;
+            return '<div class="badge-race-row" data-tip="' + r.model_profile + ': ' + race.fmt(val) + '">' +
+              '<div class="badge-race-name" style="color:' + color + '">' + r.model_profile.replace(/^vercel_/, '') + '</div>' +
+              '<div class="badge-race-track"><div class="badge-race-fill" style="width:' + pct + '%;background:' + color + (isWinner ? ';opacity:1' : ';opacity:0.6') + '"></div></div>' +
+              '<div class="badge-race-val">' + race.fmt(val) + '</div>' +
+            '</div>';
+          }).join('');
+        }
+
+        return '<div class="badge-race-cell">' +
+          '<div class="badge-race-title" data-tip="' + race.tip + '">' + race.label + '</div>' +
+          rows +
+        '</div>';
+      }).join('');
+
+      // Table – sortable
+      let kpiSortKey = 'composite_score';
+      let kpiSortDesc = true;
+
+      function renderKpiTable() {
+        const sorted = [...kpis].sort((a, b) => {
+          const va = a[kpiSortKey] ?? 0, vb = b[kpiSortKey] ?? 0;
+          return kpiSortDesc ? vb - va : va - vb;
+        });
+        tbody.innerHTML = sorted.map((r, i) => {
+          const color = colorMap.get(r.model_profile) || 'var(--accent)';
+          const me = r.avg_memory_effect ?? 0;
+          const meColor = me > 0 ? 'var(--green)' : (me < 0 ? 'var(--red)' : 'var(--text)');
+          const perSeed = (r.memory_effects || []).map(e => (e >= 0 ? '+' : '') + e.toFixed(0)).join(', ');
+          return '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td style="color:' + color + ';font-weight:700">' + r.model_profile.replace(/^vercel_/, '') + '</td>' +
+            '<td style="color:' + meColor + ';font-weight:700">' + (me >= 0 ? '+' : '') + me.toFixed(1) + '</td>' +
+            '<td style="font-weight:700">' + (r.composite_score ?? 0).toFixed(3) + '</td>' +
+            '<td>' + (r.pdi ?? 0).toFixed(3) + '</td>' +
+            '<td>' + ((r.mpr ?? 0) * 100).toFixed(0) + '%</td>' +
+            '<td>' + (r.smer ?? 0).toFixed(1) + '</td>' +
+            '<td>' + (r.ccs ?? 0).toFixed(3) + '</td>' +
+            '<td style="font-family:var(--font-mono);font-size:0.8em;color:var(--text-secondary)">[' + perSeed + ']</td>' +
+          '</tr>';
+        }).join('');
+        // Update sort indicators
+        panel.querySelectorAll('th[data-kpi-sort]').forEach(th => {
+          const key = th.getAttribute('data-kpi-sort');
+          const label = th.textContent.replace(/ [▲▼]$/, '');
+          th.textContent = key === kpiSortKey ? label + (kpiSortDesc ? ' ▼' : ' ▲') : label;
+        });
+      }
+
+      // Click handler for sortable columns
+      panel.querySelectorAll('th[data-kpi-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.getAttribute('data-kpi-sort');
+          if (kpiSortKey === key) { kpiSortDesc = !kpiSortDesc; }
+          else { kpiSortKey = key; kpiSortDesc = true; }
+          renderKpiTable();
+        });
+      });
+
+      renderKpiTable();
     }
 
     function renderRanking() {
@@ -3299,6 +3471,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderRadarChart();
       renderDonutCharts();
       renderBadgeRace();
+      renderAdaptiveLearning();
       renderRanking();
       renderPairwise();
       initFilters();

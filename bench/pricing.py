@@ -111,6 +111,20 @@ def estimate_cost_usd(
     if prompt_tokens is None or completion_tokens is None:
         return None
 
+    total_tok = prompt_tokens + completion_tokens
+    if total_tok <= 0:
+        return None
+
+    # If the provider-reported breakdown looks implausible (input ratio < 80%)
+    # and we have a fallback ratio, prefer the fallback to avoid cost inflation
+    # from providers that misreport prompt/completion splits.
+    actual_input_ratio = float(prompt_tokens) / float(total_tok)
+    if (
+        actual_input_ratio < 0.80
+        and pricing.fallback_input_ratio_from_total_tokens is not None
+    ):
+        return estimate_cost_from_total_tokens(pricing=pricing, total_tokens=total_tok)
+
     input_cost = (float(prompt_tokens) / TOKENS_PER_MILLION) * pricing.input_per_million_usd
     output_cost = (float(completion_tokens) / TOKENS_PER_MILLION) * pricing.output_per_million_usd
     total_cost = input_cost + output_cost

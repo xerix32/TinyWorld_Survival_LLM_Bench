@@ -49,6 +49,12 @@ model_profiles:
     model: openai/gpt-oss-120b
     temperature: 0.2
     max_tokens: 12000
+    provider_options:
+      gateway:
+        order:
+          - groq
+        only:
+          - groq
 
   vercel_gpt_oss_20b:
     provider: vercel_gateway
@@ -59,6 +65,12 @@ model_profiles:
   vercel_gemini_3_flash:
     provider: vercel_gateway
     model: google/gemini-3-flash
+    temperature: 0.2
+    max_tokens: 12000
+
+  vercel_gemini_3_1_flash_image_preview:
+    provider: vercel_gateway
+    model: google/gemini-3.1-flash-image-preview
     temperature: 0.2
     max_tokens: 12000
 
@@ -110,6 +122,12 @@ model_profiles:
     temperature: 0.2
     max_tokens: 12000
 
+  vercel_qwen_3_32b:
+    provider: vercel_gateway
+    model: alibaba/qwen-3-32b
+    temperature: 0.2
+    max_tokens: 12000
+
   vercel_qwen_3_5_flash:
     provider: vercel_gateway
     model: alibaba/qwen3.5-flash
@@ -119,6 +137,18 @@ model_profiles:
   vercel_glm_4_6:
     provider: vercel_gateway
     model: zai/glm-4.6
+    temperature: 0.2
+    max_tokens: 12000
+
+  vercel_glm_4_7:
+    provider: vercel_gateway
+    model: zai/glm-4.7
+    temperature: 0.2
+    max_tokens: 12000
+
+  vercel_glm_5:
+    provider: vercel_gateway
+    model: zai/glm-5
     temperature: 0.2
     max_tokens: 12000
 

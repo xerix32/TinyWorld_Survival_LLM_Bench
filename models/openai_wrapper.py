@@ -60,6 +60,7 @@ class OpenAIWrapper(BaseModelWrapper):
         max_concurrent_requests: int,
         provider_id: str,
         profile_name: str,
+        provider_options: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(model_name=model_name)
         self._api_base = api_base
@@ -74,6 +75,7 @@ class OpenAIWrapper(BaseModelWrapper):
 
         self._provider_id = provider_id
         self._profile_name = profile_name
+        self._provider_options = dict(provider_options) if provider_options else None
 
         self._provider_limiter = self._get_provider_limiter(
             provider_id=provider_id,
@@ -125,7 +127,7 @@ class OpenAIWrapper(BaseModelWrapper):
         return 500 <= status_code <= 599
 
     def _build_request_payload(self, prompts: RenderedPrompts) -> dict[str, Any]:
-        return {
+        payload = {
             "model": self.model_name,
             "messages": [
                 {"role": "system", "content": prompts.system_prompt},
@@ -134,6 +136,9 @@ class OpenAIWrapper(BaseModelWrapper):
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
+        if self._provider_options:
+            payload["providerOptions"] = self._provider_options
+        return payload
 
     def generate(self, prompts: RenderedPrompts, metadata: Mapping[str, Any]) -> ModelResponse:
         del metadata

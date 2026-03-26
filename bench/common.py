@@ -143,6 +143,14 @@ def _create_openai_compatible_wrapper(
             return provider_cfg[key]
         return default
 
+    provider_options = profile_cfg.get("provider_options")
+    if provider_options is None:
+        provider_options = provider_cfg.get("provider_options")
+    if provider_options is not None and not isinstance(provider_options, dict):
+        raise ValueError(
+            f"provider_options must be a mapping in profile '{profile_name}' or provider '{provider_id}'"
+        )
+
     return OpenAIWrapper(
         model_name=str(model_name),
         api_base=str(api_base),
@@ -157,6 +165,7 @@ def _create_openai_compatible_wrapper(
         max_concurrent_requests=int(_resolve_numeric("max_concurrent_requests", 1)),
         provider_id=provider_id,
         profile_name=profile_name,
+        provider_options=provider_options,
     )
 
 
