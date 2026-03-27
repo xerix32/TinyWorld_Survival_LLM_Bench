@@ -51,6 +51,21 @@ model_profiles:
     model: openai/gpt-oss-120b
     temperature: 0.2
     max_tokens: 12000
+
+  vercel_gpt_oss_20b:
+    provider: vercel_gateway
+    model: openai/gpt-oss-20b
+    temperature: 0.2
+    max_tokens: 12000
+
+  vercel_groq_gpt_oss_120b:
+    provider: vercel_gateway
+    model: openai/gpt-oss-120b
+    temperature: 0.2
+    max_tokens: 12000
+    max_retries: 10
+    retry_base_seconds: 3.0
+    retry_max_seconds: 60.0
     provider_options:
       gateway:
         order:
@@ -58,11 +73,20 @@ model_profiles:
         only:
           - groq
 
-  vercel_gpt_oss_20b:
+  vercel_groq_gpt_oss_20b:
     provider: vercel_gateway
     model: openai/gpt-oss-20b
     temperature: 0.2
     max_tokens: 12000
+    max_retries: 10
+    retry_base_seconds: 3.0
+    retry_max_seconds: 60.0
+    provider_options:
+      gateway:
+        order:
+          - groq
+        only:
+          - groq
 
   vercel_gemini_3_flash:
     provider: vercel_gateway

@@ -9,6 +9,7 @@ from engine.world import (
     RESOURCE_TILE_TO_ITEM,
     WorldState,
     get_tile,
+    get_alive_npc_at,
     is_in_bounds,
     set_tile,
 )
@@ -19,6 +20,7 @@ ACTION_REFERENCE = [
     "move east",
     "move west",
     "gather",
+    "attack",
     "eat",
     "drink",
     "rest",
@@ -97,6 +99,69 @@ def apply_action(
                 "inventory_delta": {item: 1},
             },
             useful_gather=True,
+        )
+
+    if action == "attack":
+        x, y = agent.position.x, agent.position.y
+        npc = get_alive_npc_at(world, x, y)
+        if npc is None:
+            return ActionOutcome(
+                action=action,
+                success=False,
+                message="no npc on current tile",
+                world_delta={},
+            )
+
+        attack_damage = int(rules_cfg.get("attack_damage", 3))
+        attack_energy_cost = int(rules_cfg.get("attack_energy_cost", 2))
+        npc_counter_damage = int(rules_cfg.get("npc_counter_damage", 3))
+        npc_drop_food = int(rules_cfg.get("npc_drop_food", 1))
+
+        energy_before = int(agent.energy)
+        npc_hp_before = int(npc.hp)
+
+        agent.energy = max(0, int(agent.energy) - attack_energy_cost)
+        npc.hp = max(0, int(npc.hp) - attack_damage)
+        npc.hostile = True
+
+        inventory_delta: dict[str, int] = {}
+        counter_applied = False
+        npc_killed = False
+        if npc.hp <= 0:
+            npc.alive = False
+            npc_killed = True
+            if npc_drop_food > 0:
+                agent.inventory["food"] = int(agent.inventory.get("food", 0)) + npc_drop_food
+                inventory_delta["food"] = npc_drop_food
+            message = "attacked npc and defeated it"
+        else:
+            if npc_counter_damage > 0:
+                counter_applied = True
+                agent.energy = max(0, int(agent.energy) - npc_counter_damage)
+            message = "attacked npc; npc counterattacked"
+
+        if agent.energy <= 0:
+            agent.alive = False
+
+        return ActionOutcome(
+            action=action,
+            success=True,
+            message=message,
+            world_delta={
+                "energy_before": energy_before,
+                "energy_after": int(agent.energy),
+                "npc_id": npc.npc_id,
+                "npc_type": npc.npc_type,
+                "npc_hp_before": npc_hp_before,
+                "npc_hp_after": int(npc.hp),
+                "npc_alive_after": bool(npc.alive),
+                "npc_hostile_after": bool(npc.hostile),
+                "npc_killed": npc_killed,
+                "counter_applied": counter_applied,
+                "attack_energy_cost": attack_energy_cost,
+                "npc_counter_damage": (npc_counter_damage if counter_applied else 0),
+                "inventory_delta": inventory_delta,
+            },
         )
 
     if action == "eat":

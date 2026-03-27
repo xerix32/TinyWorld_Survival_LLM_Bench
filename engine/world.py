@@ -34,12 +34,23 @@ class AgentState:
 
 
 @dataclass
+class NpcState:
+    npc_id: str
+    npc_type: str
+    position: Position
+    hp: int
+    hostile: bool = False
+    alive: bool = True
+
+
+@dataclass
 class WorldState:
     width: int
     height: int
     seed: int
     tiles: list[list[str]]
     agents: dict[str, AgentState]
+    npcs: dict[str, NpcState] = field(default_factory=dict)
     turn: int = 0
 
 
@@ -71,6 +82,32 @@ def count_tiles(world: WorldState) -> dict[str, int]:
     return counts
 
 
+def get_alive_npc_at(world: WorldState, x: int, y: int) -> NpcState | None:
+    for npc in world.npcs.values():
+        if not npc.alive:
+            continue
+        if npc.position.x == x and npc.position.y == y:
+            return npc
+    return None
+
+
+def serialize_npcs(world: WorldState) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for npc_id in sorted(world.npcs.keys()):
+        npc = world.npcs[npc_id]
+        result.append(
+            {
+                "npc_id": npc.npc_id,
+                "npc_type": npc.npc_type,
+                "position": {"x": npc.position.x, "y": npc.position.y},
+                "hp": int(npc.hp),
+                "hostile": bool(npc.hostile),
+                "alive": bool(npc.alive),
+            }
+        )
+    return result
+
+
 def create_world(
     seed: int,
     scenario_cfg: dict[str, Any],
@@ -81,6 +118,7 @@ def create_world(
     height = int(scenario_cfg["height"])
 
     distribution = dict(scenario_cfg.get("tile_distribution", {}))
+    npc_distribution = dict(scenario_cfg.get("npc_distribution", {}))
     total_cells = width * height
     total_resources = sum(int(v) for v in distribution.values())
     if total_resources > total_cells:
@@ -119,10 +157,38 @@ def create_world(
         inventory=default_inventory(),
     )
 
+    npc_count = sum(int(v) for v in npc_distribution.values())
+    remaining_empty_positions = [pos for pos in empty_positions if pos != (start_x, start_y)]
+    if npc_count > len(remaining_empty_positions):
+        raise ValueError("npc_distribution exceeds available empty tiles after agent start")
+
+    rng.shuffle(remaining_empty_positions)
+    npc_cursor = 0
+    npcs: dict[str, NpcState] = {}
+    npc_idx = 1
+    npc_start_hp = int(rules_cfg.get("npc_start_hp", 6))
+    for npc_type, count in sorted(npc_distribution.items()):
+        if not str(npc_type).strip():
+            raise ValueError("npc_distribution contains empty npc type")
+        for _ in range(int(count)):
+            x, y = remaining_empty_positions[npc_cursor]
+            npc_cursor += 1
+            npc_id = f"npc_{npc_idx}"
+            npc_idx += 1
+            npcs[npc_id] = NpcState(
+                npc_id=npc_id,
+                npc_type=str(npc_type),
+                position=Position(x, y),
+                hp=npc_start_hp,
+                hostile=False,
+                alive=True,
+            )
+
     return WorldState(
         width=width,
         height=height,
         seed=seed,
         tiles=tiles,
         agents={agent_id: agent},
+        npcs=npcs,
     )

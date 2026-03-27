@@ -12,8 +12,18 @@ EXPECTED_INVALID_ACTIONS = 0
 
 
 def test_run_match_is_reproducible_for_fixed_seed(tmp_path: Path) -> None:
-    run_a = run_match_once(seed=7, model_name="dummy", output_path=tmp_path / "run_a.json")
-    run_b = run_match_once(seed=7, model_name="dummy", output_path=tmp_path / "run_b.json")
+    run_a = run_match_once(
+        seed=7,
+        model_name="dummy",
+        scenario_name="v0_1_basic",
+        output_path=tmp_path / "run_a.json",
+    )
+    run_b = run_match_once(
+        seed=7,
+        model_name="dummy",
+        scenario_name="v0_1_basic",
+        output_path=tmp_path / "run_b.json",
+    )
 
     summary_a = run_a["run_summary"]
     summary_b = run_b["run_summary"]
@@ -36,8 +46,8 @@ def test_run_match_is_reproducible_for_fixed_seed(tmp_path: Path) -> None:
     assert summary_a.get("prompt_set_sha256") == identity_a.get("prompt_set_sha256")
     assert summary_a.get("death_cause") is not None
     assert summary_a.get("death_cause_human") is not None
-    assert summary_a.get("analysis_version") == "AIB-AN-AIB-0.1.1-v1"
-    assert summary_a.get("analysis_schema_version") == "AIB-RA-AIB-0.1.1-v1"
+    assert summary_a.get("analysis_version") == "AIB-AN-AIB-0.2.1-v1"
+    assert summary_a.get("analysis_schema_version") == "AIB-RA-AIB-0.2.1-v1"
     assert isinstance(summary_a.get("kpi"), dict)
     assert isinstance(summary_a.get("failure_archetypes"), list)
     assert summary_a.get("primary_failure_archetype")

@@ -20,7 +20,7 @@ def test_run_analysis_is_deterministic_and_persisted(tmp_path: Path) -> None:
         run_summary=dict(run_a.get("run_summary", {})),
         rules_cfg=benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {},
         initial_tiles=run_a.get("world_snapshots", {}).get("initial_tiles", []),
-        protocol_version=str(run_a.get("protocol_version", "AIB-0.1.1")),
+        protocol_version=str(run_a.get("protocol_version", "AIB-0.2.1")),
     )
     assert recomputed.get("run_analysis") == analysis_a
 

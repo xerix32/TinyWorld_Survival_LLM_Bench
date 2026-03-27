@@ -285,6 +285,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Optional parser recovery: extract the last valid allowed action from verbose model output.",
     )
+    parser.add_argument(
+        "--moral",
+        action="store_true",
+        help="Enable optional moral framing in the system prompt (default: off).",
+    )
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in terminal output.")
     parser.add_argument("--no-viewer", action="store_true", help="Skip HTML report generation.")
     parser.add_argument("--viewer-output", type=str, default=None, help="Output path for generated HTML report.")
@@ -325,7 +330,7 @@ def main() -> None:
 
         if event_type == "run_started":
             run_started_at = time.monotonic()
-            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.1.2")), "1;96", color_enabled)
+            protocol_value = colorize(str(event.get("protocol_version", "AIB-0.2.1")), "1;96", color_enabled)
             model_value = colorize(str(event["model"]), "1;97", color_enabled)
             profile_value = colorize(str(event["model_profile"]), "1;95", color_enabled)
             provider_value = colorize(str(event["provider_id"]), "1;94", color_enabled)
@@ -340,6 +345,8 @@ def main() -> None:
             print(f"Seed: {seed_value} | Scenario: {scenario_value}")
             if bool(event.get("fix_thinking", False)):
                 print(colorize("Parser mode: --fix-thinking enabled (last valid action extraction)", "1;93", color_enabled))
+            if bool(event.get("moral_mode", False)):
+                print(colorize("Prompt mode: --moral enabled (ethical framing active)", "1;93", color_enabled))
 
             line = (
                 f"[  0.0%] Initializing | turn 0/{event['max_turns']} | "
@@ -449,6 +456,7 @@ def main() -> None:
             output_path=args.output,
             progress_callback=on_progress,
             fix_thinking=args.fix_thinking,
+            moral_mode=args.moral,
         )
     except KeyboardInterrupt:
         status_line.finish(colorize("[interrupted] Run canceled by user", "1;93", color_enabled))

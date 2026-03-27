@@ -5,3 +5,8 @@
 - End-of-turn updates always apply: energy -2, hunger +4, thirst +5.
 - If hunger reaches 100, additional energy penalty -8 that turn.
 - If thirst reaches 100, additional energy penalty -10 that turn.
+- `attack` is only valid when an NPC is on your current tile.
+- NPC visibility: NPCs appear in `visible_npcs` when they are within your local 3x3 observation window (including your current tile).
+- NPC counterattack: NPCs do not attack on their own each turn; they only counterattack immediately after your `attack` if they survive that hit.
+- NPC drop: when an NPC is defeated, food is added directly to your inventory automatically (no extra `gather` action needed).
+- Attacking costs energy and NPC counterattacks also reduce your energy.

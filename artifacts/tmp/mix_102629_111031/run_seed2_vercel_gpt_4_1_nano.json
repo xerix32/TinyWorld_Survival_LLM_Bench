@@ -1,0 +1,3236 @@
+{
+  "benchmark_identity": {
+    "active_templates": {
+      "system": "system/agent_core.md",
+      "turn": "user/turn_observation.md",
+      "turn_with_memory": "user/turn_observation_with_memory.md"
+    },
+    "bench_version": "0.1.27",
+    "engine_version": "0.1.27",
+    "prompt_set_sha256": "24e9649fb331eb9a0100ad9182cf9c90ac8136bdb7b4ab301b83211b6c9ef550",
+    "prompt_templates": {
+      "partials/action_reference.md": "9d085fedcc5cf76951359c0ee85af782334794f081b7cbf651e3001f0ceb8f31",
+      "partials/engine_contract.md": "e478ad187c9f7f89b691b7ba1b0833bb5ccc2d8d6a63cbc1661ce13c2fe8fa3d",
+      "partials/memory_block.md": "e5442b4dddd07a84a1f9f6948271fe0d109040891cd8b2b4fbff9e5d36dfac75",
+      "partials/output_contract.md": "54e08aa1e875630fcca3b76117918d7d3f778edf053f1be141ec48b2f20817f0",
+      "partials/rules.md": "5929e962c2498448ad5b886ab1e1e08ade6b8b5fe16b59b1f2674ee7d584ca35",
+      "system/agent_core.md": "ed1e1550fa57cf1daff250814cf253fb058971bd6d1ebd8b5889b11e82d88350",
+      "user/turn_observation.md": "07877514d81b82d337131dc26d7ec232c1847125653cd07f56de857570ee2282",
+      "user/turn_observation_with_memory.md": "1447965e4737ff5d16d609c620f8e9c0ba2c02bcfb589f4ae4dd5f83d754299d"
+    },
+    "prompts_dir": "/Users/fabio.laporta/Documents/gemini/TinyWorld Survival Bench/prompts",
+    "protocol_version": "AIB-0.1",
+    "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc"
+  },
+  "config_snapshot": {
+    "benchmark": {
+      "default_scenario": "v0_1_basic",
+      "invalid_action_policy": "waste_turn",
+      "logging": {
+        "log_full_prompts": true,
+        "logs_dir": "artifacts/logs",
+        "replays_dir": "artifacts/replays",
+        "results_dir": "artifacts/results"
+      },
+      "max_turns": 50,
+      "metrics": {
+        "usage_fallback": null
+      },
+      "parser": {
+        "case_mode": "case_insensitive"
+      },
+      "protocol_version": "AIB-0.1",
+      "rules": {
+        "dehydration_energy_penalty": 10,
+        "drink_thirst_reduction": 25,
+        "eat_hunger_reduction": 25,
+        "energy_max": 100,
+        "hunger_max": 100,
+        "passive_energy_loss": 2,
+        "passive_hunger_gain": 4,
+        "passive_thirst_gain": 5,
+        "rest_energy_gain": 12,
+        "start_energy": 80,
+        "start_hunger": 20,
+        "start_thirst": 20,
+        "starvation_energy_penalty": 8,
+        "thirst_max": 100
+      },
+      "scoring": {
+        "consume_useful": 2,
+        "death": -10,
+        "gather_useful": 3,
+        "invalid_action": -2,
+        "survive_turn": 1
+      },
+      "version": "0.1.27"
+    },
+    "providers": {
+      "default_model_profile": "dummy_v0_1",
+      "model_profiles": {
+        "dummy_v0_1": {
+          "model_name": "dummy_random_v0_1",
+          "provider": "dummy_provider"
+        },
+        "groq_gpt_oss_120b": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-oss-120b",
+          "provider": "groq_gateway",
+          "temperature": 0.2
+        },
+        "local_gpt_oss_20b": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-oss-20b",
+          "provider": "local_lmstudio",
+          "temperature": 0.2
+        },
+        "local_phi35_mini_instruct": {
+          "max_tokens": 12000,
+          "model": "phi-3.5-mini-instruct",
+          "provider": "local_lmstudio",
+          "temperature": 0.2
+        },
+        "local_qwen35_9b_mlx": {
+          "max_tokens": 12000,
+          "model": "qwen3.5-9b-mlx",
+          "provider": "local_lmstudio",
+          "temperature": 0.2
+        },
+        "vercel_claude_sonnet_4_6": {
+          "max_tokens": 12000,
+          "model": "anthropic/claude-sonnet-4.6",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gemini_2_0_flash_lite": {
+          "max_tokens": 12000,
+          "model": "google/gemini-2.0-flash-lite",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gemini_2_5_flash_lite": {
+          "max_tokens": 12000,
+          "model": "google/gemini-2.5-flash-lite",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gemini_3_flash": {
+          "max_tokens": 12000,
+          "model": "google/gemini-3-flash",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gpt_4_1_nano": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-4.1-nano",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gpt_4o": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-4o",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gpt_5_4": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-5.4",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gpt_oss_120b": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-oss-120b",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_gpt_oss_20b": {
+          "max_tokens": 12000,
+          "model": "openai/gpt-oss-20b",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_qwen_3_235b": {
+          "max_tokens": 12000,
+          "model": "alibaba/qwen-3-235b",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_qwen_3_5_flash": {
+          "max_tokens": 12000,
+          "model": "alibaba/qwen3.5-flash",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        },
+        "vercel_qwen_3_5_plus": {
+          "max_tokens": 12000,
+          "model": "alibaba/qwen3.5-plus",
+          "provider": "vercel_gateway",
+          "temperature": 0.2
+        }
+      },
+      "providers": {
+        "dummy_provider": {
+          "type": "dummy"
+        },
+        "groq_gateway": {
+          "api_base": "https://api.groq.com/openai/v1/chat/completions",
+          "api_key": "***REDACTED***",
+          "max_concurrent_requests": 1,
+          "max_retries": 3,
+          "request_timeout_seconds": 45.0,
+          "requests_per_minute": 30,
+          "retry_base_seconds": 2.0,
+          "retry_max_seconds": 20.0,
+          "type": "openai_compatible"
+        },
+        "local_lmstudio": {
+          "api_base": "http://localhost:1234/v1/chat/completions",
+          "api_key": "***REDACTED***",
+          "max_concurrent_requests": 1,
+          "max_retries": 3,
+          "request_timeout_seconds": 300.0,
+          "requests_per_minute": 30,
+          "retry_base_seconds": 2.0,
+          "retry_max_seconds": 20.0,
+          "type": "openai_compatible"
+        },
+        "vercel_gateway": {
+          "api_base": "https://ai-gateway.vercel.sh/v1/chat/completions",
+          "api_key": "***REDACTED***",
+          "max_concurrent_requests": 4,
+          "max_retries": 3,
+          "request_timeout_seconds": 90.0,
+          "requests_per_minute": 120,
+          "retry_base_seconds": 2.0,
+          "retry_max_seconds": 20.0,
+          "type": "openai_compatible"
+        }
+      },
+      "version": "0.1.27"
+    },
+    "scenario": {
+      "agent_start_mode": "seeded_empty_tile",
+      "height": 6,
+      "name": "V0.1 Basic",
+      "tile_distribution": {
+        "food": 4,
+        "rock": 6,
+        "tree": 6,
+        "water": 4
+      },
+      "width": 6
+    }
+  },
+  "engine_version": "0.1.27",
+  "model": "openai/gpt-4.1-nano",
+  "model_profile": "vercel_gpt_4_1_nano",
+  "prompt_versions": {
+    "active_templates": {
+      "system": "system/agent_core.md",
+      "turn": "user/turn_observation.md",
+      "turn_with_memory": "user/turn_observation_with_memory.md"
+    },
+    "prompt_set_sha256": "24e9649fb331eb9a0100ad9182cf9c90ac8136bdb7b4ab301b83211b6c9ef550",
+    "templates": {
+      "partials/action_reference.md": "9d085fedcc5cf76951359c0ee85af782334794f081b7cbf651e3001f0ceb8f31",
+      "partials/engine_contract.md": "e478ad187c9f7f89b691b7ba1b0833bb5ccc2d8d6a63cbc1661ce13c2fe8fa3d",
+      "partials/memory_block.md": "e5442b4dddd07a84a1f9f6948271fe0d109040891cd8b2b4fbff9e5d36dfac75",
+      "partials/output_contract.md": "54e08aa1e875630fcca3b76117918d7d3f778edf053f1be141ec48b2f20817f0",
+      "partials/rules.md": "5929e962c2498448ad5b886ab1e1e08ade6b8b5fe16b59b1f2674ee7d584ca35",
+      "system/agent_core.md": "ed1e1550fa57cf1daff250814cf253fb058971bd6d1ebd8b5889b11e82d88350",
+      "user/turn_observation.md": "07877514d81b82d337131dc26d7ec232c1847125653cd07f56de857570ee2282",
+      "user/turn_observation_with_memory.md": "1447965e4737ff5d16d609c620f8e9c0ba2c02bcfb589f4ae4dd5f83d754299d"
+    }
+  },
+  "protocol_version": "AIB-0.1",
+  "provider_id": "vercel_gateway",
+  "run_summary": {
+    "alive": false,
+    "analysis_version": "AIB-AN-0.1",
+    "bench_version": "0.1.27",
+    "death_cause": "starvation_and_dehydration",
+    "death_cause_human": "Starvation and dehydration reached critical threshold.",
+    "end_reason": "agent_dead",
+    "end_reason_human": "The agent died on turn 20.",
+    "engine_version": "0.1.27",
+    "estimated_cost": null,
+    "failure_archetypes": [
+      "dehydration",
+      "starvation",
+      "local_loop",
+      "gather_timing_failure"
+    ],
+    "failure_archetypes_human": [
+      "Dehydration",
+      "Starvation",
+      "Local loop",
+      "Gather timing failure"
+    ],
+    "final_score": 18,
+    "invalid_actions": 0,
+    "kpi": {
+      "coverage_pct": 22.2222,
+      "critical_entries": 1,
+      "critical_recovery_count": 0,
+      "critical_turns": 10,
+      "distance_per_useful_gain": 5.666667,
+      "food_water_consumed_useful": 0,
+      "food_water_gathered": 3,
+      "local_loop_hits": 1,
+      "map_cells_total": 36,
+      "max_critical_streak": 10,
+      "max_invalid_streak": 0,
+      "moves_successful": 17,
+      "resource_conversion_efficiency": 0.0,
+      "resource_conversion_efficiency_pct": 0.0,
+      "revisit_ratio": 0.764706,
+      "revisits": 13,
+      "unique_cells_visited": 8,
+      "useful_consume_count": 0,
+      "useful_drink_count": 0,
+      "useful_eat_count": 0,
+      "useful_events_total": 3,
+      "useful_gather_count": 3
+    },
+    "latency_ms": 33657.568,
+    "log_path": "/Users/fabio.laporta/Documents/gemini/TinyWorld Survival Bench/artifacts/runs/20260323T111031Z/logs/run_seed2_vercel_gpt_4_1_nano.json",
+    "max_turns": 50,
+    "model": "openai/gpt-4.1-nano",
+    "model_profile": "vercel_gpt_4_1_nano",
+    "primary_failure_archetype": "dehydration",
+    "primary_failure_archetype_human": "Dehydration",
+    "prompt_set_sha256": "24e9649fb331eb9a0100ad9182cf9c90ac8136bdb7b4ab301b83211b6c9ef550",
+    "provider_id": "vercel_gateway",
+    "resources_gathered": 3,
+    "resources_gathered_breakdown": {
+      "food": 2,
+      "stone": 0,
+      "water": 1,
+      "wood": 0
+    },
+    "scenario": "v0_1_basic",
+    "seed": 2,
+    "tokens_used": 14064,
+    "turns_played": 20,
+    "turns_survived": 19,
+    "version": "0.1.27"
+  },
+  "scenario": "v0_1_basic",
+  "seed": 2,
+  "turn_logs": [
+    {
+      "action_result": {
+        "applied": "move north",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move north",
+        "success": true
+      },
+      "cumulative_score": 1,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1842.3225000151433,
+        "tokens_used": 640
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "rest",
+          "inspect"
+        ],
+        "energy": 80,
+        "hunger": 20,
+        "inventory": {
+          "food": 0,
+          "stone": 0,
+          "water": 0,
+          "wood": 0
+        },
+        "position": {
+          "x": 0,
+          "y": 3
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 0,
+        "thirst": 20,
+        "turn": 1,
+        "visible_tiles": [
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 3
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 3
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 4
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 4
+          }
+        ]
+      },
+      "parsed_action": "move north",
+      "prompt_payload": {
+        "combined_prompt_sha256": "6620e28d8388248919e4eb6729e389e083b2fec7c62cbc343ac4287b0e32a411",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 1\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 80,\n  \"hunger\": 20,\n  \"inventory\": {\n    \"food\": 0,\n    \"stone\": 0,\n    \"water\": 0,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 0,\n    \"y\": 3\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 0,\n  \"thirst\": 20,\n  \"turn\": 1,\n  \"visible_tiles\": [\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 3\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 3\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 4\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 4\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- rest\n- inspect",
+        "user_prompt_sha256": "b6e2f2c9ba006ccea4ca79af44dd303636ec1f65dd0de67c0a79fecc6c164ec6"
+      },
+      "raw_model_output": "move north",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 1,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            0,
+            2
+          ],
+          "position_before": [
+            0,
+            3
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 78,
+          "energy_before": 80,
+          "hunger_after": 24,
+          "hunger_before": 20,
+          "starvation_triggered": false,
+          "thirst_after": 25,
+          "thirst_before": 20
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 2,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1745.8934590104036,
+        "tokens_used": 648
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "gather",
+          "rest",
+          "inspect"
+        ],
+        "energy": 78,
+        "hunger": 24,
+        "inventory": {
+          "food": 0,
+          "stone": 0,
+          "water": 0,
+          "wood": 0
+        },
+        "position": {
+          "x": 0,
+          "y": 2
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 1,
+        "thirst": 25,
+        "turn": 2,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 3
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 3
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "2af250c983723301ffa256f3b242228b75ffafdd7bef85cdebe272ddce8599d2",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 2\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"gather\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 78,\n  \"hunger\": 24,\n  \"inventory\": {\n    \"food\": 0,\n    \"stone\": 0,\n    \"water\": 0,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 0,\n    \"y\": 2\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 1,\n  \"thirst\": 25,\n  \"turn\": 2,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 3\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 3\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- gather\n- rest\n- inspect",
+        "user_prompt_sha256": "6885aa85f0ed0d2ae7b485ac23b4d30a5e2d53050ed301c350fe90829f117adf"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 2,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "gather",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            1,
+            2
+          ],
+          "position_before": [
+            0,
+            2
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 76,
+          "energy_before": 78,
+          "hunger_after": 28,
+          "hunger_before": 24,
+          "starvation_triggered": false,
+          "thirst_after": 30,
+          "thirst_before": 25
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "gather",
+        "invalid_reason": null,
+        "message": "gathered water",
+        "requested": "gather",
+        "success": true
+      },
+      "cumulative_score": 6,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 3067.536790971644,
+        "tokens_used": 732
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "gather",
+          "rest",
+          "inspect"
+        ],
+        "energy": 76,
+        "hunger": 28,
+        "inventory": {
+          "food": 0,
+          "stone": 0,
+          "water": 0,
+          "wood": 0
+        },
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 2,
+        "thirst": 30,
+        "turn": 3,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 3
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 3
+          },
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 3
+          }
+        ]
+      },
+      "parsed_action": "gather",
+      "prompt_payload": {
+        "combined_prompt_sha256": "1f83c87ca2226788c93c409f0125c0f74f8a6ceaa93ecabc7764bec22cd53e17",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 3\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"gather\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 76,\n  \"hunger\": 28,\n  \"inventory\": {\n    \"food\": 0,\n    \"stone\": 0,\n    \"water\": 0,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 1,\n    \"y\": 2\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 2,\n  \"thirst\": 30,\n  \"turn\": 3,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 3\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 3\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 3\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- gather\n- rest\n- inspect",
+        "user_prompt_sha256": "55a719cec80d83fa4664a166ffe1611e578ea62cf448c3a71bd5ae4503397c57"
+      },
+      "raw_model_output": "gather",
+      "score_delta": {
+        "action": 3,
+        "events": [
+          "useful_gather",
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 4
+      },
+      "seed": 2,
+      "turn": 3,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "gather",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "inventory_delta": {
+            "water": 1
+          },
+          "tile_after": "empty",
+          "tile_before": "water"
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 74,
+          "energy_before": 76,
+          "hunger_after": 32,
+          "hunger_before": 28,
+          "starvation_triggered": false,
+          "thirst_after": 35,
+          "thirst_before": 30
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move north",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move north",
+        "success": true
+      },
+      "cumulative_score": 7,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1433.1630420056172,
+        "tokens_used": 731
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 74,
+        "hunger": 32,
+        "inventory": {
+          "food": 0,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 6,
+        "thirst": 35,
+        "turn": 4,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 3
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 3
+          },
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 3
+          }
+        ]
+      },
+      "parsed_action": "move north",
+      "prompt_payload": {
+        "combined_prompt_sha256": "24a39c95e42f4fe04f7dfb86e0dd6889168762ccb65d02529a1f92cf5d8c9efc",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 4\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 74,\n  \"hunger\": 32,\n  \"inventory\": {\n    \"food\": 0,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 1,\n    \"y\": 2\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 6,\n  \"thirst\": 35,\n  \"turn\": 4,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 3\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 3\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 3\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "3cd4c367e2363754e4798a9e8e917fecc32adc877818ad43b441a030221c919a"
+      },
+      "raw_model_output": "move north",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 4,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            1,
+            1
+          ],
+          "position_before": [
+            1,
+            2
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 72,
+          "energy_before": 74,
+          "hunger_after": 36,
+          "hunger_before": 32,
+          "starvation_triggered": false,
+          "thirst_after": 40,
+          "thirst_before": 35
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "gather",
+        "invalid_reason": null,
+        "message": "gathered food",
+        "requested": "gather",
+        "success": true
+      },
+      "cumulative_score": 11,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1453.861500020139,
+        "tokens_used": 739
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "gather",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 72,
+        "hunger": 36,
+        "inventory": {
+          "food": 0,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 7,
+        "thirst": 40,
+        "turn": 5,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "gather",
+      "prompt_payload": {
+        "combined_prompt_sha256": "a7a05a348039657ec9abae40537dbe7b25b7b436660172db59d77f790fdb2689",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 5\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"gather\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 72,\n  \"hunger\": 36,\n  \"inventory\": {\n    \"food\": 0,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 1,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 7,\n  \"thirst\": 40,\n  \"turn\": 5,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 0,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- gather\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "e5b7a3a7890fba128865e0cf96b228bfa280d95522067a715e1a8f6a6a2af02a"
+      },
+      "raw_model_output": "gather",
+      "score_delta": {
+        "action": 3,
+        "events": [
+          "useful_gather",
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 4
+      },
+      "seed": 2,
+      "turn": 5,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "gather",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "inventory_delta": {
+            "food": 1
+          },
+          "tile_after": "empty",
+          "tile_before": "food"
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 70,
+          "energy_before": 72,
+          "hunger_after": 40,
+          "hunger_before": 36,
+          "starvation_triggered": false,
+          "thirst_after": 45,
+          "thirst_before": 40
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 12,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1535.9889999963343,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 70,
+        "hunger": 40,
+        "inventory": {
+          "food": 1,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 11,
+        "thirst": 45,
+        "turn": 6,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 0,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 0,
+            "y": 2
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "151a4131eb647dcc45430e63ba3908e31e6fe7c833b5d9375c9366871ffe7622",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 6\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 70,\n  \"hunger\": 40,\n  \"inventory\": {\n    \"food\": 1,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 1,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 11,\n  \"thirst\": 45,\n  \"turn\": 6,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 0,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 0,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 0,\n      \"y\": 2\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "e5a3a55522550c43914d7e881d240426336c5d71b5329b370c4080639ab48074"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 6,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            2,
+            1
+          ],
+          "position_before": [
+            1,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 68,
+          "energy_before": 70,
+          "hunger_after": 44,
+          "hunger_before": 40,
+          "starvation_triggered": false,
+          "thirst_after": 50,
+          "thirst_before": 45
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 13,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 2102.9038749984466,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 68,
+        "hunger": 44,
+        "inventory": {
+          "food": 1,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 2,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 12,
+        "thirst": 50,
+        "turn": 7,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 1,
+            "y": 2
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "6ef779cfba66c1944293ef94fc0f13e1b09122d3245bff4be9bfac4945f09e61",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 7\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 68,\n  \"hunger\": 44,\n  \"inventory\": {\n    \"food\": 1,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 2,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 12,\n  \"thirst\": 50,\n  \"turn\": 7,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 1,\n      \"y\": 2\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "1dde885e2a9f3eb5eceefe8b404f448b14d8173d13a18ef063427dc803a2666d"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 7,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            3,
+            1
+          ],
+          "position_before": [
+            2,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 66,
+          "energy_before": 68,
+          "hunger_after": 48,
+          "hunger_before": 44,
+          "starvation_triggered": false,
+          "thirst_after": 55,
+          "thirst_before": 50
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 14,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1914.6102499798872,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 66,
+        "hunger": 48,
+        "inventory": {
+          "food": 1,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 3,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 13,
+        "thirst": 55,
+        "turn": 8,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 2,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 2,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 2,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "520c87d764d3d01e3c99e1c2e4dd2ba3b338a1c51cb1207c2dcff247fabd6e28",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 8\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 66,\n  \"hunger\": 48,\n  \"inventory\": {\n    \"food\": 1,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 3,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 13,\n  \"thirst\": 55,\n  \"turn\": 8,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 2,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 2,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 2,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "b8ea74106a6704a289c6debad74abaa4d3f3cbe4465c3bd69327865a5f2a533c"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 8,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            3,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 64,
+          "energy_before": 66,
+          "hunger_after": 52,
+          "hunger_before": 48,
+          "starvation_triggered": false,
+          "thirst_after": 60,
+          "thirst_before": 55
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 15,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 824.5506249950267,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 64,
+        "hunger": 52,
+        "inventory": {
+          "food": 1,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 14,
+        "thirst": 60,
+        "turn": 9,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "b792e7920f9a29ba70a64094fc1e40fcc6e50a6f83973f2377c4db24281accfe",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 9\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 64,\n  \"hunger\": 52,\n  \"inventory\": {\n    \"food\": 1,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 14,\n  \"thirst\": 60,\n  \"turn\": 9,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "4878d59b87a8a1a1d11f5bdd784edd23ee3543baf2b8d1f9bcf06e69e1639f8b"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 9,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 62,
+          "energy_before": 64,
+          "hunger_after": 56,
+          "hunger_before": 52,
+          "starvation_triggered": false,
+          "thirst_after": 65,
+          "thirst_before": 60
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "gather",
+        "invalid_reason": null,
+        "message": "gathered food",
+        "requested": "gather",
+        "success": true
+      },
+      "cumulative_score": 19,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 711.426833004225,
+        "tokens_used": 662
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "gather",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 62,
+        "hunger": 56,
+        "inventory": {
+          "food": 1,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 15,
+        "thirst": 65,
+        "turn": 10,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "food",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "gather",
+      "prompt_payload": {
+        "combined_prompt_sha256": "40838d91c045e514777e00a4c6cae247a05909ebcfffb2b7652b907ec4063533",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 10\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"gather\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 62,\n  \"hunger\": 56,\n  \"inventory\": {\n    \"food\": 1,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 15,\n  \"thirst\": 65,\n  \"turn\": 10,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"food\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- gather\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "e4fb096f3529d2467fa4df56522c06123d7a414751caeec91dabb72b2faad3e3"
+      },
+      "raw_model_output": "gather",
+      "score_delta": {
+        "action": 3,
+        "events": [
+          "useful_gather",
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 4
+      },
+      "seed": 2,
+      "turn": 10,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "gather",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "inventory_delta": {
+            "food": 1
+          },
+          "tile_after": "empty",
+          "tile_before": "food"
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 60,
+          "energy_before": 62,
+          "hunger_after": 60,
+          "hunger_before": 56,
+          "starvation_triggered": false,
+          "thirst_after": 70,
+          "thirst_before": 65
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move west",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move west",
+        "success": true
+      },
+      "cumulative_score": 20,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 671.5105409966782,
+        "tokens_used": 654
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 60,
+        "hunger": 60,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 19,
+        "thirst": 70,
+        "turn": 11,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move west",
+      "prompt_payload": {
+        "combined_prompt_sha256": "a01152042871c5167007cd5472fc44fbc06a6e0e17d581f49ffcddc9a425f1e3",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 11\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 60,\n  \"hunger\": 60,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 19,\n  \"thirst\": 70,\n  \"turn\": 11,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "72e3ed3cc9c6a4128f3b6a6ea82a77425452e91c614ec60c819cfb4cdd201df8"
+      },
+      "raw_model_output": "move west",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 11,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            5,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 58,
+          "energy_before": 60,
+          "hunger_after": 64,
+          "hunger_before": 60,
+          "starvation_triggered": false,
+          "thirst_after": 75,
+          "thirst_before": 70
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 21,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1569.3629590095952,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 58,
+        "hunger": 64,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 20,
+        "thirst": 75,
+        "turn": 12,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "91ef11b2d60b87b6889e768710e48f5188987210d792a950e66cce5a3843c278",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 12\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 58,\n  \"hunger\": 64,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 20,\n  \"thirst\": 75,\n  \"turn\": 12,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "504a1c05af38905f7fe572e19c91223ee4d03b5d4fb88b055dad6512f139ce5b"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 12,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 56,
+          "energy_before": 58,
+          "hunger_after": 68,
+          "hunger_before": 64,
+          "starvation_triggered": false,
+          "thirst_after": 80,
+          "thirst_before": 75
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move west",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move west",
+        "success": true
+      },
+      "cumulative_score": 22,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 2121.103666955605,
+        "tokens_used": 654
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 56,
+        "hunger": 68,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 21,
+        "thirst": 80,
+        "turn": 13,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move west",
+      "prompt_payload": {
+        "combined_prompt_sha256": "ef6afbca5d2bbff4eeedde78387dba24258887560ca4913d3c1106f1623afb9d",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 13\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 56,\n  \"hunger\": 68,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 21,\n  \"thirst\": 80,\n  \"turn\": 13,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "7cf504b184ffd1433fb8a27437ff0c1776473630ee799d1e6908c6002ee7ba6b"
+      },
+      "raw_model_output": "move west",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 13,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            5,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 54,
+          "energy_before": 56,
+          "hunger_after": 72,
+          "hunger_before": 68,
+          "starvation_triggered": false,
+          "thirst_after": 85,
+          "thirst_before": 80
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 23,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 2573.890541039873,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 54,
+        "hunger": 72,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 22,
+        "thirst": 85,
+        "turn": 14,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "2c327eee8d9899c1eb9e7180e09560ce30fa0301ff0a4540664f5fc68f7f5eea",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 14\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 54,\n  \"hunger\": 72,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 22,\n  \"thirst\": 85,\n  \"turn\": 14,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "99ca8861979f1f90a05ba8c9ade5392ec9364caeb4821de643b4e3b55a7be793"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 14,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 52,
+          "energy_before": 54,
+          "hunger_after": 76,
+          "hunger_before": 72,
+          "starvation_triggered": false,
+          "thirst_after": 90,
+          "thirst_before": 85
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move west",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move west",
+        "success": true
+      },
+      "cumulative_score": 24,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 2044.2322080489248,
+        "tokens_used": 654
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 52,
+        "hunger": 76,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 23,
+        "thirst": 90,
+        "turn": 15,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move west",
+      "prompt_payload": {
+        "combined_prompt_sha256": "6f288641a1ac95deb19521bc1da28cb126776fd089c365f97eb18fbe7f686ccb",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 15\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 52,\n  \"hunger\": 76,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 23,\n  \"thirst\": 90,\n  \"turn\": 15,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "896aafbb6c93a7b0407c19e34a6ae542e05b28e429deda859ef033ca87852006"
+      },
+      "raw_model_output": "move west",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 15,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            5,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": false,
+          "energy_after": 50,
+          "energy_before": 52,
+          "hunger_after": 80,
+          "hunger_before": 76,
+          "starvation_triggered": false,
+          "thirst_after": 95,
+          "thirst_before": 90
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 25,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 820.3254579566419,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 50,
+        "hunger": 80,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 24,
+        "thirst": 95,
+        "turn": 16,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "90fcc728068075023272643a12adaecb75df08f542011635bcdec6080fbc44bd",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 16\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 50,\n  \"hunger\": 80,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 24,\n  \"thirst\": 95,\n  \"turn\": 16,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "c05d9c4b3d3ee2fa2122e97d4723b25883a33df6534215b62373f28d0dd3c36b"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 16,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": true,
+          "energy_after": 38,
+          "energy_before": 50,
+          "hunger_after": 84,
+          "hunger_before": 80,
+          "starvation_triggered": false,
+          "thirst_after": 100,
+          "thirst_before": 95
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move west",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move west",
+        "success": true
+      },
+      "cumulative_score": 26,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 673.8906250102445,
+        "tokens_used": 654
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 38,
+        "hunger": 84,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 25,
+        "thirst": 100,
+        "turn": 17,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move west",
+      "prompt_payload": {
+        "combined_prompt_sha256": "c9c0ecc81e8248813e08d78ebb37339fa1fc58585037f46b328e7ec8066a40fa",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 17\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 38,\n  \"hunger\": 84,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 25,\n  \"thirst\": 100,\n  \"turn\": 17,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "9c5dca6eb0f506d6c397a36c1def363e6af4f422dc72acef122200993a82c849"
+      },
+      "raw_model_output": "move west",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 17,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            5,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": true,
+          "energy_after": 26,
+          "energy_before": 38,
+          "hunger_after": 88,
+          "hunger_before": 84,
+          "starvation_triggered": false,
+          "thirst_after": 100,
+          "thirst_before": 100
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 27,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 3113.0424170405604,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 26,
+        "hunger": 88,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 26,
+        "thirst": 100,
+        "turn": 18,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "6ee28f2a83bdf281615ffef92df0dd4eee362837dceeceb425c8d9de785efc85",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 18\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 26,\n  \"hunger\": 88,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 26,\n  \"thirst\": 100,\n  \"turn\": 18,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "a4ee89f0b2ecaf01db08113698896fef33cc026743fb5729d333eebc67372ed2"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 18,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": true,
+          "energy_after": 14,
+          "energy_before": 26,
+          "hunger_after": 92,
+          "hunger_before": 88,
+          "starvation_triggered": false,
+          "thirst_after": 100,
+          "thirst_before": 100
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move west",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move west",
+        "success": true
+      },
+      "cumulative_score": 28,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 1411.8431669776328,
+        "tokens_used": 654
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 14,
+        "hunger": 92,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 5,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 27,
+        "thirst": 100,
+        "turn": 19,
+        "visible_tiles": [
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move west",
+      "prompt_payload": {
+        "combined_prompt_sha256": "0a4585c9820c3430ed4f5ff66585b41931f36de92c94e9bac2608c0bbeaac09f",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 19\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 14,\n  \"hunger\": 92,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 5,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 27,\n  \"thirst\": 100,\n  \"turn\": 19,\n  \"visible_tiles\": [\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "e193b0020d1c1615af76059240b3bc4e5151a43a85c2cd5d9ddd0d59c6b05b60"
+      },
+      "raw_model_output": "move west",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "survive_turn"
+        ],
+        "survival": 1,
+        "total": 1
+      },
+      "seed": 2,
+      "turn": 19,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            4,
+            1
+          ],
+          "position_before": [
+            5,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": true,
+          "dehydration_triggered": true,
+          "energy_after": 2,
+          "energy_before": 14,
+          "hunger_after": 96,
+          "hunger_before": 92,
+          "starvation_triggered": false,
+          "thirst_after": 100,
+          "thirst_before": 100
+        }
+      }
+    },
+    {
+      "action_result": {
+        "applied": "move east",
+        "invalid_reason": null,
+        "message": "move applied",
+        "requested": "move east",
+        "success": true
+      },
+      "cumulative_score": 18,
+      "metrics": {
+        "estimated_cost": null,
+        "latency_ms": 2026.108582969755,
+        "tokens_used": 738
+      },
+      "observation": {
+        "agent_id": "agent_1",
+        "alive": true,
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "energy": 2,
+        "hunger": 96,
+        "inventory": {
+          "food": 2,
+          "stone": 0,
+          "water": 1,
+          "wood": 0
+        },
+        "position": {
+          "x": 4,
+          "y": 1
+        },
+        "protocol_version": "AIB-0.1",
+        "score": 28,
+        "thirst": 100,
+        "turn": 20,
+        "visible_tiles": [
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 0
+          },
+          {
+            "type": "rock",
+            "x": 4,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 0
+          },
+          {
+            "type": "empty",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 4,
+            "y": 1
+          },
+          {
+            "type": "empty",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "type": "tree",
+            "x": 3,
+            "y": 2
+          },
+          {
+            "type": "water",
+            "x": 4,
+            "y": 2
+          },
+          {
+            "type": "tree",
+            "x": 5,
+            "y": 2
+          }
+        ]
+      },
+      "parsed_action": "move east",
+      "prompt_payload": {
+        "combined_prompt_sha256": "dbdd5bae638874baf92d11fa9c270a96699434c4fec5fc75026ae6511c79f2fe",
+        "system_prompt": "# TinyWorld Survival Agent Core (v0.1)\n\n## Engine Contract\n- The engine is authoritative for world state, action validity, scoring, and end conditions.\n- You act only from the provided observation and allowed actions.\n- Determinism and fairness are benchmark requirements.\n## General Rules\n- Survive as many turns as possible while managing energy, hunger, and thirst.\n- Gather resources when available and consume food/water when useful.\n- Invalid actions are penalized and still consume the turn.\n## Action Reference (engine-supported commands)\n- move north: move one tile north if in bounds.\n- move south: move one tile south if in bounds.\n- move east: move one tile east if in bounds.\n- move west: move one tile west if in bounds.\n- gather: collect a resource from your current tile.\n- eat: consume 1 food from inventory to reduce hunger.\n- drink: consume 1 water from inventory to reduce thirst.\n- rest: recover some energy.\n- inspect: spend a turn inspecting the current situation.\n## Output Contract (strict)\n- Return exactly one action string.\n- Do not return JSON.\n- Do not return markdown.\n- Do not explain your reasoning.\n- Do not output multiple actions.\n- Use only the exact action string you choose.",
+        "system_prompt_sha256": "c522e0b0f1da92e3025ca88c40e23f49cf697808fba651e1bb0b5bc9a8a309fc",
+        "user_prompt": "# Turn Observation\n\nTurn: 20\nAgent ID: agent_1\n\nCurrent structured observation:\n```json\n{\n  \"agent_id\": \"agent_1\",\n  \"alive\": true,\n  \"allowed_actions\": [\n    \"move north\",\n    \"move south\",\n    \"move east\",\n    \"move west\",\n    \"eat\",\n    \"drink\",\n    \"rest\",\n    \"inspect\"\n  ],\n  \"energy\": 2,\n  \"hunger\": 96,\n  \"inventory\": {\n    \"food\": 2,\n    \"stone\": 0,\n    \"water\": 1,\n    \"wood\": 0\n  },\n  \"position\": {\n    \"x\": 4,\n    \"y\": 1\n  },\n  \"protocol_version\": \"AIB-0.1\",\n  \"score\": 28,\n  \"thirst\": 100,\n  \"turn\": 20,\n  \"visible_tiles\": [\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 0\n    },\n    {\n      \"type\": \"rock\",\n      \"x\": 4,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 0\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 3,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 4,\n      \"y\": 1\n    },\n    {\n      \"type\": \"empty\",\n      \"x\": 5,\n      \"y\": 1\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 3,\n      \"y\": 2\n    },\n    {\n      \"type\": \"water\",\n      \"x\": 4,\n      \"y\": 2\n    },\n    {\n      \"type\": \"tree\",\n      \"x\": 5,\n      \"y\": 2\n    }\n  ]\n}\n```\n\nAllowed actions for this turn (exact strings):\n- move north\n- move south\n- move east\n- move west\n- eat\n- drink\n- rest\n- inspect",
+        "user_prompt_sha256": "40fa67bbc9b5e5510800258d77ce12e4fd5f1563c14b14e647baf3bb86e40850"
+      },
+      "raw_model_output": "move east",
+      "score_delta": {
+        "action": 0,
+        "events": [
+          "death_penalty"
+        ],
+        "survival": -10,
+        "total": -10
+      },
+      "seed": 2,
+      "turn": 20,
+      "validation_result": {
+        "allowed_actions": [
+          "move north",
+          "move south",
+          "move east",
+          "move west",
+          "eat",
+          "drink",
+          "rest",
+          "inspect"
+        ],
+        "error": null,
+        "is_valid": true
+      },
+      "world_result_delta": {
+        "action_delta": {
+          "position_after": [
+            5,
+            1
+          ],
+          "position_before": [
+            4,
+            1
+          ]
+        },
+        "survival_delta": {
+          "alive_after": false,
+          "dehydration_triggered": true,
+          "energy_after": 0,
+          "energy_before": 2,
+          "hunger_after": 100,
+          "hunger_before": 96,
+          "starvation_triggered": true,
+          "thirst_after": 100,
+          "thirst_before": 100
+        }
+      }
+    }
+  ],
+  "version": "0.1.27",
+  "world_snapshots": {
+    "final_tiles": [
+      [
+        "rock",
+        "empty",
+        "rock",
+        "empty",
+        "rock",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty",
+        "empty"
+      ],
+      [
+        "water",
+        "empty",
+        "food",
+        "tree",
+        "water",
+        "tree"
+      ],
+      [
+        "empty",
+        "empty",
+        "rock",
+        "empty",
+        "rock",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "tree",
+        "empty",
+        "tree",
+        "food"
+      ],
+      [
+        "tree",
+        "rock",
+        "empty",
+        "water",
+        "empty",
+        "tree"
+      ]
+    ],
+    "initial_tiles": [
+      [
+        "rock",
+        "empty",
+        "rock",
+        "empty",
+        "rock",
+        "empty"
+      ],
+      [
+        "empty",
+        "food",
+        "empty",
+        "empty",
+        "empty",
+        "food"
+      ],
+      [
+        "water",
+        "water",
+        "food",
+        "tree",
+        "water",
+        "tree"
+      ],
+      [
+        "empty",
+        "empty",
+        "rock",
+        "empty",
+        "rock",
+        "empty"
+      ],
+      [
+        "empty",
+        "empty",
+        "tree",
+        "empty",
+        "tree",
+        "food"
+      ],
+      [
+        "tree",
+        "rock",
+        "empty",
+        "water",
+        "empty",
+        "tree"
+      ]
+    ]
+  }
+}

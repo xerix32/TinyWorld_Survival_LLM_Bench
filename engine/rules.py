@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from engine.actions import ACTION_REFERENCE, MOVE_DELTAS
-from engine.world import RESOURCE_TILE_TO_ITEM, WorldState, get_tile, is_in_bounds
+from engine.world import RESOURCE_TILE_TO_ITEM, WorldState, get_alive_npc_at, get_tile, is_in_bounds
 
 
 @dataclass
@@ -57,6 +57,11 @@ def compute_allowed_actions(
 
         if action == "gather":
             if current_tile in RESOURCE_TILE_TO_ITEM:
+                allowed.append(action)
+            continue
+
+        if action == "attack":
+            if get_alive_npc_at(world, agent.position.x, agent.position.y) is not None:
                 allowed.append(action)
             continue
 

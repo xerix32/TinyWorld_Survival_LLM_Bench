@@ -1218,6 +1218,35 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
     }
 
+    .npc-stack {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 2px;
+      min-height: 14px;
+      margin-top: 1px;
+    }
+
+    .npc-pill {
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      background: rgba(251, 146, 60, 0.16);
+      border-radius: 999px;
+      padding: 0 4px;
+      font-family: var(--font-mono);
+      font-size: 0.52rem;
+      font-weight: 700;
+      color: #fdba74;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+
+    .npc-pill.hostile {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.16);
+      color: #fca5a5;
+    }
+
     .agent-mark {
       position: absolute;
       bottom: 2px;
@@ -1244,6 +1273,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-family: var(--font-mono);
       color: var(--text-dim);
       font-size: 0.68rem;
+    }
+
+    .map-summary-cards {
+      margin-top: 4px;
+      border-radius: 6px;
     }
 
     /* ── DETAIL PANEL ── */
@@ -1328,6 +1362,46 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .inv-item strong { color: var(--text); }
+
+    .npc-grid {
+      display: grid;
+      gap: 4px;
+    }
+
+    .npc-item {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-card);
+      padding: 5px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+
+    .npc-item.hostile {
+      border-color: rgba(248, 113, 113, 0.45);
+      background: rgba(248, 113, 113, 0.08);
+      color: #fca5a5;
+    }
+
+    .npc-item .npc-hp {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .npc-empty {
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-align: center;
+    }
 
     /* ── CODE BLOCK ── */
     .code-block {
@@ -1458,6 +1532,24 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       border-color: rgba(8, 145, 178, 0.35);
     }
 
+    [data-theme="light"] .npc-pill {
+      border-color: rgba(194, 65, 12, 0.45);
+      background: rgba(234, 88, 12, 0.1);
+      color: #9a3412;
+    }
+
+    [data-theme="light"] .npc-pill.hostile {
+      border-color: rgba(185, 28, 28, 0.45);
+      background: rgba(220, 38, 38, 0.08);
+      color: #991b1b;
+    }
+
+    [data-theme="light"] .npc-item.hostile {
+      border-color: rgba(220, 38, 38, 0.45);
+      background: rgba(220, 38, 38, 0.06);
+      color: #991b1b;
+    }
+
     [data-theme="light"] .tile.visited::after {
       border-color: rgba(8, 145, 178, 0.35);
     }
@@ -1547,7 +1639,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Percentage of runs where agent survived all turns\" class=\"tip-down\" data-sort-key=\"survival_pct\" data-sort-desc=\"1\">Survival</th>
                 <th data-tip=\"Average API response time per turn\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Latency</th>
                 <th data-tip=\"Estimated total cost across all runs\" class=\"tip-down\" data-sort-key=\"estimated_cost_grand_total\">Cost</th>
-                <th data-tip=\"Score points per dollar spent (higher = better value)\" class=\"tip-down\" data-sort-key=\"score_per_cost\" data-sort-desc=\"1\">Score/$</th>
+                <th data-tip=\"Average input / output tokens per run (high output ratio may indicate thinking)\" class=\"tip-down\" data-sort-key=\"completion_tokens_avg\" data-sort-desc=\"1\">I/O Tokens</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
               </tr>
             </thead>
@@ -1665,6 +1757,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <span class=\"field-label\">Status</span>
             <select id=\"statusFilter\"></select>
           </div>
+          <div class=\"field\">
+            <span class=\"field-label\">Attempt</span>
+            <select id=\"attemptFilter\"></select>
+          </div>
 
           <div class=\"run-nav\">
             <button type=\"button\" id=\"prevRunBtn\">&#9664; Prev</button>
@@ -1690,6 +1786,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <div class=\"map-board\">
               <div class=\"map-grid\" id=\"mapGrid\"></div>
               <div class=\"map-legend\" id=\"mapLegend\"></div>
+              <div class=\"summary-cards map-summary-cards\" id=\"mapSummaryCards\"></div>
             </div>
 
             <div class=\"detail-panel\">
@@ -1706,6 +1803,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class=\"detail-section\">
                 <div class=\"detail-label\">Inventory</div>
                 <div class=\"inv-grid\" id=\"inventoryGrid\"></div>
+              </div>
+
+              <div class=\"detail-section\">
+                <div class=\"detail-label\">NPCs Nearby</div>
+                <div class=\"npc-grid\" id=\"npcGrid\"></div>
               </div>
 
               <details>
@@ -1791,6 +1893,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const modelFilter = document.getElementById('modelFilter');
     const seedFilter = document.getElementById('seedFilter');
     const statusFilter = document.getElementById('statusFilter');
+    const attemptFilter = document.getElementById('attemptFilter');
 
     const prevRunBtn = document.getElementById('prevRunBtn');
     const nextRunBtn = document.getElementById('nextRunBtn');
@@ -1806,10 +1909,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     const mapGrid = document.getElementById('mapGrid');
     const mapLegend = document.getElementById('mapLegend');
+    const mapSummaryCards = document.getElementById('mapSummaryCards');
 
     const turnStatus = document.getElementById('turnStatus');
     const stateMeters = document.getElementById('stateMeters');
     const inventoryGrid = document.getElementById('inventoryGrid');
+    const npcGrid = document.getElementById('npcGrid');
     const rawOutput = document.getElementById('rawOutput');
     const scoreEvents = document.getElementById('scoreEvents');
     const timelineBody = document.getElementById('timelineBody');
@@ -1846,12 +1951,52 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const meta = DATA.meta || {};
     const adaptiveSection = (DATA.adaptive && typeof DATA.adaptive === 'object') ? DATA.adaptive : null;
     const adaptiveModelRows = Array.isArray(adaptiveSection?.models) ? adaptiveSection.models : [];
-    const adaptiveAvgByProfile = new Map(
-      adaptiveModelRows
-        .map(row => [String(row?.model_profile || ''), Number(row?.adaptive_score_avg)])
+    // Compute adaptive-only average from pairs (excluding control runs)
+    const adaptiveAvgByProfile = new Map();
+    if (Array.isArray(adaptiveSection?.pairs)) {
+      const byProfile = {};
+      for (const p of adaptiveSection.pairs) {
+        const mp = String(p.model_profile || '');
+        if (!byProfile[mp]) byProfile[mp] = [];
+        const score = Number(p.adaptive_score);
+        if (Number.isFinite(score)) byProfile[mp].push(score);
+      }
+      for (const [mp, scores] of Object.entries(byProfile)) {
+        if (scores.length) adaptiveAvgByProfile.set(mp, scores.reduce((a, b) => a + b, 0) / scores.length);
+      }
+    }
+    const memoryEffectByProfile = new Map(
+      (adaptiveSection?.learning_kpis || [])
+        .map(k => [String(k?.model_profile || ''), Number(k?.avg_memory_effect ?? 0)])
         .filter((entry) => Number.isFinite(entry[1]))
     );
+    // Compute no-memory average (avg of initial + control) from pairs
+    const noMemAvgByProfile = new Map();
+    if (Array.isArray(adaptiveSection?.pairs)) {
+      const byProfile = {};
+      for (const p of adaptiveSection.pairs) {
+        const mp = String(p.model_profile || '');
+        if (!byProfile[mp]) byProfile[mp] = [];
+        const init = Number(p.initial_score);
+        const ctrl = Number(p.control_score);
+        if (Number.isFinite(init)) byProfile[mp].push(init);
+        if (Number.isFinite(ctrl)) byProfile[mp].push(ctrl);
+      }
+      for (const [mp, scores] of Object.entries(byProfile)) {
+        if (scores.length) noMemAvgByProfile.set(mp, scores.reduce((a, b) => a + b, 0) / scores.length);
+      }
+    }
     const hasAdaptive = adaptiveAvgByProfile.size > 0;
+
+    // Override avg_final_score with no-memory avg (initial+control) globally
+    for (const m of models) {
+      if (noMemAvgByProfile.has(m.model_profile)) {
+        m.avg_final_score = noMemAvgByProfile.get(m.model_profile);
+      }
+    }
+    // Re-sort and re-rank models after avg_final_score override
+    models.sort((a, b) => (b.avg_final_score ?? 0) - (a.avg_final_score ?? 0));
+    models.forEach((m, i) => { m.rank = i + 1; });
 
     let selectedRunIndex = 0;
     let filteredRunIndexes = [];
@@ -1974,6 +2119,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return Math.round(num).toLocaleString('en-US');
     }
 
+    function displayName(profile) {
+      return String(profile || '')
+        .replace(/^vercel_/, '')
+        .replace(/_/g, ' ');
+    }
+
     function formatFloat(value, digits = 2, fallback = 'n/a') {
       if (value === null || value === undefined || value === '') return fallback;
       const num = Number(value);
@@ -2026,9 +2177,113 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return text.length <= 18 ? text : `${text.slice(0, 18)}...`;
     }
 
+    function npcEmoji(npcType) {
+      const t = String(npcType || '').toLowerCase();
+      if (t.includes('animal') || t.includes('cow') || t.includes('boar') || t.includes('deer')) return '\\u{1F404}';
+      if (t.includes('wolf') || t.includes('tiger') || t.includes('bear')) return '\\u{1F43A}';
+      return '\\u{1F43E}';
+    }
+
+    function normalizeNpcState(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const npcId = String(raw.npc_id || '').trim();
+      if (!npcId) return null;
+      const pos = (raw.position && typeof raw.position === 'object') ? raw.position : raw;
+      const x = numberOr(pos.x, Number.NaN);
+      const y = numberOr(pos.y, Number.NaN);
+      return {
+        npc_id: npcId,
+        npc_type: String(raw.npc_type || 'npc'),
+        x,
+        y,
+        hp: (raw.hp === null || raw.hp === undefined) ? null : numberOr(raw.hp, null),
+        hostile: Boolean(raw.hostile),
+        alive: raw.alive === undefined ? true : Boolean(raw.alive),
+      };
+    }
+
+    function buildNpcStatesForFrame(run, frameIndex) {
+      const states = new Map();
+      const world = run?.replay?.world || {};
+      const initial = Array.isArray(world.initial_npcs) ? world.initial_npcs : [];
+      for (const raw of initial) {
+        const npc = normalizeNpcState(raw);
+        if (npc) states.set(npc.npc_id, npc);
+      }
+
+      const frames = Array.isArray(run?.replay?.frames) ? run.replay.frames : [];
+      if (!frames.length) return Array.from(states.values());
+      const last = Math.max(0, Math.min(frameIndex, frames.length - 1));
+
+      for (let i = 0; i <= last; i++) {
+        const frame = frames[i] || {};
+        const visible = Array.isArray(frame.observation?.visible_npcs) ? frame.observation.visible_npcs : [];
+        for (const raw of visible) {
+          const npc = normalizeNpcState(raw);
+          if (!npc) continue;
+          const prev = states.get(npc.npc_id);
+          states.set(npc.npc_id, { ...(prev || {}), ...npc });
+        }
+
+        const actionDelta = frame.world_result_delta?.action_delta || {};
+        const npcId = String(actionDelta.npc_id || '').trim();
+        if (!npcId) continue;
+
+        const prev = states.get(npcId) || {
+          npc_id: npcId,
+          npc_type: String(actionDelta.npc_type || 'npc'),
+          x: Number.NaN,
+          y: Number.NaN,
+          hp: null,
+          hostile: false,
+          alive: true,
+        };
+        const next = { ...prev };
+        if (actionDelta.npc_type !== undefined) next.npc_type = String(actionDelta.npc_type || next.npc_type || 'npc');
+        if (actionDelta.npc_hp_after !== undefined) next.hp = numberOr(actionDelta.npc_hp_after, next.hp);
+        if (actionDelta.npc_hostile_after !== undefined) next.hostile = Boolean(actionDelta.npc_hostile_after);
+        if (actionDelta.npc_alive_after !== undefined) next.alive = Boolean(actionDelta.npc_alive_after);
+        states.set(npcId, next);
+      }
+
+      return Array.from(states.values()).sort((a, b) => {
+        const ay = Number.isFinite(a.y) ? a.y : 9999;
+        const by = Number.isFinite(b.y) ? b.y : 9999;
+        if (ay !== by) return ay - by;
+        const ax = Number.isFinite(a.x) ? a.x : 9999;
+        const bx = Number.isFinite(b.x) ? b.x : 9999;
+        if (ax !== bx) return ax - bx;
+        return String(a.npc_id || '').localeCompare(String(b.npc_id || ''));
+      });
+    }
+
     function adaptiveAvgScoreForModel(modelProfile) {
       const raw = adaptiveAvgByProfile.get(String(modelProfile || ''));
       return Number.isFinite(raw) ? raw : null;
+    }
+
+    function getRunAttemptKind(run) {
+      const raw = String(
+        run?.attempt_kind
+          ?? run?.summary?.attempt_kind
+          ?? 'initial'
+      ).trim();
+      if (!raw) return 'initial';
+      return raw;
+    }
+
+    function attemptSortIndex(kind) {
+      if (kind === 'initial') return 1;
+      if (kind === 'control_rerun') return 2;
+      if (kind === 'adaptive_rerun') return 3;
+      return 9;
+    }
+
+    function attemptLabel(kind) {
+      if (kind === 'initial') return 'initial';
+      if (kind === 'control_rerun') return 'rerun';
+      if (kind === 'adaptive_rerun') return 'rerun+mem';
+      return String(kind || 'run').replaceAll('_', ' ');
     }
 
     function getRunStatus(summary) {
@@ -2121,6 +2376,28 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const fallback = Number(meta.adaptive_aggregate_score);
         return Number.isFinite(fallback) ? fallback : null;
       })();
+      const moralMode = (() => {
+        const normalize = (raw) => {
+          if (typeof raw === 'boolean') return raw ? 'on' : 'off';
+          const text = String(raw ?? '').trim().toLowerCase();
+          if (!text) return null;
+          if (text === 'true' || text === 'on') return 'on';
+          if (text === 'false' || text === 'off') return 'off';
+          return text;
+        };
+
+        const metaMode = normalize(meta?.moral_mode);
+        if (metaMode) return metaMode;
+
+        const modes = Array.from(new Set(
+          (runs || [])
+            .map(row => normalize(row?.summary?.moral_mode))
+            .filter(Boolean)
+        ));
+        if (modes.length === 1) return modes[0];
+        if (modes.length > 1) return 'mixed';
+        return 'not available';
+      })();
 
       const protocolBtn = `<button class="chip chip-btn" id="protocolChip" type="button" data-tip="Click to show the full game rules, stat mechanics, and scoring logic"><span class="chip-key">protocol</span> <span class="chip-val">${meta.protocol_version || '-'}</span></button>`;
       const chips = [
@@ -2128,6 +2405,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         chip('bench', meta.bench_version || '-', 'Version of the benchmark harness that ran the tests'),
         chip('engine', meta.engine_version || '-', 'Version of the TinyWorld simulation engine'),
         chip('scenario', meta.scenario || '-', 'The map and rules configuration used for this benchmark'),
+        chip('moral', moralMode, 'Optional moral framing in system prompt (on/off). Mixed means runs used different settings'),
         chip('models', formatCount(meta.models?.length || models.length), 'Number of distinct AI models tested'),
         chip('runs/model', formatCount(meta.runs_per_model), 'How many runs each model played (one per seed)'),
         chip('total runs', formatCount(meta.total_runs || runs.length), 'Total number of runs across all models and seeds'),
@@ -2310,7 +2588,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (key === 'rank') return Number(m.rank ?? 999);
       if (key === 'survival_pct') return 100 - Number(m.death_rate_pct ?? 100);
       if (key === 'latency_per_turn') return modelLatencyPerTurn(m) ?? Infinity;
-      if (key === 'score_per_cost') return modelScorePerCost(m) ?? -Infinity;
+      if (key === 'completion_tokens_avg') return Number(m.completion_tokens_total ?? 0) / Math.max(1, Number(m.runs ?? 1));
       return Number(m[key] ?? 0);
     }
 
@@ -2321,6 +2599,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const vb = getSortValue(b, key);
         return desc ? vb - va : va - vb;
       });
+      // Re-assign ranks after sort
+      models.forEach((m, i) => { m.rank = i + 1; });
       // update all sort indicators
       document.querySelectorAll('th[data-sort-key]').forEach(th => {
         th.classList.remove('sort-asc', 'sort-desc');
@@ -2435,6 +2715,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
 
       const m = models[0];
+      const winnerAvg = noMemAvgByProfile.get(m.model_profile) ?? Number(m.avg_final_score ?? 0);
       const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
       const latency = formatDurationFromMs(modelLatencyPerTurn(m));
       const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
@@ -2446,13 +2727,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       el.innerHTML = `<div class="winner-strip">
         <div class="ws-rank">1</div>
         <div class="ws-info">
-          <div class="ws-model"><span style="color:${m._color || '#22d3ee'}">${m.model_profile}</span> ${renderBadges(m)}</div>
+          <div class="ws-model"><span style="color:${m._color || '#22d3ee'}">${displayName(m.model_profile)}</span> ${renderBadges(m)}</div>
         </div>
         <div class="ws-score-block">
           ${hasAdaptiveStats
             ? `<div class="ws-score-duo">
                 <div>
-                  <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
+                  <div class="ws-score">${formatFloat(winnerAvg, 2)}</div>
                   <div class="ws-score-label">Avg Score</div>
                 </div>
                 <div>
@@ -2461,7 +2742,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 </div>
               </div>`
             : `<div>
-                <div class="ws-score">${formatFloat(m.avg_final_score, 2)}</div>
+                <div class="ws-score">${formatFloat(winnerAvg, 2)}</div>
                 <div class="ws-score-label">Avg Score</div>
               </div>`
           }
@@ -2493,7 +2774,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
 
       el.innerHTML = models.map((m, i) => {
-        const avg = Number(m.avg_final_score ?? 0);
+        const avgInitial = Number(m.avg_final_score ?? 0);
+        const avg = noMemAvgByProfile.get(m.model_profile) ?? avgInitial;
         const best = Number(m.best_final_score ?? avg);
         const worst = Number(m.worst_final_score ?? avg);
         const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
@@ -2517,32 +2799,48 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class="range-dot" style="left:${avgPct}%;background:${mColor}"></div>
             </div>`;
 
-        // Adaptive score cell
+        // Adaptive score cell — delta is memory_effect (adaptive - control), not adaptive - baseline
         let adaptiveCell = '';
         if (hasAdaptive) {
           const adaptiveAvg = adaptiveAvgByProfile.get(m.model_profile);
           if (adaptiveAvg != null) {
-            const delta = adaptiveAvg - avg;
-            const deltaColor = delta > 0 ? 'var(--green)' : (delta < 0 ? 'var(--red)' : 'var(--text-secondary)');
-            const deltaStr = delta >= 0 ? '+' + formatFloat(delta, 1) : formatFloat(delta, 1);
-            adaptiveCell = `<td class="adaptive-col" data-tip="Baseline ${formatFloat(avg, 1)} → Adaptive ${formatFloat(adaptiveAvg, 1)} (${deltaStr})" style="font-weight:700">${formatFloat(adaptiveAvg, 2)} <span style="color:${deltaColor};font-size:0.8em;font-weight:600">${deltaStr}</span></td>`;
+            const memEffect = memoryEffectByProfile.get(m.model_profile) ?? (adaptiveAvg - avg);
+            const deltaColor = memEffect > 0 ? 'var(--green)' : (memEffect < 0 ? 'var(--red)' : 'var(--text-secondary)');
+            const deltaStr = memEffect >= 0 ? '+' + formatFloat(memEffect, 1) : formatFloat(memEffect, 1);
+            adaptiveCell = `<td class="adaptive-col" data-tip="With memory: ${formatFloat(adaptiveAvg, 1)}, no memory: ${formatFloat(avg, 1)}, effect: ${deltaStr}" style="font-weight:700">${formatFloat(adaptiveAvg, 2)} <span style="color:${deltaColor};font-size:0.8em;font-weight:600">${deltaStr}</span></td>`;
           } else {
             adaptiveCell = '<td class="adaptive-col" style="color:var(--text-dim)">–</td>';
           }
         }
-        // Store adaptive_avg_score on model for sorting
+        // Store computed values on model for sorting
         m.adaptive_avg_score = adaptiveAvgByProfile.get(m.model_profile) ?? null;
+
+        // I/O Tokens cell
+        const ioRuns = Math.max(1, Number(m.runs ?? 1));
+        const ioPrompt = m.prompt_tokens_total != null ? Math.round(Number(m.prompt_tokens_total) / ioRuns) : null;
+        const ioCompl = m.completion_tokens_total != null ? Math.round(Number(m.completion_tokens_total) / ioRuns) : null;
+        let ioCell = '<span style="color:var(--text-dim)">n/a</span>';
+        if (ioPrompt != null || ioCompl != null) {
+          const fmtK = v => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : String(v);
+          const outRatio = ioPrompt != null && ioCompl != null && (ioPrompt + ioCompl) > 0
+            ? ((ioCompl / (ioPrompt + ioCompl)) * 100).toFixed(0) : null;
+          const thinkHint = outRatio != null ? (Number(outRatio) > 20 ? 'likely thinking' : 'minimal output') : '';
+          const tipParts = [];
+          if (outRatio != null) tipParts.push('Output ratio: ' + outRatio + '% — ' + thinkHint);
+          tipParts.push('Avg per run: input ' + (ioPrompt != null ? ioPrompt.toLocaleString() : '?') + ' / output ' + (ioCompl != null ? ioCompl.toLocaleString() : '?'));
+          ioCell = '<span data-tip="' + tipParts.join('. ') + '">' + fmtK(ioPrompt ?? 0) + ' / ' + fmtK(ioCompl ?? 0) + '</span>';
+        }
 
         return `<tr>
           <td class="lb-rank">${m.rank}</td>
-          <td class="lb-model"><span style="color:${mColor}">${m.model_profile}</span> ${renderBadges(m, 2)}</td>
-          <td class="lb-score">${formatFloat(avg, 2)}</td>
+          <td class="lb-model"><span style="color:${mColor}">${displayName(m.model_profile)}</span> ${renderBadges(m, 2)}</td>
+          <td class="lb-score" data-tip="Avg of initial + control runs (no memory)">${formatFloat(avg, 2)}</td>
           ${adaptiveCell}
           <td><div class="range-bar-wrap">${rangeBar}</div></td>
           <td>${survivalRate}%</td>
           <td>${latency}</td>
           <td>${cost}</td>
-          <td>${(() => { const v = modelScorePerCost(m); return v != null ? formatFloat(v, 0) : 'n/a'; })()}</td>
+          <td>${ioCell}</td>
           <td>${coverage}</td>
         </tr>`;
       }).join('');
@@ -2631,7 +2929,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       legendEl.innerHTML = models.map((m, i) => {
         return `<div class="radar-legend-item">
           <span class="radar-legend-dot" style="background:${m._color || '#888'}"></span>
-          ${m.model_profile}
+          ${displayName(m.model_profile)}
         </div>`;
       }).join('');
     }
@@ -2684,7 +2982,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         return `<div class="donut-cell">
           <div class="donut-label" data-tip="${cat.tip}">${cat.label}</div>
           <svg viewBox="0 0 ${size} ${size}" width="100" height="100">${arcs}</svg>
-          <div class="donut-winner" data-tip="Leader: ${models[bestIdx].model_profile}">${models[bestIdx].model_profile}</div>
+          <div class="donut-winner" data-tip="Leader: ${displayName(models[bestIdx].model_profile)}">${displayName(models[bestIdx].model_profile)}</div>
         </div>`;
       }).join('');
     }
@@ -2723,7 +3021,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const isWinner = rank === 0;
           const barStyle = `width:${pct}%;background:${r.m._color || '#888'}`;
           return `<div class="badge-race-row" data-tip="${r.m.model_profile}: ${label}">
-            <div class="badge-race-name" style="color:${r.m._color || '#888'}">${r.m.model_profile.replace(/^vercel_/, '')}</div>
+            <div class="badge-race-name" style="color:${r.m._color || '#888'}">${displayName(r.m.model_profile)}</div>
             <div class="badge-race-track"><div class="badge-race-fill" style="${barStyle}${isWinner ? ';opacity:1' : ';opacity:0.6'}"></div></div>
             <div class="badge-race-val">${label}</div>
           </div>`;
@@ -2780,7 +3078,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               ? 'left:50%;width:' + halfPct + '%;background:' + barColor + ';opacity:' + opacity
               : 'right:50%;width:' + halfPct + '%;background:' + barColor + ';opacity:' + opacity;
             return '<div class="badge-race-row" data-tip="' + r.model_profile + ': ' + race.fmt(val) + '">' +
-              '<div class="badge-race-name" style="color:' + color + '">' + r.model_profile.replace(/^vercel_/, '') + '</div>' +
+              '<div class="badge-race-name" style="color:' + color + '">' + displayName(r.model_profile) + '</div>' +
               '<div class="badge-race-track" style="position:relative">' +
                 '<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border-bright);z-index:1"></div>' +
                 '<div class="badge-race-fill" style="position:absolute;' + barStyle + ';height:100%;border-radius:3px"></div>' +
@@ -2797,7 +3095,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             const pct = Math.max(2, val / maxVal * 100).toFixed(1);
             const isWinner = rank === 0;
             return '<div class="badge-race-row" data-tip="' + r.model_profile + ': ' + race.fmt(val) + '">' +
-              '<div class="badge-race-name" style="color:' + color + '">' + r.model_profile.replace(/^vercel_/, '') + '</div>' +
+              '<div class="badge-race-name" style="color:' + color + '">' + displayName(r.model_profile) + '</div>' +
               '<div class="badge-race-track"><div class="badge-race-fill" style="width:' + pct + '%;background:' + color + (isWinner ? ';opacity:1' : ';opacity:0.6') + '"></div></div>' +
               '<div class="badge-race-val">' + race.fmt(val) + '</div>' +
             '</div>';
@@ -2826,7 +3124,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const perSeed = (r.memory_effects || []).map(e => (e >= 0 ? '+' : '') + e.toFixed(0)).join(', ');
           return '<tr>' +
             '<td>' + (i + 1) + '</td>' +
-            '<td style="color:' + color + ';font-weight:700">' + r.model_profile.replace(/^vercel_/, '') + '</td>' +
+            '<td style="color:' + color + ';font-weight:700">' + displayName(r.model_profile) + '</td>' +
             '<td style="color:' + meColor + ';font-weight:700">' + (me >= 0 ? '+' : '') + me.toFixed(1) + '</td>' +
             '<td style="font-weight:700">' + (r.composite_score ?? 0).toFixed(3) + '</td>' +
             '<td>' + (r.pdi ?? 0).toFixed(3) + '</td>' +
@@ -2916,6 +3214,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     function initFilters() {
       const modelOptions = ['all', ...new Set(runs.map(run => String(run.model_profile || ''))).values()];
       const seedOptions = ['all', ...new Set(runs.map(run => String(run.seed))).values()];
+      const presentAttemptKinds = new Set(runs.map(run => getRunAttemptKind(run)));
+      const attemptOptions = ['all'];
+      ['initial', 'control_rerun', 'adaptive_rerun'].forEach(kind => {
+        if (presentAttemptKinds.has(kind)) attemptOptions.push(kind);
+      });
+      Array.from(presentAttemptKinds)
+        .sort()
+        .forEach(kind => {
+          if (!attemptOptions.includes(kind)) attemptOptions.push(kind);
+        });
 
       modelFilter.innerHTML = modelOptions.map(v => `<option value="${v}">${v === 'all' ? 'All' : v}</option>`).join('');
       seedFilter.innerHTML = seedOptions.map(v => `<option value="${v}">${v === 'all' ? 'All' : `Seed ${v}`}</option>`).join('');
@@ -2924,21 +3232,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         '<option value="dead">Died</option>',
         '<option value="finished">Survived</option>',
       ].join('');
+      attemptFilter.innerHTML = attemptOptions
+        .map(v => `<option value="${v}">${v === 'all' ? 'All' : attemptLabel(v)}</option>`)
+        .join('');
     }
 
     function rebuildFilteredRuns() {
       const modelValue = modelFilter.value || 'all';
       const seedValue = seedFilter.value || 'all';
       const statusValue = statusFilter.value || 'all';
+      const attemptValue = attemptFilter.value || 'all';
 
       filteredRunIndexes = [];
       runs.forEach((run, idx) => {
         const summary = run.summary || {};
         const status = getRunStatus(summary).key;
+        const attemptKind = getRunAttemptKind(run);
 
         if (modelValue !== 'all' && String(run.model_profile) !== modelValue) return;
         if (seedValue !== 'all' && String(run.seed) !== seedValue) return;
         if (statusValue !== 'all' && status !== statusValue) return;
+        if (attemptValue !== 'all' && attemptKind !== attemptValue) return;
         filteredRunIndexes.push(idx);
       });
 
@@ -2959,6 +3273,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
       return Object.entries(bySeed).map(([seed, entries]) => {
         entries.sort((a, b) => {
+          const ma = String(a.run.model_profile || '');
+          const mb = String(b.run.model_profile || '');
+          if (ma !== mb) return ma.localeCompare(mb);
+
+          const aa = attemptSortIndex(getRunAttemptKind(a.run));
+          const ab = attemptSortIndex(getRunAttemptKind(b.run));
+          if (aa !== ab) return aa - ab;
+
           const sa = Number(a.run.summary?.final_score ?? 0);
           const sb = Number(b.run.summary?.final_score ?? 0);
           return sb - sa;
@@ -2987,8 +3309,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const status = getRunStatus(s);
           const score = formatCount(s.final_score);
           const isSelected = entry.idx === selectedRunIndex;
+          const attemptText = attemptLabel(getRunAttemptKind(entry.run));
           return `<div class="seed-pair-row" data-run-index="${entry.idx}" style="${isSelected ? 'color:var(--accent)' : ''}">
-            <span>${shortProfile(entry.run.model_profile)}</span>
+            <span>${shortProfile(entry.run.model_profile)} <span style="color:var(--text-dim);font-size:0.72rem">(${attemptText})</span></span>
             <span class="badge ${status.className}">${status.label}</span>
             <span>${score}</span>
           </div>`;
@@ -3066,11 +3389,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       };
     }
 
-    function renderReplayHeader(run) {
+    function countKillsUpToFrame(run, frameIndex) {
+      const frames = Array.isArray(run?.replay?.frames) ? run.replay.frames : [];
+      if (!frames.length) return 0;
+      const last = Math.max(0, Math.min(frameIndex, frames.length - 1));
+      let kills = 0;
+      for (let i = 0; i <= last; i++) {
+        const killed = Boolean(frames[i]?.world_result_delta?.action_delta?.npc_killed);
+        if (killed) kills += 1;
+      }
+      return kills;
+    }
+
+    function buildRunSummaryCards(run, frameIndex) {
       const summary = run.summary || {};
       const kpi = summary.kpi || {};
-      const status = getRunStatus(summary);
-      const deathCause = String(summary.death_cause_human || '').trim();
       const gatherableTotal = numberOr(run.replay?.world?.gatherable_total, null);
       const gathered = numberOr(summary.resources_gathered, 0);
       const gatheredLabel = gatherableTotal === null
@@ -3083,23 +3416,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
         : 'n/a';
       const failureMode = String(summary.primary_failure_archetype_human || summary.primary_failure_archetype || 'Balanced or unclear');
-      const shortSummary = String(summary.short_summary || '').trim();
-      const detailedSummary = String(summary.detailed_summary || '').trim();
       const confidenceHint = String(summary.confidence_hint || '').trim();
-      const fallbackFacts = [summary.end_reason_human, deathCause]
-        .map(value => String(value || '').trim())
-        .filter(value => value.length > 0)
-        .join(' | ');
-      const summaryLine = shortSummary || fallbackFacts;
-      const stripHtml = summaryLine
-        ? `<div class="replay-sub-strip"><span class="replay-sub">${escapeHtml(summaryLine)}</span></div>`
-        : '';
+      const killedNow = countKillsUpToFrame(run, frameIndex);
 
-      const cards = [
+      return [
         { label: 'Score', value: formatCount(summary.final_score), tip: 'Final score for this run (survive +1, gather +3, consume +2, invalid -2, death -10)' },
         { label: 'Survival', value: `${formatCount(summary.turns_survived)}/${formatCount(summary.max_turns)}`, tip: 'Turns survived out of maximum turns available' },
         { label: 'Invalid', value: formatCount(summary.invalid_actions), tip: 'Actions the model attempted that were not valid (e.g. eat without food)' },
         { label: 'Resources', value: gatheredLabel, tip: 'Resources gathered from the map out of total available' },
+        { label: 'Killed', value: formatCount(killedNow, '0'), tip: 'NPC kills reached at the current replay turn' },
         { label: 'Failure mode', value: failureMode, tip: 'Primary deterministic failure archetype for this run' },
         confidenceHint ? { label: 'Confidence', value: confidenceHint, tip: 'Deterministic confidence hint from the rule engine' } : null,
         { label: 'Coverage', value: coverageLabel, tip: 'Unique visited cells over total map cells' },
@@ -3115,10 +3440,40 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: 'Tokens', value: formatCount(summary.tokens_used), tip: 'Total tokens consumed (input + output) across all turns' },
         { label: 'Cost', value: formatUsd(summary.estimated_cost), tip: 'Estimated run cost (provider-reported or deterministic fallback)' },
       ].filter(Boolean);
+    }
+
+    function renderReplayHeader(run) {
+      const summary = run.summary || {};
+      const status = getRunStatus(summary);
+      const currentAttemptKind = getRunAttemptKind(run);
+      const currentAttemptLabel = attemptLabel(currentAttemptKind);
+      const deathCause = String(summary.death_cause_human || '').trim();
+      const shortSummary = String(summary.short_summary || '').trim();
+      const detailedSummary = String(summary.detailed_summary || '').trim();
+      const fallbackFacts = [summary.end_reason_human, deathCause]
+        .map(value => String(value || '').trim())
+        .filter(value => value.length > 0)
+        .join(' | ');
+      const summaryLine = shortSummary || fallbackFacts;
+      const stripHtml = summaryLine
+        ? `<div class="replay-sub-strip"><span class="replay-sub">${escapeHtml(summaryLine)}</span></div>`
+        : '';
 
       const sameSeedRuns = runs
         .map((r, i) => ({ r, i }))
-        .filter(item => String(item.r.seed) === String(run.seed) && item.i !== selectedRunIndex);
+        .filter(item =>
+          String(item.r.seed) === String(run.seed)
+          && getRunAttemptKind(item.r) === currentAttemptKind
+          && item.i !== selectedRunIndex
+        );
+
+      const sameModelSeedRuns = runs
+        .map((r, i) => ({ r, i }))
+        .filter(item =>
+          String(item.r.seed) === String(run.seed)
+          && String(item.r.model_profile || '') === String(run.model_profile || '')
+        )
+        .sort((a, b) => attemptSortIndex(getRunAttemptKind(a.r)) - attemptSortIndex(getRunAttemptKind(b.r)));
 
       let switcherHtml = '';
       if (sameSeedRuns.length > 0) {
@@ -3128,16 +3483,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         </div>`;
       }
 
+      let attemptSwitcherHtml = '';
+      if (sameModelSeedRuns.length > 1) {
+        attemptSwitcherHtml = `<div class="model-switch">
+          <span class="muted-label">Attempt:</span>
+          ${sameModelSeedRuns.map(item => {
+            const kind = getRunAttemptKind(item.r);
+            const selectedStyle = item.i === selectedRunIndex ? ' style="color:var(--accent);border-color:var(--accent)"' : '';
+            return `<button type="button" data-switch-run="${item.i}"${selectedStyle}>${attemptLabel(kind)}</button>`;
+          }).join('')}
+        </div>`;
+      }
+
       replayHeader.innerHTML = `
         <div class="replay-title">
           <span>${run.model_profile}</span>
           <span style="color:var(--text-dim);font-size:0.78rem">seed ${run.seed}</span>
+          <span class="badge">${currentAttemptLabel}</span>
           <span class="badge ${status.className}">${status.label}</span>
         </div>
         ${stripHtml}
-        <div class="summary-cards">
-          ${cards.map(c => `<div class="card"${c.tip ? ` data-tip="${c.tip}"` : ''}><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('')}
-        </div>
+        ${attemptSwitcherHtml}
         ${switcherHtml}
         ${detailedSummary
           ? `<details class="analysis-detail"><summary>Deterministic Analysis</summary><div class="detail-body">${escapeHtml(detailedSummary)}</div></details>`
@@ -3156,12 +3522,31 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
     }
 
-    function renderMap(run, frame) {
+    function renderMapSummaryCards(run, frameIndex) {
+      const cards = buildRunSummaryCards(run, frameIndex);
+      mapSummaryCards.innerHTML = cards
+        .map(c => `<div class="card"${c.tip ? ` data-tip="${c.tip}"` : ''}><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`)
+        .join('');
+    }
+
+    function renderMap(run, frame, frameIndex) {
       const world = run.replay?.world || {};
       const width = Math.max(1, numberOr(world.width, 1));
       const height = Math.max(1, numberOr(world.height, 1));
       const map = frame.map_snapshot || [];
       const agent = frame.agent_position_after || frame.agent_position_before || { x: 0, y: 0 };
+      const npcStates = buildNpcStatesForFrame(run, frameIndex);
+      const npcsByCoord = new Map();
+      let hostileNpcCount = 0;
+
+      for (const npc of npcStates) {
+        if (!npc || !npc.alive) continue;
+        if (!Number.isFinite(npc.x) || !Number.isFinite(npc.y)) continue;
+        const key = `${npc.x},${npc.y}`;
+        if (!npcsByCoord.has(key)) npcsByCoord.set(key, []);
+        npcsByCoord.get(key).push(npc);
+        if (npc.hostile) hostileNpcCount += 1;
+      }
 
       const visited = new Set(
         (frame.path_prefix || []).map(pos => `${numberOr(pos.x, 0)},${numberOr(pos.y, 0)}`)
@@ -3177,6 +3562,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
           const isCurrent = numberOr(agent.x, -1) === x && numberOr(agent.y, -1) === y;
           const isVisited = visited.has(`${x},${y}`);
+          const npcsHere = npcsByCoord.get(`${x},${y}`) || [];
 
           const classes = ['tile', type];
           if (isVisited) classes.push('visited');
@@ -3187,6 +3573,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class="tile-type">${metaEntry.label}</div>
               <div class="coord">${x},${y}</div>
               <div class="tile-main">${metaEntry.emoji}</div>
+              <div class="npc-stack">
+                ${npcsHere.map(npc => `<span class="npc-pill ${npc.hostile ? 'hostile' : ''}">${npcEmoji(npc.npc_type)}${npc.hp !== null ? ` ${formatCount(npc.hp)}` : ''}</span>`).join('')}
+              </div>
               ${isCurrent ? `<div class="agent-mark">\\u{1F916} ${shortProfile(run.model_profile)}</div>` : ''}
             </div>
           `);
@@ -3195,9 +3584,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       mapGrid.innerHTML = cells.join('');
       const coverage = String(run.replay?.meta?.map_coverage || 'partial');
+      const hasNpcData = npcStates.length > 0;
       mapLegend.textContent = coverage === 'full'
-        ? 'full map | dashed = visited'
-        : 'partial map (fog) | dashed = visited';
+        ? `full map | dashed = visited${hasNpcData ? ` | \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`
+        : `partial map (fog) | dashed = visited${hasNpcData ? ` | \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`;
     }
 
     function renderTurnDetails(run, frame) {
@@ -3246,6 +3636,20 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       inventoryGrid.innerHTML = Object.entries(inventoryMeta).map(([key, label]) => {
         return `<div class="inv-item"><span>${label}</span><strong>${formatCount(inventory[key] || 0)}</strong></div>`;
       }).join('');
+
+      const visibleNpcs = Array.isArray(observation.visible_npcs) ? observation.visible_npcs : [];
+      npcGrid.innerHTML = visibleNpcs.length
+        ? visibleNpcs.map(rawNpc => {
+            const npc = normalizeNpcState(rawNpc);
+            if (!npc) return '';
+            const status = npc.hostile ? 'hostile' : '';
+            const hpLabel = npc.hp === null ? 'hp ?' : `hp ${formatCount(npc.hp)}`;
+            return `<div class="npc-item ${status}">
+              <span>${npcEmoji(npc.npc_type)} ${escapeHtml(npc.npc_type)} @ ${formatCount(npc.x, '?')},${formatCount(npc.y, '?')}</span>
+              <span class="npc-hp">${hpLabel}</span>
+            </div>`;
+          }).join('')
+        : '<div class="npc-empty">none in 3x3 view</div>';
 
       rawOutput.textContent = String(frame.raw_model_output || '-').trim() || '-';
 
@@ -3315,9 +3719,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       replayHeader.innerHTML = '<div class="empty-state">Select a run to view replay.</div>';
       mapGrid.innerHTML = '';
       mapLegend.textContent = '';
+      mapSummaryCards.innerHTML = '';
       turnStatus.innerHTML = '';
       stateMeters.innerHTML = '';
       inventoryGrid.innerHTML = '';
+      npcGrid.innerHTML = '';
       rawOutput.textContent = '-';
       scoreEvents.textContent = '-';
       timelineBody.innerHTML = '';
@@ -3346,7 +3752,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       turnSlider.value = String(currentTurnIndex + 1);
 
       renderReplayHeader(run);
-      renderMap(run, frame);
+      renderMap(run, frame, currentTurnIndex);
+      renderMapSummaryCards(run, currentTurnIndex);
       renderTurnDetails(run, frame);
       renderRunList();
     }
@@ -3396,7 +3803,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function bindEvents() {
-      [modelFilter, seedFilter, statusFilter].forEach(node => {
+      [modelFilter, seedFilter, statusFilter, attemptFilter].forEach(node => {
         node.addEventListener('change', () => {
           stopAutoPlay();
           rebuildFilteredRuns();

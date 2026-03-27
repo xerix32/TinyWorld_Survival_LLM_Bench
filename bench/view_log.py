@@ -130,6 +130,7 @@ def _build_frames(run_log: dict[str, Any], width: int, height: int) -> tuple[lis
                 "cumulative_score": turn.get("cumulative_score"),
                 "metrics": turn.get("metrics", {}),
                 "raw_model_output": turn.get("raw_model_output"),
+                "world_result_delta": turn.get("world_result_delta", {}),
                 "survival_delta": turn.get("world_result_delta", {}).get("survival_delta", {}),
             }
         )
@@ -176,7 +177,7 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
             run_summary=summary,
             rules_cfg=benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {},
             initial_tiles=run_log.get("world_snapshots", {}).get("initial_tiles", []),
-            protocol_version=str(run_log.get("protocol_version", "AIB-0.1.1")),
+            protocol_version=str(run_log.get("protocol_version", "AIB-0.2.1")),
         )
         summary["analysis_version"] = analysis["analysis_version"]
         summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -205,6 +206,7 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
             "provider_id": run_log.get("provider_id"),
             "model_profile": run_log.get("model_profile"),
             "model": run_log.get("model"),
+            "moral_mode": identity.get("moral_mode", summary.get("moral_mode")),
             "map_coverage": map_coverage,
         },
         "summary": summary,
@@ -214,6 +216,8 @@ def build_viewer_payload(run_log: dict[str, Any], source_log_path: Path) -> dict
             "height": height,
             "gatherable_total": gatherable_total,
             "gatherable_breakdown": gatherable_breakdown,
+            "initial_npcs": run_log.get("world_snapshots", {}).get("initial_npcs", []),
+            "final_npcs": run_log.get("world_snapshots", {}).get("final_npcs", []),
         },
         "protocol": {
             "protocol_version": run_log.get("protocol_version"),
@@ -1610,6 +1614,18 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
         : 'n/a';
       const distanceText = formatFloat(kpi.distance_per_useful_gain, 2, 'n/a');
+      const moralRaw = meta.moral_mode;
+      const moralMode = (typeof moralRaw === 'boolean')
+        ? (moralRaw ? 'on' : 'off')
+        : (
+            String(moralRaw ?? '').trim().toLowerCase() === 'true'
+              ? 'on'
+              : (
+                  String(moralRaw ?? '').trim().toLowerCase() === 'false'
+                    ? 'off'
+                    : (String(moralRaw ?? '').trim() || 'not available')
+                )
+          );
 
       metaChips.innerHTML = [
         `<span class="chip"><span class="chip-key">provider</span> <span class="chip-value">${escapeHtml(meta.provider_id || '-')}</span></span>`,
@@ -1617,6 +1633,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `<span class="chip chip-model"><span class="chip-key">model</span> <span class="chip-value">${escapeHtml(meta.model || '-')}</span></span>`,
         `<span class="chip"><span class="chip-key">seed</span> <span class="chip-value">${escapeHtml(meta.seed ?? '-')}</span></span>`,
         `<span class="chip"><span class="chip-key">scenario</span> <span class="chip-value">${escapeHtml(meta.scenario || '-')}</span></span>`,
+        `<span class="chip"><span class="chip-key">moral</span> <span class="chip-value">${escapeHtml(moralMode)}</span></span>`,
         `<button class="chip chip-btn" id="protocolChip" type="button" aria-expanded="false" title="Show protocol rules"><span class="chip-key">protocol</span> ${meta.protocol_version || '-'}</button>`,
         `<span class="chip"><span class="chip-key">bench</span> <span class="chip-value">${escapeHtml(meta.bench_version || '-')}</span></span>`,
         `<span class="chip"><span class="chip-key">engine</span> <span class="chip-value">${escapeHtml(meta.engine_version || '-')}</span></span>`,

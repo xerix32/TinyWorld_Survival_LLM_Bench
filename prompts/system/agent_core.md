@@ -4,6 +4,10 @@
 
 {% include "partials/rules.md" %}
 
+{% if moral_mode|default(false) %}
+{% include "partials/moral_guidance.md" %}
+{% endif %}
+
 {% include "partials/action_reference.md" %}
 
 {% include "partials/output_contract.md" %}

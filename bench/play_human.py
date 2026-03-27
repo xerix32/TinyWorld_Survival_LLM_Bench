@@ -46,7 +46,7 @@ def main() -> None:
 
     world = create_world(seed=args.seed, scenario_cfg=scenario, rules_cfg=rules_cfg, agent_id=DEFAULT_AGENT_ID)
 
-    print("TinyWorld Survival Bench v0.1 - Human Mode")
+    print("TinyWorld Survival Bench v0.2 - Human Mode")
     print("Use only benchmark commands. Stop with Ctrl+C.")
 
     replay_turns: list[dict[str, object]] = []

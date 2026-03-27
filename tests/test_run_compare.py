@@ -18,6 +18,7 @@ from bench.run_compare import (
     build_model_summaries,
     build_pairwise_summary,
     main,
+    parse_models,
     resolve_seed_list,
 )
 
@@ -54,6 +55,11 @@ def test_resolve_seed_list_explicit_overrides_range() -> None:
 
     ranged = resolve_seed_list(None, num_runs=4, seed_start=3)
     assert ranged == [3, 4, 5, 6]
+
+
+def test_parse_models_accepts_comma_space_tokenized_values() -> None:
+    parsed = parse_models(["vercel_gpt_oss_120b,", "vercel_gpt_oss_20b"])
+    assert parsed == ["vercel_gpt_oss_120b", "vercel_gpt_oss_20b"]
 
 
 def test_build_jobs_stable_order() -> None:

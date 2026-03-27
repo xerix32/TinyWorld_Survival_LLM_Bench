@@ -6,6 +6,7 @@ import argparse
 import concurrent.futures
 import csv
 import glob
+import heapq
 import json
 from collections import defaultdict
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import textwrap
 from typing import Any
 from urllib.parse import quote
 import webbrowser
@@ -156,6 +158,8 @@ MODEL_SUMMARY_FIELDS = [
     "worst_final_score",
     "max_turns_survived",
     "tokens_used_total",
+    "prompt_tokens_total",
+    "completion_tokens_total",
     "estimated_cost_total",
     "estimated_cost_adaptive",
     "estimated_cost_grand_total",
@@ -192,8 +196,12 @@ class AdaptiveFutureSpec:
     job: JobSpec
 
 
-def parse_models(raw: str) -> list[str]:
-    models = [item.strip() for item in raw.split(",") if item.strip()]
+def parse_models(raw: str | list[str]) -> list[str]:
+    if isinstance(raw, list):
+        raw_text = " ".join(str(item).strip() for item in raw if str(item).strip())
+    else:
+        raw_text = str(raw).strip()
+    models = [item.strip() for item in raw_text.split(",") if item.strip()]
     if not models:
         raise ValueError("--models must include at least one model profile")
     return models
@@ -213,6 +221,143 @@ def resolve_seed_list(seeds_raw: str | None, num_runs: int, seed_start: int) -> 
     if num_runs < 1:
         raise ValueError("--num-runs must be >= 1")
     return list(range(seed_start, seed_start + num_runs))
+
+
+def _providers_config_from_argv(argv: list[str], default: str = "configs/providers.yaml") -> str:
+    for index, token in enumerate(argv):
+        if token == "--providers-config" and index + 1 < len(argv):
+            value = str(argv[index + 1]).strip()
+            if value:
+                return value
+        if token.startswith("--providers-config="):
+            value = token.split("=", 1)[1].strip()
+            if value:
+                return value
+    return default
+
+
+def _available_identity_from_config(
+    config_path: str,
+) -> tuple[list[str], dict[str, list[str]], dict[str, dict[str, list[str]]]]:
+    try:
+        cfg = load_yaml_file(config_path)
+    except Exception:
+        return [], {}, {}
+
+    profiles_cfg = cfg.get("model_profiles", {})
+    providers_cfg = cfg.get("providers", {})
+    if not isinstance(profiles_cfg, dict):
+        profiles_cfg = {}
+    if not isinstance(providers_cfg, dict):
+        providers_cfg = {}
+
+    profiles = sorted(str(name).strip() for name in profiles_cfg.keys() if str(name).strip())
+    grouped: dict[str, list[str]] = {}
+    grouped_by_family: dict[str, dict[str, list[str]]] = {}
+    for profile in profiles:
+        profile_cfg = profiles_cfg.get(profile, {})
+        provider_id = (
+            str(profile_cfg.get("provider", "")).strip()
+            if isinstance(profile_cfg, dict)
+            else ""
+        )
+        if not provider_id:
+            provider_id = "unknown"
+        grouped.setdefault(provider_id, []).append(profile)
+
+        model_name = ""
+        if isinstance(profile_cfg, dict):
+            model_name = str(profile_cfg.get("model", profile_cfg.get("model_name", ""))).strip()
+        if provider_id == "dummy_provider":
+            family = "dummy"
+        elif "/" in model_name:
+            family = model_name.split("/", 1)[0].strip().lower() or "other"
+        elif model_name:
+            family = "other"
+        elif provider_id == "local_lmstudio":
+            family = "local"
+        else:
+            family = "other"
+        grouped_by_family.setdefault(provider_id, {}).setdefault(family, []).append(profile)
+
+    for provider_id in list(grouped.keys()):
+        grouped[provider_id] = sorted(grouped[provider_id])
+    for provider_id, family_map in list(grouped_by_family.items()):
+        normalized: dict[str, list[str]] = {}
+        for family, family_profiles in family_map.items():
+            normalized[family] = sorted(family_profiles)
+        grouped_by_family[provider_id] = dict(sorted(normalized.items(), key=lambda item: item[0]))
+
+    # Keep provider order stable by provider name for deterministic output.
+    grouped = dict(sorted(grouped.items(), key=lambda item: item[0]))
+    grouped_by_family = dict(sorted(grouped_by_family.items(), key=lambda item: item[0]))
+    return profiles, grouped, grouped_by_family
+
+
+def _wrap_items_for_cli(items: list[str], *, indent: str, width: int = 110) -> list[str]:
+    if not items:
+        return []
+    payload = ", ".join(str(item).strip() for item in items if str(item).strip())
+    if not payload:
+        return []
+    return textwrap.wrap(
+        payload,
+        width=width,
+        initial_indent=indent,
+        subsequent_indent=indent,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+
+class _CompareArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:  # noqa: D401 - argparse API
+        disable_color = "--no-color" in sys.argv
+        color_enabled = use_color(disable_color=disable_color)
+
+        sys.stderr.write(colorize(f"TinyWorld Compare CLI v{__version__}", "1;34", color_enabled) + "\n")
+        self.print_usage(sys.stderr)
+
+        argv = list(sys.argv[1:])
+        providers_cfg_path = _providers_config_from_argv(argv)
+        model_profiles, grouped_profiles, grouped_by_family = _available_identity_from_config(providers_cfg_path)
+
+        error_prefix = colorize(f"{self.prog}: error:", "1;31", color_enabled)
+        if message.startswith("unrecognized arguments:"):
+            unknown = message.split("unrecognized arguments:", 1)[1].strip()
+            unknown_tokens = [token for token in unknown.split(" ") if token]
+            unknown_colored = " ".join(colorize(token, "1;33", color_enabled) for token in unknown_tokens)
+            msg_colored = colorize("unrecognized arguments:", "1;31", color_enabled)
+            sys.stderr.write(f"{error_prefix} {msg_colored} {unknown_colored}\n")
+        else:
+            sys.stderr.write(f"{error_prefix} {colorize(message, '1;31', color_enabled)}\n")
+        if "unrecognized arguments" in message:
+            sys.stderr.write("\n")
+            sys.stderr.write(
+                "Hint: pass --models as one argument, e.g. --models model_a,model_b "
+                "(if you use spaces, wrap with quotes).\n"
+            )
+
+        if model_profiles:
+            sys.stderr.write("\nAvailable model profiles (grouped by provider):\n")
+            for provider_id in sorted(grouped_profiles.keys()):
+                items = grouped_profiles.get(provider_id, [])
+                if not items:
+                    continue
+                provider_name = colorize(provider_id, "1;36", color_enabled)
+                sys.stderr.write(f"  {provider_name} ({len(items)}):\n")
+                families = grouped_by_family.get(provider_id, {})
+                if families:
+                    for family_name, family_profiles in families.items():
+                        family_colored = colorize(family_name, "1;95", color_enabled)
+                        sys.stderr.write(f"    {family_colored} ({len(family_profiles)}):\n")
+                        for line in _wrap_items_for_cli(family_profiles, indent="      "):
+                            sys.stderr.write(f"{line}\n")
+                else:
+                    for line in _wrap_items_for_cli(items, indent="    "):
+                        sys.stderr.write(f"{line}\n")
+
+        raise SystemExit(2)
 
 
 def _short_path(path: str | Path) -> str:
@@ -264,6 +409,22 @@ def _render_run_id_value(run_id: str, *, color_enabled: bool) -> str:
 def _resume_command(checkpoint_path: str | Path) -> str:
     resume_path = _short_path(checkpoint_path)
     return f"python -m bench.run_compare --resume {shlex.quote(resume_path)}"
+
+
+def _render_models_value(models_text: str, *, color_enabled: bool) -> str:
+    raw_items = [part.strip() for part in str(models_text).split(",") if part.strip()]
+    if not raw_items:
+        return colorize("-", "1;97", color_enabled)
+    if not color_enabled:
+        return ", ".join(raw_items)
+
+    palette = ("1;96", "1;95", "1;92", "1;94", "1;93")
+    rendered: list[str] = []
+    for item in raw_items:
+        color = palette[abs(hash(item)) % len(palette)]
+        rendered.append(colorize(item, color, color_enabled))
+    sep = colorize(", ", "1;97", color_enabled)
+    return sep.join(rendered)
 
 
 def _safe_slug(value: str) -> str:
@@ -349,12 +510,15 @@ def _print_start_identity(
     protocol_version: str,
     scenario: str,
     run_id: str,
+    resume_time_human: str | None,
     run_root: Path,
     model_profiles: list[str],
     models_text: str,
     providers_text: str,
+    routing_text: str,
     model_workers: int,
     seed_workers_per_model: int,
+    moral_mode: bool,
 ) -> None:
     _print_section("Identity", color_enabled)
     _print_row("Protocol", protocol_version, color_enabled=color_enabled)
@@ -365,35 +529,47 @@ def _print_start_identity(
         color_enabled=color_enabled,
         value_already_colored=True,
     )
+    if resume_time_human:
+        _print_row("Resume time", resume_time_human, color_enabled=color_enabled)
     _print_row("Run root", _short_path(run_root), color_enabled=color_enabled, value_color="1;94")
-    _print_row("Model profile(s)", ", ".join(model_profiles), color_enabled=color_enabled)
-    _print_row("Model(s)", models_text, color_enabled=color_enabled)
+    _print_row("Models (requested)", ", ".join(model_profiles), color_enabled=color_enabled)
+    _print_row("Models (resolved)", ", ".join(model_profiles), color_enabled=color_enabled)
+    _print_row(
+        "Model(s)",
+        _render_models_value(models_text, color_enabled=color_enabled),
+        color_enabled=color_enabled,
+        value_already_colored=True,
+    )
     _print_row("Provider(s)", providers_text, color_enabled=color_enabled)
+    _print_row("Routing", routing_text, color_enabled=color_enabled, value_color="1;93")
     _print_row("Parallel Per Model", str(model_workers), color_enabled=color_enabled)
     _print_row("Parallel per Seed", str(seed_workers_per_model), color_enabled=color_enabled)
+    _print_row("Moral framing", ("on" if moral_mode else "off"), color_enabled=color_enabled)
     print()
 
 
 def _resolve_models_and_providers_for_identity(
     model_profiles: list[str],
     providers_config_path: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     default_models_text = ", ".join(model_profiles) if model_profiles else "-"
     default_providers_text = "-"
+    default_routing_text = "-"
     if not model_profiles:
-        return default_models_text, default_providers_text
+        return default_models_text, default_providers_text, default_routing_text
 
     try:
         providers_cfg = load_yaml_file(providers_config_path)
     except Exception:
-        return default_models_text, default_providers_text
+        return default_models_text, default_providers_text, default_routing_text
 
     profiles_cfg = providers_cfg.get("model_profiles", {})
     if not isinstance(profiles_cfg, dict):
-        return default_models_text, default_providers_text
+        return default_models_text, default_providers_text, default_routing_text
 
     resolved_models: list[str] = []
     resolved_providers: list[str] = []
+    routing_hints: list[str] = []
 
     for profile in model_profiles:
         profile_cfg = profiles_cfg.get(profile)
@@ -412,9 +588,38 @@ def _resolve_models_and_providers_for_identity(
             if model_text and model_text not in resolved_models:
                 resolved_models.append(model_text)
 
+        provider_options = profile_cfg.get("provider_options", {})
+        gateway_options = provider_options.get("gateway", {}) if isinstance(provider_options, dict) else {}
+
+        only_raw = gateway_options.get("only") if isinstance(gateway_options, dict) else None
+        order_raw = gateway_options.get("order") if isinstance(gateway_options, dict) else None
+        only_list = [str(item).strip() for item in only_raw] if isinstance(only_raw, list) else []
+        order_list = [str(item).strip() for item in order_raw] if isinstance(order_raw, list) else []
+        only_list = [item for item in only_list if item]
+        order_list = [item for item in order_list if item]
+
+        provider_text = str(provider_id).strip() if provider_id is not None else ""
+        if provider_text == "vercel_gateway":
+            if only_list:
+                route = f"{profile} -> gateway only: {', '.join(only_list)}"
+                if order_list:
+                    route += f" (order: {', '.join(order_list)})"
+            elif order_list:
+                route = f"{profile} -> gateway order: {', '.join(order_list)}"
+            else:
+                route = f"{profile} -> gateway default routing"
+        elif provider_text:
+            route = f"{profile} -> {provider_text}"
+        else:
+            route = f"{profile} -> unknown"
+
+        if route not in routing_hints:
+            routing_hints.append(route)
+
     models_text = ", ".join(resolved_models) if resolved_models else default_models_text
     providers_text = ", ".join(resolved_providers) if resolved_providers else default_providers_text
-    return models_text, providers_text
+    routing_text = "; ".join(routing_hints) if routing_hints else default_routing_text
+    return models_text, providers_text, routing_text
 
 
 def _print_adaptive_live_snapshot(
@@ -428,6 +633,7 @@ def _print_adaptive_live_snapshot(
     adaptive_rows_by_key: dict[tuple[str, int], dict[str, Any]],
     adaptive_pairs_by_key: dict[tuple[str, int], dict[str, Any]] | None = None,
     live_attempt_scores_by_key: dict[tuple[str, int, str], int] | None = None,
+    active_attempts_by_key: dict[tuple[str, int], str] | None = None,
     previous_line_count: int,
 ) -> int:
     def _maybe_int(value: Any) -> int | None:
@@ -435,6 +641,30 @@ def _print_adaptive_live_snapshot(
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    def _render_field(
+        name: str,
+        raw_value: int | str,
+        *,
+        pending: bool,
+        active: bool,
+        color_by_sign: bool = False,
+    ) -> str:
+        text = f"{name}={raw_value}"
+        if not color_enabled:
+            return text
+        if active:
+            return colorize(text, "1;96", color_enabled)
+        if pending:
+            return colorize(text, "0;37", color_enabled)
+        if color_by_sign:
+            raw_text = str(raw_value).strip()
+            if raw_text.startswith("+"):
+                return colorize(text, "1;92", color_enabled)
+            if raw_text.startswith("-"):
+                return colorize(text, "1;91", color_enabled)
+            return colorize(text, "0;37", color_enabled)
+        return colorize(text, "1;97", color_enabled)
 
     status_line.clear()
     lines: list[str] = [
@@ -466,28 +696,53 @@ def _print_adaptive_live_snapshot(
 
             variance_text = "--"
             memory_text = "--"
-            value_color = "0;37"
 
             if initial_score is not None and control_score is not None:
                 variance_delta = int(control_score) - int(initial_score)
                 variance_text = f"{variance_delta:+d}"
-                value_color = "1;92" if variance_delta > 0 else ("1;91" if variance_delta < 0 else "1;97")
 
             if control_score is not None and adaptive_score is not None:
-                memory_effect = int(adaptive_score) - int(control_score)
-                memory_text = f"{memory_effect:+d}"
-                value_color = "1;92" if memory_effect > 0 else ("1;91" if memory_effect < 0 else "1;97")
+                no_mem_avg = (int(initial_score) + int(control_score)) / 2 if initial_score is not None else int(control_score)
+                memory_effect = int(adaptive_score) - no_mem_avg
+                memory_text = f"{memory_effect:+.1f}"
+
+            active_attempt = str((active_attempts_by_key or {}).get(key, "")).strip()
+            baseline_field = _render_field(
+                "baseline",
+                initial_score if initial_score is not None else "--",
+                pending=(initial_score is None),
+                active=(active_attempt == "initial"),
+            )
+            rerun_field = _render_field(
+                "rerun",
+                control_score if control_score is not None else "--",
+                pending=(control_score is None),
+                active=(active_attempt == "control_rerun"),
+            )
+            rerun_mem_field = _render_field(
+                "rerun+mem",
+                adaptive_score if adaptive_score is not None else "--",
+                pending=(adaptive_score is None),
+                active=(active_attempt == "adaptive_rerun"),
+            )
+            variance_field = _render_field(
+                "variance",
+                variance_text,
+                pending=(variance_text == "--"),
+                active=False,
+            )
+            memory_field = _render_field(
+                "memory",
+                memory_text,
+                pending=(memory_text == "--"),
+                active=False,
+                color_by_sign=True,
+            )
 
             label = f"Seed {seed}" if single_model else f"{model_profile} seed {seed}"
-            value = (
-                f"baseline={initial_score if initial_score is not None else '--'}  "
-                f"rerun={control_score if control_score is not None else '--'}  "
-                f"rerun+mem={adaptive_score if adaptive_score is not None else '--'}  "
-                f"variance={variance_text}  memory={memory_text}"
-            )
+            value = f"{baseline_field}  {rerun_field}  {rerun_mem_field}  {variance_field}  {memory_field}"
             label_text = colorize(f"{label:<22}", "1;36", color_enabled)
-            value_text = colorize(value, value_color, color_enabled)
-            lines.append(f"  {label_text} {value_text}")
+            lines.append(f"  {label_text} {value}")
     lines.append("")
 
     supports_inplace = sys.stdout.isatty()
@@ -680,6 +935,7 @@ def _elapsed_seconds_from_run_rows(run_rows: list[dict[str, Any]]) -> float:
 def build_model_summaries(
     run_rows: list[dict[str, Any]],
     adaptive_run_rows: list[dict[str, Any]] | None = None,
+    adaptive_pair_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     order: list[str] = []
@@ -696,6 +952,21 @@ def build_model_summaries(
         profile = str(row.get("model_profile", ""))
         adaptive_costs[profile].append(row.get("estimated_cost"))
         adaptive_tokens[profile].append(row.get("tokens_used"))
+
+    # Compute no-memory avg (initial + control) per model from adaptive pairs
+    # This is statistically more robust than initial-only (10 data points vs 5)
+    no_mem_avg_by_profile: dict[str, float] = {}
+    for pair in (adaptive_pair_rows or []):
+        mp = str(pair.get("model_profile", ""))
+        initial_s = pair.get("initial_score")
+        control_s = pair.get("control_score")
+        if initial_s is not None and control_s is not None:
+            no_mem_avg_by_profile.setdefault(mp, [])
+            no_mem_avg_by_profile[mp].append(float(initial_s))
+            no_mem_avg_by_profile[mp].append(float(control_s))
+    no_mem_avg_by_profile = {
+        mp: round(mean(scores), 4) for mp, scores in no_mem_avg_by_profile.items() if scores
+    }
 
     summaries: list[dict[str, Any]] = []
     for profile in order:
@@ -724,6 +995,12 @@ def build_model_summaries(
         latency_avg = _optional_mean(latencies)
 
         tokens_total = _optional_sum([item.get("tokens_used") for item in group])
+        prompt_tokens_total = _optional_sum([
+            (item.get("token_breakdown") or {}).get("prompt_tokens") for item in group
+        ])
+        completion_tokens_total = _optional_sum([
+            (item.get("token_breakdown") or {}).get("completion_tokens") for item in group
+        ])
         cost_total = _optional_sum([item.get("estimated_cost") for item in group])
 
         coverage_values: list[float] = []
@@ -750,7 +1027,7 @@ def build_model_summaries(
                 "provider_id": ref["provider_id"],
                 "model": ref["model"],
                 "runs": runs,
-                "avg_final_score": round(mean(scores), 4),
+                "avg_final_score": no_mem_avg_by_profile.get(profile, round(mean(scores), 4)),
                 "avg_turns_survived": round(mean(turns_survived), 4),
                 "avg_survival_pct": round(mean(survival_pct_values), 4) if survival_pct_values else None,
                 "avg_invalid_actions": round(mean(invalid_actions), 4),
@@ -766,6 +1043,8 @@ def build_model_summaries(
                 "latency_ms_avg": round(latency_avg, 6) if latency_avg is not None else None,
                 "latency_ms_per_turn": round(latency_total / sum(turns_survived), 6) if (latency_total is not None and sum(turns_survived) > 0) else None,
                 "tokens_used_total": int(tokens_total) if tokens_total is not None else None,
+                "prompt_tokens_total": int(prompt_tokens_total) if prompt_tokens_total is not None else None,
+                "completion_tokens_total": int(completion_tokens_total) if completion_tokens_total is not None else None,
                 "estimated_cost_total": round(cost_total, 6) if cost_total is not None else None,
                 "estimated_cost_adaptive": round(_optional_sum(adaptive_costs.get(profile, [])) or 0, 6) if adaptive_costs.get(profile) else None,
                 "estimated_cost_grand_total": round(
@@ -1232,8 +1511,9 @@ def _build_compare_payload(
     status: str,
     adaptive_section: dict[str, Any] | None = None,
     adaptive_run_rows: list[dict[str, Any]] | None = None,
+    adaptive_pair_rows: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
-    model_summaries = build_model_summaries(run_rows, adaptive_run_rows=adaptive_run_rows) if run_rows else []
+    model_summaries = build_model_summaries(run_rows, adaptive_run_rows=adaptive_run_rows, adaptive_pair_rows=adaptive_pair_rows) if run_rows else []
     resolved_profiles = resolved_model_profiles(run_rows)
     pairwise_rows = build_pairwise_summary(run_rows, model_profiles=resolved_profiles, seed_list=seed_list)
 
@@ -1351,6 +1631,7 @@ def _persist_compare_outputs(
         status=status,
         adaptive_section=adaptive_section,
         adaptive_run_rows=adaptive_run_rows,
+        adaptive_pair_rows=adaptive_pair_rows,
     )
 
     _write_csv(paths["runs_csv"], COMPARE_RUN_FIELDS, run_rows)
@@ -1398,7 +1679,7 @@ def _build_from_logs(
 
     profile_order: dict[str, int] = {}
     seed_order: dict[int, int] = {}
-    protocol_version = "AIB-0.1.2"
+    protocol_version = "AIB-0.2.1"
     scenario = "-"
     pricing_cfg: dict[str, Any] | None = None
     pricing_path = Path(pricing_config_path)
@@ -1444,7 +1725,7 @@ def _build_from_logs(
                 run_summary=summary,
                 rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
                 initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
-                protocol_version=str(run_log.get("protocol_version", "AIB-0.1.2")),
+                protocol_version=str(run_log.get("protocol_version", "AIB-0.2.1")),
             )
             summary["analysis_version"] = analysis["analysis_version"]
             summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -1488,6 +1769,8 @@ def _build_from_logs(
                 "provider_id": summary.get("provider_id"),
                 "model": summary.get("model"),
                 "seed": summary.get("seed"),
+                "attempt_kind": summary.get("attempt_kind"),
+                "memory_injected": summary.get("memory_injected"),
                 "summary": summary,
                 "replay": replay_payload,
             }
@@ -1507,13 +1790,17 @@ def _split_attempt_rows(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     baseline_rows: list[dict[str, Any]] = []
     baseline_payloads: list[dict[str, Any]] = []
+    control_rows: list[dict[str, Any]] = []
     adaptive_rows: list[dict[str, Any]] = []
 
     for idx, row in enumerate(run_rows):
-        attempt_kind = str(row.get("attempt_kind", "standard"))
+        attempt_kind = str(row.get("attempt_kind") or "initial").strip()
         payload = run_payloads[idx] if idx < len(run_payloads) else None
         if attempt_kind == "adaptive_rerun":
             adaptive_rows.append(row)
+            continue
+        if attempt_kind == "control_rerun":
+            control_rows.append(row)
             continue
         baseline_rows.append(row)
         if isinstance(payload, dict):
@@ -1521,42 +1808,78 @@ def _split_attempt_rows(
 
     adaptive_pairs: list[dict[str, Any]] = []
     initial_by_pair: dict[tuple[str, int], dict[str, Any]] = {}
+    control_by_pair: dict[tuple[str, int], dict[str, Any]] = {}
+    adaptive_by_pair: dict[tuple[str, int], dict[str, Any]] = {}
     for row in baseline_rows:
         key = (str(row.get("model_profile", "")), _safe_int(row.get("seed")))
         initial_by_pair[key] = row
+    for row in control_rows:
+        key = (str(row.get("model_profile", "")), _safe_int(row.get("seed")))
+        control_by_pair[key] = row
     for row in adaptive_rows:
         key = (str(row.get("model_profile", "")), _safe_int(row.get("seed")))
+        adaptive_by_pair[key] = row
+
+    for key, row in adaptive_by_pair.items():
         initial = initial_by_pair.get(key)
         if initial is None:
             continue
+        control = control_by_pair.get(key)
+
+        initial_score = _safe_int(initial.get("final_score"))
+        adaptive_score = _safe_int(row.get("final_score"))
+        control_score = _safe_int(control.get("final_score")) if control is not None else None
+        control_delta = (control_score - initial_score) if control_score is not None else None
+        adaptive_delta = adaptive_score - initial_score
+        if control_score is not None:
+            memory_effect = round(adaptive_score - (initial_score + control_score) / 2, 1)
+        else:
+            memory_effect = round(adaptive_score - initial_score, 1)
+
+        control_turns = _safe_int(control.get("turns_survived")) if control is not None else None
+        adaptive_turns = _safe_int(row.get("turns_survived"))
+        initial_turns = _safe_int(initial.get("turns_survived"))
+        control_invalid = _safe_int(control.get("invalid_actions")) if control is not None else None
+        adaptive_invalid = _safe_int(row.get("invalid_actions"))
+        initial_invalid = _safe_int(initial.get("invalid_actions"))
+        control_resources = _safe_int(control.get("resources_gathered")) if control is not None else None
+        adaptive_resources = _safe_int(row.get("resources_gathered"))
+        initial_resources = _safe_int(initial.get("resources_gathered"))
+
         adaptive_pairs.append(
             {
                 "compare_id": str(row.get("compare_id", "")),
                 "model_profile": key[0],
                 "seed": key[1],
                 "adaptive_pair_key": str(row.get("adaptive_pair_key") or f"{key[0]}__seed{key[1]}"),
-                "initial_score": _safe_int(initial.get("final_score")),
-                "adaptive_score": _safe_int(row.get("final_score")),
-                "delta_score": _safe_int(row.get("final_score")) - _safe_int(initial.get("final_score")),
-                "initial_turns_survived": _safe_int(initial.get("turns_survived")),
-                "adaptive_turns_survived": _safe_int(row.get("turns_survived")),
-                "delta_turns_survived": _safe_int(row.get("turns_survived")) - _safe_int(initial.get("turns_survived")),
-                "initial_invalid_actions": _safe_int(initial.get("invalid_actions")),
-                "adaptive_invalid_actions": _safe_int(row.get("invalid_actions")),
-                "delta_invalid_actions": _safe_int(row.get("invalid_actions")) - _safe_int(initial.get("invalid_actions")),
-                "initial_resources_gathered": _safe_int(initial.get("resources_gathered")),
-                "adaptive_resources_gathered": _safe_int(row.get("resources_gathered")),
-                "delta_resources_gathered": _safe_int(row.get("resources_gathered")) - _safe_int(initial.get("resources_gathered")),
+                "initial_score": initial_score,
+                "control_score": control_score,
+                "adaptive_score": adaptive_score,
+                "control_delta": control_delta,
+                "adaptive_delta": adaptive_delta,
+                "memory_effect": memory_effect,
+                "initial_turns_survived": initial_turns,
+                "control_turns_survived": control_turns,
+                "adaptive_turns_survived": adaptive_turns,
+                "control_delta_turns": (control_turns - initial_turns) if control_turns is not None else None,
+                "adaptive_delta_turns": adaptive_turns - initial_turns,
+                "initial_invalid_actions": initial_invalid,
+                "control_invalid_actions": control_invalid,
+                "adaptive_invalid_actions": adaptive_invalid,
+                "initial_resources_gathered": initial_resources,
+                "control_resources_gathered": control_resources,
+                "adaptive_resources_gathered": adaptive_resources,
                 "lessons_before_count": None,
                 "lessons_added_count": None,
                 "lessons_after_count": None,
+                "memory_promoted": None,
                 "reflection_parse_error": None,
                 "reflection_path": None,
                 "memory_snapshot_path": None,
             }
         )
 
-    return baseline_rows, baseline_payloads, adaptive_rows, adaptive_pairs
+    return baseline_rows, baseline_payloads, (control_rows + adaptive_rows), adaptive_pairs
 
 
 def _parse_port(value: str) -> int:
@@ -1630,7 +1953,7 @@ def _attempt_label(attempt_kind: str) -> str:
     if attempt_kind == "control_rerun":
         return "rerun (control)"
     if attempt_kind == "adaptive_rerun":
-        return "rerun (adaptive)"
+        return "rerun (adaptive mem.)"
     return "initial"
 
 
@@ -1713,6 +2036,7 @@ def _execute_job(
     output_logs_dir: Path,
     progress_callback: Any = None,
     fix_thinking: bool = False,
+    moral_mode: bool = False,
 ) -> dict[str, Any]:
     return run_match_once(
         seed=job.seed,
@@ -1727,6 +2051,7 @@ def _execute_job(
         output_path=_job_log_path(output_logs_dir, job),
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
+        moral_mode=moral_mode,
     )
 
 
@@ -1745,6 +2070,7 @@ def _execute_adaptive_initial(
     session_lessons: list[str],
     progress_callback: Any = None,
     fix_thinking: bool = False,
+    moral_mode: bool = False,
 ) -> dict[str, Any]:
     pair_key = f"{job.model_profile}__seed{job.seed}"
     initial_log = run_match_once(
@@ -1767,6 +2093,7 @@ def _execute_adaptive_initial(
         current_seed_lessons=[],
         attempt_kind="initial",
         adaptive_pair_key=pair_key,
+        moral_mode=moral_mode,
     )
     return {"initial_run_log": initial_log}
 
@@ -1787,6 +2114,7 @@ def _execute_adaptive_followup(
     initial_log: dict[str, Any],
     progress_callback: Any = None,
     fix_thinking: bool = False,
+    moral_mode: bool = False,
 ) -> dict[str, Any]:
     pair_key = f"{job.model_profile}__seed{job.seed}"
     initial_score_reference = _safe_int(
@@ -1800,26 +2128,53 @@ def _execute_adaptive_followup(
         payload["baseline_score_reference"] = int(initial_score_reference)
         progress_callback(payload)
 
+    def _emit_adaptive_stage(action_label: str) -> None:
+        _emit_progress_with_extras(
+            {
+                "event": "adaptive_stage",
+                "attempt_kind": "adaptive_rerun",
+                "action": action_label,
+            }
+        )
+
     # --- Control rerun: same seed, no memory (measures LLM variance) ---
-    control_log = run_match_once(
-        seed=job.seed,
-        model_name=job.model_profile,
-        scenario_name=(None if scenario in {"", "-"} else scenario),
-        max_turns=max_turns,
-        benchmark_config_path=benchmark_config_path,
-        scenarios_config_path=scenarios_config_path,
-        providers_config_path=providers_config_path,
-        prompts_dir=prompts_dir,
-        history_window=history_window,
-        output_path=_job_log_path_adaptive(output_logs_dir, job, "control"),
-        progress_callback=_emit_progress_with_extras,
-        fix_thinking=fix_thinking,
-        include_memory=True,
-        session_lessons=[],
-        current_seed_lessons=[],
-        attempt_kind="control_rerun",
-        adaptive_pair_key=pair_key,
-    )
+    # Resume-safe behavior: if control log already exists (interrupted mid-followup),
+    # reuse it instead of running the control attempt again.
+    control_log_path = _job_log_path_adaptive(output_logs_dir, job, "control")
+    control_log: dict[str, Any] | None = None
+    if control_log_path.exists():
+        try:
+            with control_log_path.open("r", encoding="utf-8") as handle:
+                recovered = json.load(handle)
+            if isinstance(recovered, dict) and isinstance(recovered.get("run_summary"), dict):
+                control_log = recovered
+                _emit_adaptive_stage("(resuming: control rerun recovered)")
+        except Exception:
+            control_log = None
+
+    if control_log is None:
+        control_log = run_match_once(
+            seed=job.seed,
+            model_name=job.model_profile,
+            scenario_name=(None if scenario in {"", "-"} else scenario),
+            max_turns=max_turns,
+            benchmark_config_path=benchmark_config_path,
+            scenarios_config_path=scenarios_config_path,
+            providers_config_path=providers_config_path,
+            prompts_dir=prompts_dir,
+            history_window=history_window,
+            output_path=control_log_path,
+            progress_callback=_emit_progress_with_extras,
+            fix_thinking=fix_thinking,
+            include_memory=True,
+            session_lessons=[],
+            current_seed_lessons=[],
+            attempt_kind="control_rerun",
+            adaptive_pair_key=pair_key,
+            moral_mode=moral_mode,
+        )
+
+    _emit_adaptive_stage("(computing memory: seed reflection)")
 
     providers_cfg = load_yaml_file(providers_config_path)
     model_binding = create_model_wrapper(model_name=job.model_profile, seed=job.seed, providers_cfg=providers_cfg)
@@ -1909,6 +2264,7 @@ def _execute_adaptive_followup(
         prior_discovered_tiles=initial_discovered,
         attempt_kind="adaptive_rerun",
         adaptive_pair_key=pair_key,
+        moral_mode=moral_mode,
     )
 
     initial_summary = dict(initial_log.get("run_summary", {}))
@@ -1917,6 +2273,7 @@ def _execute_adaptive_followup(
         initial_summary=initial_summary,
         adaptive_summary=adaptive_summary,
     )
+    _emit_adaptive_stage("(computing memory: cross-seed refinement)")
     cross_refinement = run_cross_seed_refinement(
         model_wrapper=model_binding.wrapper,
         prompt_loader=prompt_loader,
@@ -2044,7 +2401,7 @@ def _execute_adaptive_followup(
         "adaptive_score": adaptive_s,
         "control_delta": control_s - initial_s,
         "adaptive_delta": adaptive_s - initial_s,
-        "memory_effect": adaptive_s - control_s,
+        "memory_effect": round(adaptive_s - (initial_s + control_s) / 2, 1),
         "initial_turns_survived": _safe_int(initial_summary.get("turns_survived")),
         "control_turns_survived": _safe_int(control_summary.get("turns_survived")),
         "adaptive_turns_survived": _safe_int(adaptive_summary.get("turns_survived")),
@@ -2091,6 +2448,7 @@ def _execute_adaptive_pair(
     session_lessons: list[str],
     progress_callback: Any = None,
     fix_thinking: bool = False,
+    moral_mode: bool = False,
 ) -> dict[str, Any]:
     initial_result = _execute_adaptive_initial(
         job=job,
@@ -2106,6 +2464,7 @@ def _execute_adaptive_pair(
         session_lessons=session_lessons,
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
+        moral_mode=moral_mode,
     )
     followup_result = _execute_adaptive_followup(
         job=job,
@@ -2122,6 +2481,7 @@ def _execute_adaptive_pair(
         initial_log=dict(initial_result["initial_run_log"]),
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
+        moral_mode=moral_mode,
     )
     return {
         "initial_run_log": dict(initial_result["initial_run_log"]),
@@ -2338,7 +2698,7 @@ def _render_job_done_line(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _CompareArgumentParser(
         description="Run TinyWorld multi-run and multi-model comparison with paired seeds.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
@@ -2356,9 +2716,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--models",
-        type=str,
-        default="dummy_v0_1",
-        help="Comma-separated model profiles from providers config, preserving order.",
+        nargs="+",
+        default=["dummy_v0_1"],
+        help=(
+            "Comma-separated model profiles from providers config, preserving order. "
+            "Supports both '--models a,b' and '--models a, b'."
+        ),
     )
     parser.add_argument("--num-runs", type=int, default=5, help="Runs per model when --seeds is not provided.")
     parser.add_argument("--seed-start", type=int, default=1, help="Start seed for paired seed range.")
@@ -2413,6 +2776,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fix-thinking",
         action="store_true",
         help="Optional parser recovery: extract the last valid allowed action from verbose model output.",
+    )
+    parser.add_argument(
+        "--moral",
+        action="store_true",
+        help="Enable optional moral framing in the system prompt (default: off).",
     )
     parser.add_argument("--model-workers", type=int, default=1, help="Number of model pipelines running in parallel.")
     parser.add_argument("--seed-workers-per-model", type=int, default=1, help="Concurrent seeds per active model.")
@@ -2474,7 +2842,7 @@ def main() -> None:
     color_enabled = use_color(disable_color=args.no_color)
     status_line = StatusLine(enabled=True)
 
-    print(colorize(f"TinyWorld Compare CLI v{__version__}", "1;36", color_enabled))
+    print(colorize(f"TinyWorld Compare CLI v{__version__}", "1;34", color_enabled))
 
     benchmark_cfg = load_yaml_file(args.benchmark_config)
     # Keep legacy benchmark directories created for compatibility with existing tooling.
@@ -2494,10 +2862,13 @@ def main() -> None:
     adaptive_pair_rows: list[dict[str, Any]] = []
     adaptive_memory_by_model: dict[str, list[str]] = {}
     scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
-    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.1.2"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.2.1"))
     model_profiles: list[str] = []
     seed_list: list[int] = []
     requested_models: list[str] = []
+    identity_models_text = "-"
+    identity_providers_text = "-"
+    identity_routing_text = "-"
     eta_elapsed_baseline_seconds = 0.0
     effective_benchmark_config_path = str(Path(args.benchmark_config).resolve())
     effective_scenarios_config_path = str(Path(args.scenarios_config).resolve())
@@ -2507,8 +2878,10 @@ def main() -> None:
     effective_max_turns = args.max_turns
     effective_history_window = args.history_window
     effective_fix_thinking = bool(args.fix_thinking)
+    effective_moral_mode = bool(args.moral)
     adaptive_enabled = bool(args.adaptive_memory)
     effective_seed_workers_per_model = int(args.seed_workers_per_model)
+    resume_time_human: str | None = None
 
     resume_context: dict[str, Any] = {
         "benchmark_config": effective_benchmark_config_path,
@@ -2519,6 +2892,7 @@ def main() -> None:
         "max_turns": effective_max_turns,
         "history_window": effective_history_window,
         "fix_thinking": effective_fix_thinking,
+        "moral_mode": effective_moral_mode,
         "adaptive_memory": adaptive_enabled,
         "runs_root": str(runs_root),
         "run_id": compare_id,
@@ -2539,12 +2913,11 @@ def main() -> None:
         if not run_rows:
             raise SystemExit("Matched logs do not contain valid run_summary entries.")
 
-        baseline_rows, baseline_payloads, adaptive_rows_from_logs, adaptive_pairs_from_logs = _split_attempt_rows(
+        baseline_rows, _baseline_payloads, adaptive_rows_from_logs, adaptive_pairs_from_logs = _split_attempt_rows(
             run_rows,
             run_payloads,
         )
         run_rows = baseline_rows
-        run_payloads = baseline_payloads
         adaptive_run_rows = adaptive_rows_from_logs
         adaptive_pair_rows = adaptive_pairs_from_logs
 
@@ -2561,7 +2934,7 @@ def main() -> None:
         requested_models = list(model_profiles)
         resume_context["from_logs_glob"] = args.from_logs_glob
         resume_context["run_id"] = compare_id
-        identity_models_text, identity_providers_text = _resolve_models_and_providers_for_identity(
+        identity_models_text, identity_providers_text, identity_routing_text = _resolve_models_and_providers_for_identity(
             model_profiles=model_profiles,
             providers_config_path=effective_providers_config_path,
         )
@@ -2571,12 +2944,15 @@ def main() -> None:
             protocol_version=protocol_version,
             scenario=scenario,
             run_id=compare_id,
+            resume_time_human=None,
             run_root=run_dirs["run_root"],
             model_profiles=model_profiles,
             models_text=identity_models_text,
             providers_text=identity_providers_text,
+            routing_text=identity_routing_text,
             model_workers=args.model_workers,
             seed_workers_per_model=effective_seed_workers_per_model,
+            moral_mode=effective_moral_mode,
         )
 
         compare_payload, model_summaries, pairwise_rows, resolved_profiles = _persist_compare_outputs(
@@ -2601,7 +2977,7 @@ def main() -> None:
         completed_jobs = 0
         completed_units = 0
         existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
-        payload_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        payload_by_key: dict[tuple[str, int, str], dict[str, Any]] = {}
         control_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_pair_by_key: dict[tuple[str, int], dict[str, Any]] = {}
@@ -2681,10 +3057,12 @@ def main() -> None:
                 else int(resume_history_window)
             )
             effective_fix_thinking = bool(resume_context.get("fix_thinking", effective_fix_thinking))
+            effective_moral_mode = bool(resume_context.get("moral_mode", effective_moral_mode))
             adaptive_enabled = bool(resume_context.get("adaptive_memory", adaptive_enabled))
             effective_seed_workers_per_model = int(resume_context.get("seed_workers_per_model", effective_seed_workers_per_model))
             resume_context["history_window"] = effective_history_window
             resume_context["fix_thinking"] = effective_fix_thinking
+            resume_context["moral_mode"] = effective_moral_mode
             resume_context["adaptive_memory"] = adaptive_enabled
             resume_context["seed_workers_per_model"] = effective_seed_workers_per_model
             benchmark_cfg = load_yaml_file(effective_benchmark_config_path)
@@ -2699,6 +3077,7 @@ def main() -> None:
                     color_enabled,
                 )
             )
+            resume_time_human = datetime.now().strftime("%H:%M:%S - %d/%m/%Y")
         else:
             model_profiles = parse_models(args.models)
             seed_list = resolve_seed_list(args.seeds, args.num_runs, args.seed_start)
@@ -2709,7 +3088,7 @@ def main() -> None:
         if not seed_list:
             raise SystemExit("No seeds available for compare execution.")
 
-        identity_models_text, identity_providers_text = _resolve_models_and_providers_for_identity(
+        identity_models_text, identity_providers_text, identity_routing_text = _resolve_models_and_providers_for_identity(
             model_profiles=model_profiles,
             providers_config_path=effective_providers_config_path,
         )
@@ -2719,12 +3098,15 @@ def main() -> None:
             protocol_version=protocol_version,
             scenario=scenario,
             run_id=compare_id,
+            resume_time_human=resume_time_human,
             run_root=run_dirs["run_root"],
             model_profiles=model_profiles,
             models_text=identity_models_text,
             providers_text=identity_providers_text,
+            routing_text=identity_routing_text,
             model_workers=args.model_workers,
             seed_workers_per_model=effective_seed_workers_per_model,
+            moral_mode=effective_moral_mode,
         )
 
         jobs = _build_jobs(model_profiles, seed_list)
@@ -2743,8 +3125,12 @@ def main() -> None:
 
         for payload in run_payloads:
             summary = payload.get("summary", {})
-            key = (str(summary.get("model_profile", payload.get("model_profile", ""))), int(summary.get("seed", payload.get("seed", 0))))
-            if key in jobs_by_key:
+            key = (
+                str(summary.get("model_profile", payload.get("model_profile", ""))),
+                int(summary.get("seed", payload.get("seed", 0))),
+                str(summary.get("attempt_kind", payload.get("attempt_kind", "initial"))),
+            )
+            if (key[0], key[1]) in jobs_by_key:
                 payload_by_key[key] = payload
 
         for row in adaptive_run_rows:
@@ -2763,11 +3149,49 @@ def main() -> None:
             if key in jobs_by_key:
                 adaptive_pair_by_key[key] = row
 
+        def _hydrate_missing_control_rows_from_logs() -> None:
+            for key, job in jobs_by_key.items():
+                if key not in existing_by_key:
+                    continue
+                if key in control_by_key:
+                    continue
+                log_path = _job_log_path_adaptive(run_dirs["logs"], job, "control")
+                if not log_path.exists():
+                    continue
+                try:
+                    with log_path.open("r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                except Exception:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                summary = payload.get("run_summary")
+                if not isinstance(summary, dict):
+                    continue
+                control_summary = dict(summary)
+                control_summary.setdefault("protocol_version", payload.get("protocol_version", protocol_version))
+                control_by_key[key] = {
+                    "compare_id": compare_id,
+                    "run_id": f"{_safe_slug(job.model_profile)}__seed{job.seed}__control",
+                    "job_index": job.job_index,
+                    "job_total": job.job_total,
+                    "model_order": job.model_order,
+                    "seed_order": job.seed_order,
+                    **control_summary,
+                }
+
+        _hydrate_missing_control_rows_from_logs()
+
         def _rebuild_ordered_collections() -> None:
             nonlocal run_rows, run_payloads, adaptive_run_rows, adaptive_pair_rows
             ordered_keys = [(job.model_profile, job.seed) for job in jobs if (job.model_profile, job.seed) in existing_by_key]
             run_rows = [existing_by_key[key] for key in ordered_keys]
-            run_payloads = [payload_by_key[key] for key in ordered_keys if key in payload_by_key]
+            run_payloads = []
+            for model_profile, seed in ordered_keys:
+                for attempt_kind in ("initial", "control_rerun", "adaptive_rerun"):
+                    payload = payload_by_key.get((model_profile, seed, attempt_kind))
+                    if isinstance(payload, dict):
+                        run_payloads.append(payload)
             control_rows = [control_by_key[key] for key in ordered_keys if key in control_by_key]
             adaptive_only_rows = [adaptive_by_key[key] for key in ordered_keys if key in adaptive_by_key]
             adaptive_run_rows = control_rows + adaptive_only_rows
@@ -2817,6 +3241,8 @@ def main() -> None:
         adaptive_live_line_count = 0
         live_attempt_scores_by_key: dict[tuple[str, int, str], int] = {}
         live_attempt_scores_lock = threading.Lock()
+        active_attempts_by_key: dict[tuple[str, int], str] = {}
+        active_attempts_lock = threading.Lock()
 
         def _refresh_adaptive_live_panel() -> None:
             nonlocal adaptive_live_line_count
@@ -2824,6 +3250,8 @@ def main() -> None:
                 return
             with live_attempt_scores_lock:
                 live_attempt_scores_snapshot = dict(live_attempt_scores_by_key)
+            with active_attempts_lock:
+                active_attempts_snapshot = dict(active_attempts_by_key)
             adaptive_live_line_count = _print_adaptive_live_snapshot(
                 status_line=status_line,
                 color_enabled=color_enabled,
@@ -2834,6 +3262,7 @@ def main() -> None:
                 adaptive_rows_by_key=adaptive_by_key,
                 adaptive_pairs_by_key=adaptive_pair_by_key,
                 live_attempt_scores_by_key=live_attempt_scores_snapshot,
+                active_attempts_by_key=active_attempts_snapshot,
                 previous_line_count=adaptive_live_line_count,
             )
 
@@ -2848,6 +3277,66 @@ def main() -> None:
 
         _persist_running_state(status="running")
         _refresh_adaptive_live_panel()
+
+        observed_initial_seconds_by_model: dict[str, list[float]] = defaultdict(list)
+        observed_followup_seconds_by_model: dict[str, list[float]] = defaultdict(list)
+        prior_initial_seconds_by_model: dict[str, list[float]] = defaultdict(list)
+        prior_followup_seconds_by_model: dict[str, list[float]] = defaultdict(list)
+
+        def _row_latency_seconds(row: dict[str, Any]) -> float | None:
+            raw = row.get("latency_ms")
+            if raw is None:
+                return None
+            try:
+                value = float(raw) / 1000.0
+            except (TypeError, ValueError):
+                return None
+            if value <= 0:
+                return None
+            return value
+
+        for key, initial_row in existing_by_key.items():
+            model_profile = str(initial_row.get("model_profile", key[0]))
+            initial_seconds = _row_latency_seconds(initial_row)
+            if initial_seconds is not None:
+                prior_initial_seconds_by_model[model_profile].append(initial_seconds)
+
+            control_row = control_by_key.get(key)
+            adaptive_row = adaptive_by_key.get(key)
+            control_seconds = _row_latency_seconds(control_row) if control_row is not None else None
+            adaptive_seconds = _row_latency_seconds(adaptive_row) if adaptive_row is not None else None
+            if control_seconds is not None and adaptive_seconds is not None:
+                prior_followup_seconds_by_model[model_profile].append(control_seconds + adaptive_seconds)
+
+        def _mean(values: list[float]) -> float | None:
+            if not values:
+                return None
+            return float(sum(values) / len(values))
+
+        def _estimate_stage_seconds(model_profile: str) -> tuple[float, float]:
+            init_est = (
+                _mean(observed_initial_seconds_by_model.get(model_profile, []))
+                or _mean(prior_initial_seconds_by_model.get(model_profile, []))
+            )
+            follow_est = (
+                _mean(observed_followup_seconds_by_model.get(model_profile, []))
+                or _mean(prior_followup_seconds_by_model.get(model_profile, []))
+            )
+
+            global_init = (
+                _mean([value for values in observed_initial_seconds_by_model.values() for value in values])
+                or _mean([value for values in prior_initial_seconds_by_model.values() for value in values])
+                or 60.0
+            )
+            global_follow = (
+                _mean([value for values in observed_followup_seconds_by_model.values() for value in values])
+                or _mean([value for values in prior_followup_seconds_by_model.values() for value in values])
+                or max(8.0, global_init * 2.2)
+            )
+
+            init_value = max(1.0, float(init_est if init_est is not None else global_init))
+            follow_value = max(init_value * 1.5, float(follow_est if follow_est is not None else global_follow))
+            return init_value, follow_value
 
         def _record_initial_result(
             job: JobSpec,
@@ -2874,12 +3363,14 @@ def main() -> None:
             key = (job.model_profile, job.seed)
             existing_by_key[key] = run_row
 
-            payload_by_key[key] = {
+            payload_by_key[(job.model_profile, job.seed, "initial")] = {
                 "run_id": run_row["run_id"],
                 "model_profile": summary["model_profile"],
                 "provider_id": summary["provider_id"],
                 "model": summary["model"],
                 "seed": summary["seed"],
+                "attempt_kind": summary.get("attempt_kind", "initial"),
+                "memory_injected": summary.get("memory_injected"),
                 "summary": summary,
                 "replay": build_viewer_payload(run_log=run_log, source_log_path=Path(str(summary["log_path"]))),
             }
@@ -2919,6 +3410,20 @@ def main() -> None:
                     **control_summary,
                 }
                 control_by_key[key] = control_row
+                payload_by_key[(job.model_profile, job.seed, "control_rerun")] = {
+                    "run_id": control_row["run_id"],
+                    "model_profile": control_summary.get("model_profile"),
+                    "provider_id": control_summary.get("provider_id"),
+                    "model": control_summary.get("model"),
+                    "seed": control_summary.get("seed"),
+                    "attempt_kind": control_summary.get("attempt_kind", "control_rerun"),
+                    "memory_injected": control_summary.get("memory_injected"),
+                    "summary": control_summary,
+                    "replay": build_viewer_payload(
+                        run_log=control_run_log,
+                        source_log_path=Path(str(control_summary["log_path"])),
+                    ),
+                }
 
             adaptive_summary = dict(adaptive_run_log.get("run_summary", {}))
             adaptive_summary.setdefault("protocol_version", adaptive_run_log.get("protocol_version", protocol_version))
@@ -2932,6 +3437,20 @@ def main() -> None:
                 **adaptive_summary,
             }
             adaptive_by_key[key] = adaptive_row
+            payload_by_key[(job.model_profile, job.seed, "adaptive_rerun")] = {
+                "run_id": adaptive_row["run_id"],
+                "model_profile": adaptive_summary.get("model_profile"),
+                "provider_id": adaptive_summary.get("provider_id"),
+                "model": adaptive_summary.get("model"),
+                "seed": adaptive_summary.get("seed"),
+                "attempt_kind": adaptive_summary.get("attempt_kind", "adaptive_rerun"),
+                "memory_injected": adaptive_summary.get("memory_injected"),
+                "summary": adaptive_summary,
+                "replay": build_viewer_payload(
+                    run_log=adaptive_run_log,
+                    source_log_path=Path(str(adaptive_summary["log_path"])),
+                ),
+            }
 
             if adaptive_pair_row is not None:
                 pair_row = dict(adaptive_pair_row)
@@ -3008,6 +3527,8 @@ def main() -> None:
                         if event_type == "run_started":
                             run_progress["max_turns"] = int(event.get("max_turns", run_progress["max_turns"]))
                             run_progress["attempt_kind"] = str(event.get("attempt_kind", run_progress["attempt_kind"]))
+                            with active_attempts_lock:
+                                active_attempts_by_key[(job.model_profile, int(job.seed))] = str(run_progress["attempt_kind"])
                             run_progress["energy"] = None
                             run_progress["energy_max"] = None
                             if "baseline_score_reference" in event:
@@ -3049,6 +3570,22 @@ def main() -> None:
                                 )
                             )
                             return
+                        if event_type == "run_completed":
+                            summary = event.get("summary")
+                            if isinstance(summary, dict):
+                                attempt_kind = str(summary.get("attempt_kind", run_progress.get("attempt_kind", "initial")))
+                                final_score = _safe_int(summary.get("final_score"))
+                                seed_value = _safe_int(summary.get("seed"))
+                                model_profile_value = str(summary.get("model_profile", job.model_profile))
+                                if final_score is not None and seed_value is not None:
+                                    with live_attempt_scores_lock:
+                                        live_attempt_scores_by_key[
+                                            (model_profile_value, int(seed_value), attempt_kind)
+                                        ] = int(final_score)
+                            with active_attempts_lock:
+                                active_attempts_by_key.pop((job.model_profile, int(job.seed)), None)
+                            return
+
                         if event_type != "turn_completed":
                             return
 
@@ -3122,6 +3659,7 @@ def main() -> None:
                                 session_lessons=[],
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
                             )
                             run_log = dict(initial_result["initial_run_log"])
                             _record_initial_result(job, run_log)
@@ -3142,6 +3680,7 @@ def main() -> None:
                             initial_log=run_log,
                             progress_callback=_build_progress_callback(completed_units_before=completed_units),
                             fix_thinking=effective_fix_thinking,
+                            moral_mode=effective_moral_mode,
                         )
                         _record_adaptive_result(
                             job,
@@ -3164,6 +3703,7 @@ def main() -> None:
                             output_logs_dir=run_dirs["logs"],
                             progress_callback=_build_progress_callback(completed_units_before=completed_units),
                             fix_thinking=effective_fix_thinking,
+                            moral_mode=effective_moral_mode,
                         )
                         summary = _record_initial_result(job, run_log)
                 except KeyboardInterrupt:
@@ -3277,11 +3817,7 @@ def main() -> None:
                 )
                 fraction = _current_overall_fraction()
                 pct = fraction * 100.0
-                eta_text = "--"
-                if fraction > 0:
-                    elapsed = eta_elapsed_baseline_seconds + max(0.0, time.monotonic() - compare_started_at)
-                    remaining = max(0.0, (elapsed / fraction) - elapsed)
-                    eta_text = format_eta(remaining)
+                eta_text = _compute_parallel_eta_text()
 
                 return _render_turn_progress_line(
                     pct=pct,
@@ -3316,6 +3852,7 @@ def main() -> None:
                 max_workers=max(1, args.model_workers * effective_seed_workers_per_model)
             ) as executor:
                 future_to_spec: dict[concurrent.futures.Future[dict[str, Any]], AdaptiveFutureSpec] = {}
+                future_started_at: dict[concurrent.futures.Future[dict[str, Any]], float] = {}
 
                 def _model_has_pending_work(model_profile: str) -> bool:
                     pending_jobs = pending_jobs_by_model[model_profile]
@@ -3330,6 +3867,162 @@ def main() -> None:
                             adaptive_next_index[model_profile] += 1
                             continue
                         break
+
+                def _estimate_remaining_from_snapshot(
+                    *,
+                    snapshot: dict[str, Any],
+                    estimated_total_seconds: float,
+                    now_ts: float,
+                ) -> float:
+                    started_at = float(snapshot.get("started_at", now_ts))
+                    elapsed = max(0.0, now_ts - started_at)
+                    turn_value = int(snapshot.get("turn", 0))
+                    max_turns_value = int(snapshot.get("max_turns", 0))
+                    attempt_kind = str(snapshot.get("attempt_kind", "initial"))
+                    action_text = str(snapshot.get("action", "")).lower()
+
+                    progress = 0.0
+                    if max_turns_value > 0 and turn_value > 0:
+                        run_progress = max(0.0, min(1.0, float(turn_value) / float(max_turns_value)))
+                        if attempt_kind == "control_rerun":
+                            progress = min(0.49, 0.49 * run_progress)
+                        elif attempt_kind == "adaptive_rerun":
+                            progress = min(0.97, 0.52 + 0.43 * run_progress)
+                        else:
+                            progress = run_progress
+                    elif attempt_kind == "control_rerun":
+                        progress = 0.05
+                    elif attempt_kind == "adaptive_rerun":
+                        if "cross-seed refinement" in action_text:
+                            progress = 0.97
+                        elif "seed reflection" in action_text:
+                            progress = 0.50
+                        elif "computing memory" in action_text:
+                            progress = 0.60
+                        else:
+                            progress = 0.52
+
+                    progress = max(0.0, min(0.98, progress))
+                    if progress > 0:
+                        inferred_total = elapsed / max(progress, 0.01)
+                        estimated_total_seconds = max(float(estimated_total_seconds), inferred_total)
+
+                    remaining = float(estimated_total_seconds) - elapsed
+                    return max(1.0, remaining)
+
+                def _estimate_model_remaining_seconds(model_profile: str, now_ts: float) -> float:
+                    pending_jobs = pending_jobs_by_model.get(model_profile, [])
+                    if not pending_jobs:
+                        return 0.0
+                    if not any((job.model_profile, job.seed) not in completed_keys for job in pending_jobs):
+                        return 0.0
+
+                    init_est_seconds, follow_est_seconds = _estimate_stage_seconds(model_profile)
+
+                    with progress_lock:
+                        snapshots = dict(live_progress)
+
+                    initial_completion_seconds: dict[tuple[str, int], float] = {}
+                    running_initial_remaining: list[float] = []
+                    running_initial_keys: set[tuple[str, int]] = set()
+
+                    for job in pending_jobs:
+                        key = (job.model_profile, job.seed)
+                        if key in completed_initial_keys:
+                            initial_completion_seconds[key] = 0.0
+                            continue
+                        initial_snapshot = snapshots.get((job.model_profile, job.seed, "initial"))
+                        if isinstance(initial_snapshot, dict):
+                            remaining = _estimate_remaining_from_snapshot(
+                                snapshot=initial_snapshot,
+                                estimated_total_seconds=init_est_seconds,
+                                now_ts=now_ts,
+                            )
+                            initial_completion_seconds[key] = remaining
+                            running_initial_remaining.append(remaining)
+                            running_initial_keys.add(key)
+
+                    worker_slots = max(1, int(effective_seed_workers_per_model))
+                    initial_worker_heap: list[float] = []
+                    for remaining in running_initial_remaining:
+                        heapq.heappush(initial_worker_heap, remaining)
+                    while len(initial_worker_heap) < worker_slots:
+                        heapq.heappush(initial_worker_heap, 0.0)
+
+                    for job in pending_jobs:
+                        key = (job.model_profile, job.seed)
+                        if key in initial_completion_seconds:
+                            continue
+                        worker_free_at = heapq.heappop(initial_worker_heap)
+                        complete_at = worker_free_at + init_est_seconds
+                        initial_completion_seconds[key] = complete_at
+                        heapq.heappush(initial_worker_heap, complete_at)
+
+                    if not adaptive_enabled:
+                        return max(initial_completion_seconds.values(), default=0.0)
+
+                    running_followup_key: tuple[str, int] | None = None
+                    running_followup_remaining = 0.0
+                    for job in pending_jobs:
+                        follow_snapshot = snapshots.get((job.model_profile, job.seed, "adaptive_rerun"))
+                        if not isinstance(follow_snapshot, dict):
+                            continue
+                        running_followup_key = (job.model_profile, job.seed)
+                        running_followup_remaining = _estimate_remaining_from_snapshot(
+                            snapshot=follow_snapshot,
+                            estimated_total_seconds=follow_est_seconds,
+                            now_ts=now_ts,
+                        )
+                        break
+
+                    followup_tail_seconds = 0.0
+                    for job in pending_jobs:
+                        key = (job.model_profile, job.seed)
+                        if key in completed_keys:
+                            continue
+                        initial_ready_at = initial_completion_seconds.get(key, 0.0)
+                        if running_followup_key is not None and key == running_followup_key:
+                            followup_tail_seconds = max(followup_tail_seconds, running_followup_remaining)
+                            continue
+                        followup_start_at = max(followup_tail_seconds, initial_ready_at)
+                        followup_tail_seconds = followup_start_at + follow_est_seconds
+
+                    return max(
+                        max(initial_completion_seconds.values(), default=0.0),
+                        followup_tail_seconds,
+                    )
+
+                def _estimate_parallel_eta_seconds() -> float:
+                    active_pending = [model for model in active_models if _model_has_pending_work(model)]
+                    queued_pending = [
+                        model
+                        for model in pending_model_order
+                        if model not in active_pending and _model_has_pending_work(model)
+                    ]
+                    if not active_pending and not queued_pending:
+                        return 0.0
+
+                    now_ts = time.monotonic()
+                    model_remaining: dict[str, float] = {}
+                    for model in active_pending + queued_pending:
+                        model_remaining[model] = max(0.0, _estimate_model_remaining_seconds(model, now_ts))
+
+                    slots = max(1, int(args.model_workers))
+                    slot_heap: list[float] = []
+                    for model in active_pending[:slots]:
+                        heapq.heappush(slot_heap, model_remaining.get(model, 0.0))
+                    while len(slot_heap) < slots:
+                        heapq.heappush(slot_heap, 0.0)
+
+                    for model in queued_pending:
+                        available_at = heapq.heappop(slot_heap)
+                        heapq.heappush(slot_heap, available_at + model_remaining.get(model, 0.0))
+
+                    return max(slot_heap) if slot_heap else 0.0
+
+                def _compute_parallel_eta_text() -> str:
+                    remaining_seconds = _estimate_parallel_eta_seconds()
+                    return format_eta(remaining_seconds)
 
                 def _register_live_slot(*, job: JobSpec, attempt_kind: str) -> tuple[str, int, str]:
                     key = (job.model_profile, job.seed, attempt_kind)
@@ -3350,6 +4043,7 @@ def main() -> None:
                             "energy_max": None,
                             "baseline_score_reference": None,
                             "attempt_kind": attempt_kind,
+                            "started_at": time.monotonic(),
                             "updated_at": time.monotonic(),
                         }
                     return key
@@ -3376,8 +4070,23 @@ def main() -> None:
                                 "energy_max": None,
                                 "attempt_kind": str(event.get("attempt_kind", "initial")),
                             }
+                            with active_attempts_lock:
+                                active_attempts_by_key[(event_key[0], int(event_key[1]))] = str(update["attempt_kind"])
                             if "baseline_score_reference" in event:
                                 update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                        elif event_type == "adaptive_stage":
+                            update = {
+                                "action": str(event.get("action") or "(computing memory)"),
+                                "attempt_kind": str(event.get("attempt_kind", "adaptive_rerun")),
+                                "protocol_valid": True,
+                                "effect_applied": True,
+                            }
+                            if "baseline_score_reference" in event:
+                                update["baseline_score_reference"] = _safe_int(event.get("baseline_score_reference"))
+                            with active_attempts_lock:
+                                active_attempts_by_key[(event_key[0], int(event_key[1]))] = str(
+                                    update["attempt_kind"]
+                                )
                         elif event_type == "turn_completed":
                             update = {
                                 "turn": int(event.get("turn", 0)),
@@ -3415,6 +4124,8 @@ def main() -> None:
                                         live_attempt_scores_by_key[
                                             (event_key[0], int(event_key[1]), attempt_kind)
                                         ] = int(final_score)
+                            with active_attempts_lock:
+                                active_attempts_by_key.pop((event_key[0], int(event_key[1])), None)
                             return
                         if not update:
                             return
@@ -3460,6 +4171,7 @@ def main() -> None:
                                 session_lessons=[],
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
                             )
                         else:
                             future = executor.submit(
@@ -3475,11 +4187,13 @@ def main() -> None:
                                 output_logs_dir=run_dirs["logs"],
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
                             )
                         future_to_spec[future] = AdaptiveFutureSpec(
                             kind="initial",
                             job=job,
                         )
+                        future_started_at[future] = time.monotonic()
                         running_initial_per_model[model_profile] += 1
                         running_tasks_per_model[model_profile] += 1
 
@@ -3521,11 +4235,13 @@ def main() -> None:
                             default_max_turns=default_max_turns,
                         ),
                         fix_thinking=effective_fix_thinking,
+                        moral_mode=effective_moral_mode,
                     )
                     future_to_spec[future] = AdaptiveFutureSpec(
                         kind="adaptive_followup",
                         job=job,
                     )
+                    future_started_at[future] = time.monotonic()
                     adaptive_running_per_model[model_profile] = True
                     running_tasks_per_model[model_profile] += 1
 
@@ -3561,6 +4277,7 @@ def main() -> None:
 
                     for future in done:
                         spec = future_to_spec.pop(future)
+                        started_at = future_started_at.pop(future, None)
                         job = spec.job
                         model_profile = job.model_profile
                         running_tasks_per_model[model_profile] = max(0, running_tasks_per_model[model_profile] - 1)
@@ -3571,12 +4288,24 @@ def main() -> None:
                         with progress_lock:
                             live_progress.pop((job.model_profile, job.seed, "initial"), None)
                             live_progress.pop((job.model_profile, job.seed, "adaptive_rerun"), None)
+                        with active_attempts_lock:
+                            active_attempts_by_key.pop((job.model_profile, int(job.seed)), None)
                         try:
                             result_payload = future.result()
                         except Exception as exc:
                             for pending_future in future_to_spec:
                                 pending_future.cancel()
+                            for pending_future in list(future_started_at.keys()):
+                                if pending_future in future_to_spec:
+                                    future_started_at.pop(pending_future, None)
                             _fail_and_exit(exc, job)
+                        finally:
+                            if started_at is not None:
+                                duration_seconds = max(0.0, time.monotonic() - started_at)
+                                if spec.kind == "initial":
+                                    observed_initial_seconds_by_model[model_profile].append(duration_seconds)
+                                elif spec.kind == "adaptive_followup":
+                                    observed_followup_seconds_by_model[model_profile].append(duration_seconds)
 
                         try:
                             if spec.kind == "initial":
@@ -3598,12 +4327,7 @@ def main() -> None:
                                 )
                                 adaptive_next_index[model_profile] += 1
 
-                            eta_text = _compute_eta_text(
-                                completed_jobs=completed_units,
-                                total_jobs=total_progress_units,
-                                started_at=compare_started_at,
-                                baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
-                            )
+                            eta_text = _compute_parallel_eta_text()
                             pct_after = (completed_units / max(1, total_progress_units)) * 100.0
                             if not adaptive_enabled or spec.kind == "adaptive_followup":
                                 status_line.write(
@@ -3636,6 +4360,9 @@ def main() -> None:
                         except Exception as exc:
                             for pending_future in future_to_spec:
                                 pending_future.cancel()
+                            for pending_future in list(future_started_at.keys()):
+                                if pending_future in future_to_spec:
+                                    future_started_at.pop(pending_future, None)
                             _fail_and_exit(exc, job)
 
                     for model in list(active_models):
@@ -3675,6 +4402,14 @@ def main() -> None:
     _print_row("Run root", _short_path(run_dirs["run_root"]), color_enabled=color_enabled, value_color="1;94")
     _print_row("Models (requested)", ", ".join(requested_models), color_enabled=color_enabled)
     _print_row("Models (resolved)", ", ".join(resolved_profiles), color_enabled=color_enabled)
+    _print_row(
+        "Model(s)",
+        _render_models_value(identity_models_text, color_enabled=color_enabled),
+        color_enabled=color_enabled,
+        value_already_colored=True,
+    )
+    _print_row("Provider(s)", identity_providers_text, color_enabled=color_enabled)
+    _print_row("Routing", identity_routing_text, color_enabled=color_enabled, value_color="1;93")
     _print_row("Seeds", ", ".join(str(s) for s in seed_list), color_enabled=color_enabled)
     _print_row("Fairness", "Paired seeds: same seeds for all models", color_enabled=color_enabled, value_color="1;92")
 
@@ -3769,11 +4504,12 @@ def main() -> None:
             control_score = _safe_int(pair.get("control_score"))
             adaptive_score = _safe_int(pair.get("adaptive_score"))
             variance_delta = control_score - baseline_score
-            mem_effect = adaptive_score - control_score
+            no_mem_avg = (baseline_score + control_score) / 2
+            mem_effect = adaptive_score - no_mem_avg
             label = f"Seed {seed}" if pair_model_count <= 1 else f"{model_profile} seed {seed}"
             value = (
-                f"baseline={baseline_score}  rerun={control_score}  rerun+mem={adaptive_score}  "
-                f"variance={variance_delta:+d}  memory={mem_effect:+d}"
+                f"baseline={baseline_score}  rerun={control_score}  avg_no_mem={no_mem_avg:.0f}  rerun+mem={adaptive_score}  "
+                f"memory={mem_effect:+.1f}"
             )
             value_color = "1;92" if mem_effect > 0 else ("1;91" if mem_effect < 0 else "1;97")
             _print_row(

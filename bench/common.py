@@ -21,7 +21,7 @@ from engine.prompt_loader import PromptLoader
 from engine.rules import apply_end_of_turn, compute_allowed_actions
 from engine.scoring import apply_score, score_action, score_survival
 from engine.version import __version__
-from engine.world import create_world, serialize_tiles
+from engine.world import create_world, serialize_npcs, serialize_tiles
 from models.anthropic_wrapper import AnthropicWrapper
 from models.base import BaseModelWrapper, RenderedPrompts
 from models.dummy import DummyRandomWrapper
@@ -649,7 +649,7 @@ def _build_run_analytics(
     effective_protocol_version = str(
         protocol_version
         or run_summary.get("protocol_version")
-        or "AIB-0.1.2"
+        or "AIB-0.2.1"
     )
     run_identity = {
         "protocol_version": effective_protocol_version,
@@ -733,6 +733,7 @@ def run_match_once(
     prior_discovered_tiles: dict[str, str] | None = None,
     attempt_kind: str = "standard",
     adaptive_pair_key: str | None = None,
+    moral_mode: bool = False,
 ) -> dict[str, Any]:
     project_root = Path.cwd()
     benchmark_cfg, scenarios_cfg = load_configs(benchmark_config_path, scenarios_config_path)
@@ -793,8 +794,9 @@ def run_match_once(
 
     world = create_world(seed=seed, scenario_cfg=scenario, rules_cfg=rules_cfg, agent_id=DEFAULT_AGENT_ID)
     initial_tiles = serialize_tiles(world)
+    initial_npcs = serialize_npcs(world)
     prompt_loader = PromptLoader(prompts_dir)
-    system_prompt = prompt_loader.render_system_prompt({})
+    system_prompt = prompt_loader.render_system_prompt({"moral_mode": bool(moral_mode)})
     prompt_metadata = prompt_loader.get_prompt_metadata()
     system_prompt_sha256 = prompt_pair_hash(system_prompt, "")
 
@@ -829,6 +831,7 @@ def run_match_once(
             "path_window": cfg_path_window,
             "attempt_kind": attempt_kind,
             "adaptive_pair_key": adaptive_pair_key,
+            "moral_mode": bool(moral_mode),
         },
     )
 
@@ -838,6 +841,9 @@ def run_match_once(
 
     resources_gathered = 0
     resources_gathered_breakdown = {"wood": 0, "stone": 0, "food": 0, "water": 0}
+    attack_count = 0
+    npc_kills = 0
+    meat_collected = 0
     invalid_actions = 0
     survived_turns = 0
 
@@ -941,6 +947,7 @@ def run_match_once(
             "memory_hygiene": memory_hygiene,
             "attempt_kind": attempt_kind,
             "adaptive_pair_key": adaptive_pair_key,
+            "moral_mode": bool(moral_mode),
         }
 
         call_started = perf_counter()
@@ -1018,6 +1025,14 @@ def run_match_once(
                 for item, delta in inventory_delta.items():
                     if item in resources_gathered_breakdown and int(delta) > 0:
                         resources_gathered_breakdown[item] += int(delta)
+            if parse_result.action == "attack":
+                attack_count += 1
+                if bool(action_outcome.world_delta.get("npc_killed", False)):
+                    npc_kills += 1
+                inventory_delta = action_outcome.world_delta.get("inventory_delta", {})
+                food_gain = int(inventory_delta.get("food", 0)) if isinstance(inventory_delta, dict) else 0
+                if food_gain > 0:
+                    meat_collected += food_gain
         else:
             invalid_actions += 1
             action_outcome = ActionOutcome(
@@ -1167,11 +1182,15 @@ def run_match_once(
         "prompt_variant": prompt_variant,
         "parser_case_mode": parser_case_mode,
         "fix_thinking": fix_thinking,
+        "moral_mode": bool(moral_mode),
         "turns_played": len(turn_logs),
         "turns_survived": survived_turns,
         "final_score": final_agent.score,
         "resources_gathered": resources_gathered,
         "resources_gathered_breakdown": resources_gathered_breakdown,
+        "attack_count": attack_count,
+        "npc_kills": npc_kills,
+        "meat_collected": meat_collected,
         "invalid_actions": invalid_actions,
         "alive": final_agent.alive,
         "end_reason": end_reason,
@@ -1263,6 +1282,7 @@ def run_match_once(
             "prompt_variant": prompt_variant,
             "parser_case_mode": parser_case_mode,
             "fix_thinking": fix_thinking,
+            "moral_mode": bool(moral_mode),
             "memory_injected": include_memory,
             "memory_lesson_count": len(memory_items),
             "memory_session_lesson_count": len(session_memory_items),
@@ -1285,6 +1305,8 @@ def run_match_once(
         "world_snapshots": {
             "initial_tiles": initial_tiles,
             "final_tiles": serialize_tiles(world),
+            "initial_npcs": initial_npcs,
+            "final_npcs": serialize_npcs(world),
         },
         "discovered_tiles": {f"{x},{y}": t for (x, y), t in discovered_tiles.items()},
     }

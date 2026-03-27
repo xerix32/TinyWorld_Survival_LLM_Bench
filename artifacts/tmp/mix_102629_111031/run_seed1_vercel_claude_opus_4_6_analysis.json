@@ -1,0 +1,99 @@
+{
+  "protocol_version": "AIB-0.1",
+  "run_analysis": {
+    "analysis_version": "AIB-AN-AIB-0.1-v1",
+    "behavior_metrics": {
+      "consecutive_revisit_max": 4,
+      "distance_traveled": 15,
+      "gather_count": 5,
+      "invalid_action_count": 0,
+      "loop_detected": false,
+      "move_count": 15,
+      "revisit_count": 5,
+      "revisit_ratio": 0.333333,
+      "unique_cells_visited": 11,
+      "useful_action_ratio": 0.236842,
+      "wait_count": 14
+    },
+    "classification": {
+      "confidence_hint": "medium",
+      "failure_archetypes": [
+        "resource_tunnel_vision",
+        "dehydration",
+        "starvation"
+      ],
+      "failure_archetypes_human": [
+        "Resource tunnel vision",
+        "Dehydration",
+        "Starvation"
+      ],
+      "primary_failure_archetype": "resource_tunnel_vision",
+      "primary_failure_archetype_human": "Resource tunnel vision",
+      "secondary_failure_archetypes": [
+        "dehydration",
+        "starvation"
+      ],
+      "secondary_failure_archetypes_human": [
+        "Dehydration",
+        "Starvation"
+      ]
+    },
+    "final_facts": {
+      "avg_latency": 3874.994711,
+      "death_cause": "starvation_and_dehydration",
+      "death_turn": 38,
+      "final_score": 50,
+      "invalid_rate": 0.0,
+      "survived": false,
+      "total_invalid": 0,
+      "total_latency": 147249.799,
+      "total_tokens": 31421,
+      "total_turns": 38
+    },
+    "outcome_helpers": {
+      "died_from_dehydration": true,
+      "died_from_energy_collapse": false,
+      "died_from_starvation": true,
+      "early_exploration_over_threshold": false,
+      "late_recovery_attempt": false,
+      "survived_full_run": false
+    },
+    "resource_metrics": {
+      "first_food_gather_turn": 9,
+      "first_food_seen_turn": 1,
+      "first_water_gather_turn": 2,
+      "first_water_seen_turn": 1,
+      "food_gathered_count": 2,
+      "food_seen_count": 2,
+      "missed_food_opportunities": 0,
+      "missed_water_opportunities": 0,
+      "water_gathered_count": 2,
+      "water_seen_count": 2
+    },
+    "run_identity": {
+      "model": "anthropic/claude-opus-4.6",
+      "model_profile": "vercel_claude_opus_4_6",
+      "prompt_set_sha256": "24e9649fb331eb9a0100ad9182cf9c90ac8136bdb7b4ab301b83211b6c9ef550",
+      "prompt_variant": null,
+      "protocol_version": "AIB-0.1",
+      "provider_id": "vercel_gateway",
+      "scenario": "v0_1_basic",
+      "seed": 1
+    },
+    "schema_version": "AIB-RA-AIB-0.1-v1",
+    "state_pressure_metrics": {
+      "dehydration_pressure_turn": 27,
+      "first_energy_warning_turn": 35,
+      "first_hunger_warning_turn": 14,
+      "first_thirst_warning_turn": 21,
+      "low_energy_pressure_turn": 35,
+      "starvation_pressure_turn": 34
+    },
+    "summaries": {
+      "detailed_summary": "The agent died on turn 38 from starvation and dehydration. Gather count was high (5) but useful-action ratio remained 0.24. Secondary patterns: Dehydration, Starvation.",
+      "short_summary": "Agent tunneled on gathering without timely consumption."
+    }
+  },
+  "run_log_path": "/Users/fabio.laporta/Documents/gemini/TinyWorld Survival Bench/artifacts/runs/20260323T213845Z/logs/run_seed1_vercel_claude_opus_4_6.json",
+  "version": "0.1.39"
+}

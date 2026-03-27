@@ -1,7 +1,7 @@
-version: 0.2.1
-protocol_version: AIB-0.1.2
+version: 0.2.3
+protocol_version: AIB-0.2.1
 pricing_config_path: configs/pricing.yaml
-default_scenario: v0_1_basic
+default_scenario: v0_2_hunt
 max_turns: 50
 invalid_action_policy: waste_turn
 
@@ -37,6 +37,11 @@ rules:
   rest_energy_gain: 12
   eat_hunger_reduction: 25
   drink_thirst_reduction: 25
+  attack_damage: 3
+  attack_energy_cost: 2
+  npc_counter_damage: 3
+  npc_start_hp: 6
+  npc_drop_food: 1
 
 scoring:
   survive_turn: 1

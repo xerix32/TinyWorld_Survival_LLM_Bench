@@ -24,6 +24,7 @@ PROMPT_TEMPLATE_FILES = [
     "partials/action_reference.md",
     "partials/output_contract.md",
     "partials/memory_block.md",
+    "partials/moral_guidance.md",
 ]
 
 

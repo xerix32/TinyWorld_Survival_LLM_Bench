@@ -34,8 +34,25 @@ def render_turn_view(observation: dict[str, Any]) -> str:
         f"south: {nearby(0, 1)}",
         f"west: {nearby(-1, 0)}",
         "",
-        "Allowed actions:",
+        "Visible NPCs:",
     ]
+
+    visible_npcs = list(observation.get("visible_npcs", []))
+    if visible_npcs:
+        for npc in visible_npcs:
+            lines.append(
+                f"- {npc.get('npc_type', 'npc')} {npc.get('npc_id', '?')} at ({npc.get('x')},{npc.get('y')}) "
+                f"hp={npc.get('hp')} hostile={'yes' if npc.get('hostile') else 'no'}"
+            )
+    else:
+        lines.append("- none")
+
+    lines.extend(
+        [
+            "",
+        "Allowed actions:",
+        ]
+    )
 
     lines.extend(observation["allowed_actions"])
     return "\n".join(lines)
