@@ -1659,7 +1659,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average input / output tokens per run (high output ratio may indicate thinking)\" class=\"tip-down\" data-sort-key=\"completion_tokens_avg\" data-sort-desc=\"1\">I/O Tokens</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
                 <th data-tip=\"Average total attack actions per run (higher = more aggressive behavior)\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Aggression</th>
-                <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggression</th>
+                <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggr</th>
               </tr>
             </thead>
             <tbody id=\"lbBody\"></tbody>
