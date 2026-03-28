@@ -54,6 +54,36 @@ def get_visible_npcs(
     return visible
 
 
+def get_visible_agents(
+    world: WorldState,
+    *,
+    observer_agent_id: str,
+    x: int,
+    y: int,
+) -> list[dict[str, Any]]:
+    visible: list[dict[str, Any]] = []
+    for agent_id, agent in world.agents.items():
+        if agent_id == observer_agent_id:
+            continue
+        if not agent.alive:
+            continue
+        if abs(int(agent.position.x) - int(x)) > 1:
+            continue
+        if abs(int(agent.position.y) - int(y)) > 1:
+            continue
+        visible.append(
+            {
+                "agent_id": str(agent.agent_id),
+                "x": int(agent.position.x),
+                "y": int(agent.position.y),
+                "energy": int(agent.energy),
+                "alive": bool(agent.alive),
+            }
+        )
+    visible.sort(key=lambda item: (int(item["y"]), int(item["x"]), str(item["agent_id"])))
+    return visible
+
+
 def _build_known_map(
     world: WorldState,
     *,
@@ -114,6 +144,12 @@ def build_observation(
         else get_visible_tiles(world, x=agent.position.x, y=agent.position.y)
     )
     effective_visible_npcs = get_visible_npcs(world, x=agent.position.x, y=agent.position.y)
+    effective_visible_agents = get_visible_agents(
+        world,
+        observer_agent_id=agent_id,
+        x=agent.position.x,
+        y=agent.position.y,
+    )
 
     inventory = {
         "wood": int(agent.inventory.get("wood", 0)),
@@ -143,6 +179,7 @@ def build_observation(
         "inventory": inventory,
         "visible_tiles": effective_visible_tiles,
         "visible_npcs": effective_visible_npcs,
+        "visible_agents": effective_visible_agents,
         "recent_turns": list(recent_turns or []),
         "recent_discoveries": list(recent_discoveries or []),
         "known_map": known_map,

@@ -91,6 +91,23 @@ def get_alive_npc_at(world: WorldState, x: int, y: int) -> NpcState | None:
     return None
 
 
+def get_alive_other_agent_at(
+    world: WorldState,
+    *,
+    source_agent_id: str,
+    x: int,
+    y: int,
+) -> AgentState | None:
+    for agent_id, agent in world.agents.items():
+        if agent_id == source_agent_id:
+            continue
+        if not agent.alive:
+            continue
+        if agent.position.x == x and agent.position.y == y:
+            return agent
+    return None
+
+
 def serialize_npcs(world: WorldState) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for npc_id in sorted(world.npcs.keys()):
@@ -147,18 +164,34 @@ def create_world(
     if not empty_positions:
         raise ValueError("no empty tile available for agent start")
 
+    agent_count = int(scenario_cfg.get("agent_count", 1))
+    if agent_count < 1:
+        raise ValueError("agent_count must be >= 1")
+    if agent_count > len(empty_positions):
+        raise ValueError("agent_count exceeds available empty tiles")
+
     start_x, start_y = rng.choice(empty_positions)
-    agent = AgentState(
-        agent_id=agent_id,
-        position=Position(start_x, start_y),
-        energy=int(rules_cfg["start_energy"]),
-        hunger=int(rules_cfg["start_hunger"]),
-        thirst=int(rules_cfg["start_thirst"]),
-        inventory=default_inventory(),
-    )
+    agent_positions = [(start_x, start_y)]
+    remaining_agent_positions = [pos for pos in empty_positions if pos != (start_x, start_y)]
+    if agent_count > 1:
+        rng.shuffle(remaining_agent_positions)
+        agent_positions.extend(remaining_agent_positions[: agent_count - 1])
+
+    agents: dict[str, AgentState] = {}
+    for idx, (ax, ay) in enumerate(agent_positions, start=1):
+        current_agent_id = agent_id if idx == 1 else f"agent_{idx}"
+        agents[current_agent_id] = AgentState(
+            agent_id=current_agent_id,
+            position=Position(ax, ay),
+            energy=int(rules_cfg["start_energy"]),
+            hunger=int(rules_cfg["start_hunger"]),
+            thirst=int(rules_cfg["start_thirst"]),
+            inventory=default_inventory(),
+        )
 
     npc_count = sum(int(v) for v in npc_distribution.values())
-    remaining_empty_positions = [pos for pos in empty_positions if pos != (start_x, start_y)]
+    occupied_agent_positions = set(agent_positions)
+    remaining_empty_positions = [pos for pos in empty_positions if pos not in occupied_agent_positions]
     if npc_count > len(remaining_empty_positions):
         raise ValueError("npc_distribution exceeds available empty tiles after agent start")
 
@@ -189,6 +222,6 @@ def create_world(
         height=height,
         seed=seed,
         tiles=tiles,
-        agents={agent_id: agent},
+        agents=agents,
         npcs=npcs,
     )

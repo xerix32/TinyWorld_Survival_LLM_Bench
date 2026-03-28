@@ -10,6 +10,7 @@ from engine.world import (
     WorldState,
     get_tile,
     get_alive_npc_at,
+    get_alive_other_agent_at,
     is_in_bounds,
     set_tile,
 )
@@ -103,6 +104,48 @@ def apply_action(
 
     if action == "attack":
         x, y = agent.position.x, agent.position.y
+        rival = get_alive_other_agent_at(
+            world,
+            source_agent_id=agent_id,
+            x=x,
+            y=y,
+        )
+        if rival is not None:
+            attack_damage = int(rules_cfg.get("pvp_attack_damage", rules_cfg.get("attack_damage", 3)))
+            attack_energy_cost = int(rules_cfg.get("attack_energy_cost", 2))
+
+            energy_before = int(agent.energy)
+            target_energy_before = int(rival.energy)
+
+            agent.energy = max(0, int(agent.energy) - attack_energy_cost)
+            rival.energy = max(0, int(rival.energy) - attack_damage)
+
+            target_killed = False
+            if rival.energy <= 0:
+                rival.alive = False
+                target_killed = True
+
+            if agent.energy <= 0:
+                agent.alive = False
+
+            return ActionOutcome(
+                action=action,
+                success=True,
+                message=("attacked rival agent and defeated it" if target_killed else "attacked rival agent"),
+                world_delta={
+                    "energy_before": energy_before,
+                    "energy_after": int(agent.energy),
+                    "target_type": "agent",
+                    "target_agent_id": rival.agent_id,
+                    "target_energy_before": target_energy_before,
+                    "target_energy_after": int(rival.energy),
+                    "target_alive_after": bool(rival.alive),
+                    "target_killed": target_killed,
+                    "attack_energy_cost": attack_energy_cost,
+                    "attack_damage": attack_damage,
+                },
+            )
+
         npc = get_alive_npc_at(world, x, y)
         if npc is None:
             return ActionOutcome(
@@ -150,6 +193,7 @@ def apply_action(
             world_delta={
                 "energy_before": energy_before,
                 "energy_after": int(agent.energy),
+                "target_type": "npc",
                 "npc_id": npc.npc_id,
                 "npc_type": npc.npc_type,
                 "npc_hp_before": npc_hp_before,

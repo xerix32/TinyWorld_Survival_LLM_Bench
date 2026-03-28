@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from engine.actions import ACTION_REFERENCE, MOVE_DELTAS
-from engine.world import RESOURCE_TILE_TO_ITEM, WorldState, get_alive_npc_at, get_tile, is_in_bounds
+from engine.world import (
+    RESOURCE_TILE_TO_ITEM,
+    WorldState,
+    get_alive_npc_at,
+    get_alive_other_agent_at,
+    get_tile,
+    is_in_bounds,
+)
 
 
 @dataclass
@@ -61,7 +68,14 @@ def compute_allowed_actions(
             continue
 
         if action == "attack":
-            if get_alive_npc_at(world, agent.position.x, agent.position.y) is not None:
+            npc_target = get_alive_npc_at(world, agent.position.x, agent.position.y)
+            rival_target = get_alive_other_agent_at(
+                world,
+                source_agent_id=agent_id,
+                x=agent.position.x,
+                y=agent.position.y,
+            )
+            if npc_target is not None or rival_target is not None:
                 allowed.append(action)
             continue
 

@@ -33,6 +33,15 @@ def test_prompt_loader_renders_system_prompt_with_required_sections() -> None:
     assert "Output Contract" in rendered
 
 
+def test_prompt_loader_includes_moral_guidance_when_enabled() -> None:
+    loader = PromptLoader("prompts")
+    rendered = loader.render_system_prompt({"moral_mode": True})
+
+    assert "Optional Moral Framing (enabled)" in rendered
+    assert "Attacking animals should be considered only when needed for survival." in rendered
+    assert "Attacking rival agents should be considered only when needed for survival or immediate self-defense." in rendered
+
+
 def test_prompt_loader_renders_turn_prompt_with_turn_data() -> None:
     loader = PromptLoader("prompts")
     rendered = loader.render_turn_prompt(_sample_observation(), include_memory=False)

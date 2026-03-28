@@ -10,6 +10,9 @@ import yaml
 from bench.common import load_yaml_file, run_match_once
 from bench.run_compare import (
     _assert_adaptive_prompt_hash_consistency,
+    _build_duel_view,
+    _build_pvp_opponent_profile_map,
+    _scenario_is_pvp_duel,
     _build_compatibility_report,
     _build_jobs,
     _build_from_logs,
@@ -72,6 +75,37 @@ def test_build_jobs_stable_order() -> None:
         ("model_b", 11),
         ("model_b", 12),
     ]
+
+
+def test_build_pvp_opponent_profile_map_requires_two_models() -> None:
+    mapping = _build_pvp_opponent_profile_map(
+        model_profiles=["model_a", "model_b"],
+        pvp_enabled=True,
+    )
+    assert mapping == {"model_a": "model_b", "model_b": "model_a"}
+
+    mapping_disabled = _build_pvp_opponent_profile_map(
+        model_profiles=["model_a", "model_b"],
+        pvp_enabled=False,
+    )
+    assert mapping_disabled == {}
+
+    mapping_single = _build_pvp_opponent_profile_map(
+        model_profiles=["model_a"],
+        pvp_enabled=True,
+    )
+    assert mapping_single == {}
+
+
+def test_scenario_is_pvp_duel_detects_flag() -> None:
+    assert _scenario_is_pvp_duel(
+        scenarios_config_path=str(Path("configs/scenarios.yaml").resolve()),
+        scenario_name="v0_2_pvp_duel",
+    ) is True
+    assert _scenario_is_pvp_duel(
+        scenarios_config_path=str(Path("configs/scenarios.yaml").resolve()),
+        scenario_name="v0_1_basic",
+    ) is False
 
 
 def test_should_promote_cross_seed_memory_threshold_gate() -> None:
@@ -147,6 +181,98 @@ def test_build_compatibility_report_detects_mixed_versions() -> None:
     assert "mixed_prompt_hash" in warning_codes
     assert "mixed_bench_version" in warning_codes
     assert "mixed_engine_version" in warning_codes
+
+
+def test_build_duel_view_groups_seed_attempt_and_picks_deterministic_source() -> None:
+    run_payloads = [
+        {
+            "run_id": "beta_seed1_initial",
+            "model_profile": "vercel_model_beta",
+            "seed": 1,
+            "attempt_kind": "initial",
+            "summary": {
+                "pvp_duel": True,
+                "opponent_model_profile": "vercel_model_alpha",
+                "final_score": 30,
+                "turns_survived": 21,
+                "max_turns": 50,
+                "end_reason": "agent_dead",
+            },
+        },
+        {
+            "run_id": "alpha_seed1_initial",
+            "model_profile": "vercel_model_alpha",
+            "seed": 1,
+            "attempt_kind": "initial",
+            "summary": {
+                "pvp_duel": True,
+                "opponent_model_profile": "vercel_model_beta",
+                "final_score": 40,
+                "turns_survived": 31,
+                "max_turns": 50,
+                "end_reason": "max_turns_reached",
+            },
+        },
+    ]
+
+    duel_view = _build_duel_view(run_payloads)
+    assert duel_view is not None
+    duels = duel_view.get("duels", [])
+    assert len(duels) == 1
+    duel = duels[0]
+    assert duel["seed"] == 1
+    assert duel["attempt_kind"] == "initial"
+    assert duel["model_a"] == "vercel_model_alpha"
+    assert duel["model_b"] == "vercel_model_beta"
+    assert duel["timeline_source_run_id"] == "alpha_seed1_initial"
+    assert duel["run_id_by_model"]["vercel_model_alpha"] == "alpha_seed1_initial"
+    assert duel["run_id_by_model"]["vercel_model_beta"] == "beta_seed1_initial"
+    assert duel["warnings"] == []
+
+
+def test_build_duel_view_emits_warning_when_mirrored_run_missing() -> None:
+    run_payloads = [
+        {
+            "run_id": "alpha_seed2_adaptive",
+            "model_profile": "vercel_model_alpha",
+            "seed": 2,
+            "attempt_kind": "adaptive_rerun",
+            "summary": {
+                "pvp_duel": True,
+                "opponent_model_profile": "vercel_model_beta",
+                "final_score": 12,
+                "turns_survived": 9,
+                "max_turns": 50,
+                "end_reason": "agent_dead",
+            },
+        },
+        {
+            "run_id": "beta_seed1_initial",
+            "model_profile": "vercel_model_beta",
+            "seed": 1,
+            "attempt_kind": "initial",
+            "summary": {
+                "pvp_duel": True,
+                "opponent_model_profile": "vercel_model_alpha",
+                "final_score": 22,
+                "turns_survived": 18,
+                "max_turns": 50,
+                "end_reason": "agent_dead",
+            },
+        },
+    ]
+
+    duel_view = _build_duel_view(run_payloads)
+    assert duel_view is not None
+    duels = duel_view.get("duels", [])
+    adaptive_duel = next(
+        duel for duel in duels
+        if int(duel.get("seed", -1)) == 2 and str(duel.get("attempt_kind", "")) == "adaptive_rerun"
+    )
+    assert adaptive_duel["timeline_source_run_id"] == "alpha_seed2_adaptive"
+    assert adaptive_duel["run_id_by_model"]["vercel_model_alpha"] == "alpha_seed2_adaptive"
+    assert adaptive_duel["run_id_by_model"]["vercel_model_beta"] is None
+    assert "missing mirrored run for vercel_model_beta" in adaptive_duel["warnings"]
 
 
 def test_adaptive_prompt_hash_guard_allows_uniform_hash() -> None:

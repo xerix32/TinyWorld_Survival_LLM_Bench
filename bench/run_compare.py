@@ -1850,6 +1850,8 @@ def _build_duel_view(run_payloads: list[dict[str, Any]]) -> dict[str, Any] | Non
 
 def _duel_status_from_end_reason(end_reason: str) -> str:
     reason = str(end_reason or "").strip()
+    if reason == "opponent_defeated":
+        return "finished"
     if reason == "max_turns_reached":
         return "finished"
     if reason:

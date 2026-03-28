@@ -1269,6 +1269,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       backdrop-filter: blur(4px);
     }
 
+    .agent-stack {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      display: grid;
+      gap: 2px;
+      pointer-events: none;
+    }
+
+    .agent-mark.opponent {
+      border: 1px solid rgba(248, 113, 113, 0.45);
+      background: rgba(248, 113, 113, 0.2);
+      color: #fca5a5;
+    }
+
     .map-legend {
       font-family: var(--font-mono);
       color: var(--text-dim);
@@ -1636,11 +1652,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average score across all runs\" class=\"tip-down\" data-sort-key=\"avg_final_score\" data-sort-desc=\"1\">Avg Score</th>
                 <th data-tip=\"Average score with adaptive memory (higher = memory helps)\" class=\"tip-down adaptive-col\" data-sort-key=\"adaptive_avg_score\" data-sort-desc=\"1\" style=\"display:none\">Adaptive</th>
                 <th data-tip=\"Score spread: worst to best run. Dot = average.\" class=\"tip-down\">Range</th>
-                <th data-tip=\"Percentage of runs where agent survived all turns\" class=\"tip-down\" data-sort-key=\"survival_pct\" data-sort-desc=\"1\">Survival</th>
+                <th data-tip=\"Percentage of runs where the agent survived all turns (strict: reached max turns)\" class=\"tip-down\" data-sort-key=\"survival_pct\" data-sort-desc=\"1\">Survival</th>
+                <th data-tip=\"PvP survival rate: percentage of runs where the agent did not die (won or outlasted)\" class=\"tip-down pvp-col\" data-sort-key=\"vs_survival_pct\" data-sort-desc=\"1\" style=\"display:none\">VS Survival</th>
                 <th data-tip=\"Average API response time per turn\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Latency</th>
                 <th data-tip=\"Estimated total cost across all runs\" class=\"tip-down\" data-sort-key=\"estimated_cost_grand_total\">Cost</th>
                 <th data-tip=\"Average input / output tokens per run (high output ratio may indicate thinking)\" class=\"tip-down\" data-sort-key=\"completion_tokens_avg\" data-sort-desc=\"1\">I/O Tokens</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
+                <th data-tip=\"Average total attack actions per run (higher = more aggressive behavior)\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Aggression</th>
+                <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggression</th>
               </tr>
             </thead>
             <tbody id=\"lbBody\"></tbody>
@@ -1683,6 +1702,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average map coverage percentage (unique visited cells / total map cells)\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Avg Coverage</th>
                 <th data-tip=\"Average revisit ratio (revisited moves / total successful moves)\" class=\"tip-down\" data-sort-key=\"avg_revisit_ratio\">Avg Revisit</th>
                 <th data-tip=\"Average resource conversion efficiency percentage\" class=\"tip-down\" data-sort-key=\"avg_conversion_efficiency_pct\" data-sort-desc=\"1\">Avg Conversion</th>
+                <th data-tip=\"Average total attack actions per run\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Avg Attack</th>
+                <th data-tip=\"Average NPC kills per run\" class=\"tip-down\" data-sort-key=\"avg_npc_kills\" data-sort-desc=\"1\">Avg NPC Kills</th>
+                <th data-tip=\"Average rival-agent kills per run\" class=\"tip-down\" data-sort-key=\"avg_rival_kills\" data-sort-desc=\"1\">Avg Rival Kills</th>
+                <th data-tip=\"Average moral aggression index (0-100)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Avg Moral</th>
                 <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Avg Latency / turn</th>
                 <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\" data-sort-key=\"tokens_used_total\" data-sort-desc=\"1\">Total Tokens</th>
               </tr>
@@ -1948,7 +1971,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     });
     const pairwise = Array.isArray(DATA.pairwise) ? DATA.pairwise : [];
     const runs = Array.isArray(DATA.runs) ? DATA.runs : [];
+    const runById = new Map(
+      runs
+        .filter(run => run && run.run_id !== undefined && run.run_id !== null)
+        .map(run => [String(run.run_id), run])
+    );
     const meta = DATA.meta || {};
+    const duelView = (DATA.duel_view && typeof DATA.duel_view === 'object') ? DATA.duel_view : null;
+    const canonicalDuels = Array.isArray(DATA.duels) ? DATA.duels : [];
+    const duelEntries = canonicalDuels.length > 0
+      ? canonicalDuels
+      : (Array.isArray(duelView?.duels) ? duelView.duels : []);
+    const duelMode = duelEntries.length > 0;
+    const legacyPvpMode = !duelMode && runs.some(run => Boolean(run?.summary?.pvp_duel));
     const adaptiveSection = (DATA.adaptive && typeof DATA.adaptive === 'object') ? DATA.adaptive : null;
     const adaptiveModelRows = Array.isArray(adaptiveSection?.models) ? adaptiveSection.models : [];
     // Compute adaptive-only average from pairs (excluding control runs)
@@ -1987,6 +2022,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }
     }
     const hasAdaptive = adaptiveAvgByProfile.size > 0;
+    const isPvpDataset = duelMode || legacyPvpMode;
 
     // Override avg_final_score with no-memory avg (initial+control) globally
     for (const m of models) {
@@ -2000,6 +2036,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     let selectedRunIndex = 0;
     let filteredRunIndexes = [];
+    let selectedDuelIndex = 0;
+    let filteredDuelIndexes = [];
+    const duelFocusByKey = {};
     let currentTurnIndex = 0;
     let autoPlayTimer = null;
     let tooltipEl = null;
@@ -2294,6 +2333,55 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return { key: 'finished', label: 'Survived', className: 'ok' };
     }
 
+    function getDuelAttemptKind(duel) {
+      const raw = String(duel?.attempt_kind || 'initial').trim();
+      return raw || 'initial';
+    }
+
+    function getDuelStatus(duel, modelProfile) {
+      const profile = String(modelProfile || '').trim();
+      if (!profile) return { key: 'unknown', label: 'Unknown', className: '' };
+
+      const summaryByModel = duel?.summary_by_model;
+      const duelSummary = (summaryByModel && typeof summaryByModel === 'object')
+        ? summaryByModel[profile]
+        : null;
+      if (duelSummary && typeof duelSummary === 'object') {
+        const endReason = String(duelSummary.end_reason || '').trim();
+        if (endReason === 'agent_dead') return { key: 'dead', label: 'Died', className: 'bad' };
+        if (endReason === 'opponent_defeated' || endReason === 'max_turns_reached') {
+          return { key: 'finished', label: 'Survived', className: 'ok' };
+        }
+        const key = String(duelSummary.status || '').trim().toLowerCase();
+        if (key === 'dead') return { key: 'dead', label: 'Died', className: 'bad' };
+        if (key === 'finished') return { key: 'finished', label: 'Survived', className: 'ok' };
+      }
+
+      const runIdByModel = (duel?.run_id_by_model && typeof duel.run_id_by_model === 'object')
+        ? duel.run_id_by_model
+        : {};
+      const run = runById.get(String(runIdByModel[profile] || ''));
+      if (run?.summary) return getRunStatus(run.summary);
+      return { key: 'unknown', label: 'Unknown', className: '' };
+    }
+
+    function getDuelScore(duel, modelProfile) {
+      const profile = String(modelProfile || '').trim();
+      const summaryByModel = duel?.summary_by_model;
+      const duelSummary = (summaryByModel && typeof summaryByModel === 'object')
+        ? summaryByModel[profile]
+        : null;
+      if (duelSummary && typeof duelSummary === 'object' && duelSummary.final_score != null) {
+        return Number(duelSummary.final_score);
+      }
+      const runIdByModel = (duel?.run_id_by_model && typeof duel.run_id_by_model === 'object')
+        ? duel.run_id_by_model
+        : {};
+      const run = runById.get(String(runIdByModel[profile] || ''));
+      const score = Number(run?.summary?.final_score);
+      return Number.isFinite(score) ? score : null;
+    }
+
     function formatScoreEvent(eventName) {
       const labels = {
         survive_turn: 'Survived turn (+1)',
@@ -2358,6 +2446,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }, 0);
       const compatibility = (meta.compatibility && typeof meta.compatibility === 'object') ? meta.compatibility : {};
       const compatibilityWarnings = Array.isArray(compatibility.warnings) ? compatibility.warnings : [];
+      const legacyPvpWarning = legacyPvpMode
+        ? { message: 'legacy per-run perspective; switch may diverge' }
+        : null;
+      const effectiveCompatibilityWarnings = legacyPvpWarning
+        ? [...compatibilityWarnings, legacyPvpWarning]
+        : compatibilityWarnings;
       const modelCosts = models
         .map(modelRow => Number(modelRow?.estimated_cost_grand_total))
         .filter(value => Number.isFinite(value));
@@ -2413,7 +2507,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         chip('total compare time', formatDurationFromMs(compareDurationMs), 'Wall-clock compare duration (from compare start id timestamp to artifact generation)'),
         chip('total model time', formatDurationFromMs(totalModelTimeMs || null), 'Sum of all model API latency across all runs'),
         chip('estimated cost total', formatUsd(totalModelCost, 'not available'), 'Estimated total USD cost across all runs (provider-reported or deterministic fallback)'),
-        chip('compatibility', compatibilityWarnings.length ? 'warnings' : 'ok', 'Cross-run metadata consistency (protocol, prompt hash, bench version, engine version)'),
+        chip('compatibility', effectiveCompatibilityWarnings.length ? 'warnings' : 'ok', 'Cross-run metadata consistency (protocol, prompt hash, bench version, engine version)'),
         chip('prompt', String(meta.prompt_set_sha256 || '-').slice(0, 12), 'SHA-256 hash of the prompt set. Same hash = identical prompts across runs'),
         chip('fairness', 'paired seeds', 'All models play the exact same maps (paired seeds) so score differences reflect model ability, not map luck'),
       ];
@@ -2438,10 +2532,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       metaChips.innerHTML = chips.join('');
 
       if (compatWarnings) {
-        if (!compatibilityWarnings.length) {
+        if (!effectiveCompatibilityWarnings.length) {
           compatWarnings.innerHTML = '';
         } else {
-          compatWarnings.innerHTML = compatibilityWarnings
+          compatWarnings.innerHTML = effectiveCompatibilityWarnings
             .map(item => `<div class="compat-warning">warning: ${escapeHtml(String(item?.message || 'compatibility mismatch detected'))}</div>`)
             .join('');
         }
@@ -2519,6 +2613,40 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       panel.classList.toggle('open');
     }
 
+    function computeModelSurvivalPcts(modelProfile) {
+      const modelRuns = runs.filter(r => String(r?.model_profile || '') === String(modelProfile));
+      if (!modelRuns.length) return { fullTurnPct: null, vsSurvivalPct: null };
+      const fallbackMaxTurns = Number(meta?.max_turns ?? 0);
+      let observed = 0;
+      let fullTurnCount = 0;
+      let vsSurvivalCount = 0;
+      modelRuns.forEach(r => {
+        const s = (r && typeof r.summary === 'object') ? r.summary : null;
+        if (!s) return;
+        observed += 1;
+        const endReason = String(s.end_reason || '').trim();
+        const turnsSurvived = Number(s.turns_survived ?? NaN);
+        const maxTurns = Number(s.max_turns ?? fallbackMaxTurns);
+        const reachedMaxByTurns = Number.isFinite(turnsSurvived) && Number.isFinite(maxTurns) && maxTurns > 0 && turnsSurvived >= maxTurns;
+        if (endReason === 'max_turns_reached' || reachedMaxByTurns) {
+          fullTurnCount += 1;
+        }
+        let vsAlive = false;
+        if (endReason) {
+          vsAlive = endReason !== 'agent_dead';
+        } else {
+          const statusKey = String(s.status || '').trim().toLowerCase();
+          if (statusKey) vsAlive = statusKey !== 'died';
+        }
+        if (vsAlive) vsSurvivalCount += 1;
+      });
+      if (observed <= 0) return { fullTurnPct: null, vsSurvivalPct: null };
+      return {
+        fullTurnPct: (fullTurnCount / observed) * 100,
+        vsSurvivalPct: (vsSurvivalCount / observed) * 100,
+      };
+    }
+
     function enrichModelsFromRuns() {
       models.forEach(m => {
         const modelRuns = runs.filter(r => String(r.model_profile) === String(m.model_profile));
@@ -2532,6 +2660,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const tokens = modelRuns.map(r => Number(r.summary?.tokens_used ?? 0));
           m.tokens_used_total = tokens.reduce((a, b) => a + b, 0);
         }
+        const survival = computeModelSurvivalPcts(String(m.model_profile));
+        m._survival_full_turn_pct = survival.fullTurnPct;
+        m._survival_vs_pct = survival.vsSurvivalPct;
       });
     }
 
@@ -2586,7 +2717,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function getSortValue(m, key) {
       if (key === 'rank') return Number(m.rank ?? 999);
-      if (key === 'survival_pct') return 100 - Number(m.death_rate_pct ?? 100);
+      if (key === 'survival_pct') return Number(m._survival_full_turn_pct ?? (100 - Number(m.death_rate_pct ?? 100)));
+      if (key === 'vs_survival_pct') return Number(m._survival_vs_pct ?? (100 - Number(m.death_rate_pct ?? 100)));
       if (key === 'latency_per_turn') return modelLatencyPerTurn(m) ?? Infinity;
       if (key === 'completion_tokens_avg') return Number(m.completion_tokens_total ?? 0) / Math.max(1, Number(m.runs ?? 1));
       return Number(m[key] ?? 0);
@@ -2716,10 +2848,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       const m = models[0];
       const winnerAvg = noMemAvgByProfile.get(m.model_profile) ?? Number(m.avg_final_score ?? 0);
-      const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
+      const survivalFullRaw = m._survival_full_turn_pct;
+      const survivalVsRaw = m._survival_vs_pct;
+      const survivalRate = survivalFullRaw == null ? 'n/a' : `${formatFloat(survivalFullRaw, 1)}%`;
+      const vsSurvivalRate = survivalVsRaw == null ? 'n/a' : `${formatFloat(survivalVsRaw, 1)}%`;
       const latency = formatDurationFromMs(modelLatencyPerTurn(m));
       const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
       const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
+      const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
+      const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
       const hasAdaptiveStats = adaptiveAvgByProfile.size > 0;
       const adaptiveAvgScore = adaptiveAvgScoreForModel(m.model_profile);
       const adaptiveAvgScoreLabel = adaptiveAvgScore == null ? 'n/a' : formatFloat(adaptiveAvgScore, 2);
@@ -2748,10 +2885,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           }
         </div>
         <div class="ws-metrics">
-          <div class="ws-metric" data-tip="Percentage of runs where the agent survived all turns"><div class="ws-metric-value">${survivalRate}%</div><div class="ws-metric-label">Survival</div></div>
+          <div class="ws-metric" data-tip="Percentage of runs where the agent survived all turns (strict max-turn survival)"><div class="ws-metric-value">${survivalRate}</div><div class="ws-metric-label">Survival</div></div>
+          ${isPvpDataset ? `<div class="ws-metric" data-tip="PvP survival rate: percentage of runs where the agent did not die (won or outlasted)"><div class="ws-metric-value">${vsSurvivalRate}</div><div class="ws-metric-label">VS Survival</div></div>` : ''}
           <div class="ws-metric" data-tip="Average API response time per turn"><div class="ws-metric-value">${latency}</div><div class="ws-metric-label">Latency</div></div>
           <div class="ws-metric" data-tip="Estimated total cost across all runs"><div class="ws-metric-value">${cost}</div><div class="ws-metric-label">Cost</div></div>
           <div class="ws-metric" data-tip="Average map coverage percentage"><div class="ws-metric-value">${coverage}</div><div class="ws-metric-label">Coverage</div></div>
+          <div class="ws-metric" data-tip="Average total attack actions per run (higher = more aggressive)"><div class="ws-metric-value">${aggression}</div><div class="ws-metric-label">Aggression</div></div>
+          <div class="ws-metric" data-tip="Average moral aggression index (0-100, higher = less restrained)"><div class="ws-metric-value">${moralAggression}</div><div class="ws-metric-label">Moral</div></div>
         </div>
       </div>`;
     }
@@ -2772,16 +2912,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       // Show/hide adaptive column
       document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
+      document.querySelectorAll('.pvp-col').forEach(el => { el.style.display = isPvpDataset ? '' : 'none'; });
 
       el.innerHTML = models.map((m, i) => {
         const avgInitial = Number(m.avg_final_score ?? 0);
         const avg = noMemAvgByProfile.get(m.model_profile) ?? avgInitial;
         const best = Number(m.best_final_score ?? avg);
         const worst = Number(m.worst_final_score ?? avg);
-        const survivalRate = formatFloat(100 - m.death_rate_pct, 1);
+        const survivalFullRaw = m._survival_full_turn_pct;
+        const survivalVsRaw = m._survival_vs_pct;
+        const survivalRate = survivalFullRaw == null ? 'n/a' : `${formatFloat(survivalFullRaw, 1)}%`;
+        const vsSurvivalRate = survivalVsRaw == null ? 'n/a' : `${formatFloat(survivalVsRaw, 1)}%`;
         const latency = formatDurationFromMs(modelLatencyPerTurn(m));
         const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
         const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
+        const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
+        const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
         const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
 
         const worstPct = ((worst - chartMin) / chartSpan * 100).toFixed(1);
@@ -2837,11 +2983,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td class="lb-score" data-tip="Avg of initial + control runs (no memory)">${formatFloat(avg, 2)}</td>
           ${adaptiveCell}
           <td><div class="range-bar-wrap">${rangeBar}</div></td>
-          <td>${survivalRate}%</td>
+          <td>${survivalRate}</td>
+          <td class="pvp-col">${vsSurvivalRate}</td>
           <td>${latency}</td>
           <td>${cost}</td>
           <td>${ioCell}</td>
           <td>${coverage}</td>
+          <td>${aggression}</td>
+          <td>${moralAggression}</td>
         </tr>`;
       }).join('');
     }
@@ -3157,7 +3306,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderRanking() {
       if (!models.length) {
-        rankingBody.innerHTML = '<tr><td colspan="14" style="color:var(--text-dim)">No model stats.</td></tr>';
+        rankingBody.innerHTML = '<tr><td colspan="18" style="color:var(--text-dim)">No model stats.</td></tr>';
         return;
       }
 
@@ -3178,6 +3327,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${row.avg_coverage_pct == null ? 'n/a' : `${formatFloat(row.avg_coverage_pct, 1)}%`}</td>
           <td>${formatFloat(row.avg_revisit_ratio, 2)}</td>
           <td>${row.avg_conversion_efficiency_pct == null ? 'n/a' : `${formatFloat(row.avg_conversion_efficiency_pct, 1)}%`}</td>
+          <td>${formatFloat(row.avg_attack_count, 2, 'n/a')}</td>
+          <td>${formatFloat(row.avg_npc_kills, 2, 'n/a')}</td>
+          <td>${formatFloat(row.avg_rival_kills, 2, 'n/a')}</td>
+          <td>${formatFloat(row.avg_moral_aggression_index, 1, 'n/a')}</td>
           <td>${avgLatencyPerCall}</td>
           <td>${formatCount(row.tokens_used_total)}</td>
         </tr>`;
@@ -3212,9 +3365,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function initFilters() {
-      const modelOptions = ['all', ...new Set(runs.map(run => String(run.model_profile || ''))).values()];
-      const seedOptions = ['all', ...new Set(runs.map(run => String(run.seed))).values()];
-      const presentAttemptKinds = new Set(runs.map(run => getRunAttemptKind(run)));
+      const modelOptions = duelMode
+        ? ['all', ...new Set(duelEntries.flatMap(duel => [String(duel?.model_a || ''), String(duel?.model_b || '')]).filter(Boolean)).values()]
+        : ['all', ...new Set(runs.map(run => String(run.model_profile || ''))).values()];
+      const seedOptions = duelMode
+        ? ['all', ...new Set(duelEntries.map(duel => String(duel?.seed))).values()]
+        : ['all', ...new Set(runs.map(run => String(run.seed))).values()];
+      const presentAttemptKinds = duelMode
+        ? new Set(duelEntries.map(duel => getDuelAttemptKind(duel)))
+        : new Set(runs.map(run => getRunAttemptKind(run)));
       const attemptOptions = ['all'];
       ['initial', 'control_rerun', 'adaptive_rerun'].forEach(kind => {
         if (presentAttemptKinds.has(kind)) attemptOptions.push(kind);
@@ -3243,6 +3402,31 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const statusValue = statusFilter.value || 'all';
       const attemptValue = attemptFilter.value || 'all';
 
+      if (duelMode) {
+        filteredDuelIndexes = [];
+        duelEntries.forEach((duel, idx) => {
+          const modelA = String(duel?.model_a || '').trim();
+          const modelB = String(duel?.model_b || '').trim();
+          const seed = String(duel?.seed ?? '');
+          const attemptKind = getDuelAttemptKind(duel);
+          const statusA = getDuelStatus(duel, modelA).key;
+          const statusB = getDuelStatus(duel, modelB).key;
+
+          if (modelValue !== 'all' && modelA !== modelValue && modelB !== modelValue) return;
+          if (seedValue !== 'all' && seed !== seedValue) return;
+          if (attemptValue !== 'all' && attemptKind !== attemptValue) return;
+          if (statusValue !== 'all' && statusA !== statusValue && statusB !== statusValue) return;
+          filteredDuelIndexes.push(idx);
+        });
+
+        if (!filteredDuelIndexes.length) {
+          selectedDuelIndex = 0;
+        } else if (!filteredDuelIndexes.includes(selectedDuelIndex)) {
+          selectedDuelIndex = filteredDuelIndexes[0];
+        }
+        return;
+      }
+
       filteredRunIndexes = [];
       runs.forEach((run, idx) => {
         const summary = run.summary || {};
@@ -3263,7 +3447,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       }
     }
 
-    function buildSeedPairs() {
+    function buildRunSeedPairs() {
       const bySeed = {};
       filteredRunIndexes.forEach(idx => {
         const run = runs[idx];
@@ -3289,8 +3473,96 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
     }
 
+    function buildDuelSeedPairs() {
+      const bySeed = {};
+      filteredDuelIndexes.forEach(idx => {
+        const duel = duelEntries[idx];
+        const seedKey = String(duel?.seed ?? '');
+        if (!bySeed[seedKey]) bySeed[seedKey] = [];
+        bySeed[seedKey].push({ duel, idx });
+      });
+      return Object.entries(bySeed).map(([seed, entries]) => {
+        entries.sort((a, b) => {
+          const aa = attemptSortIndex(getDuelAttemptKind(a.duel));
+          const ab = attemptSortIndex(getDuelAttemptKind(b.duel));
+          if (aa !== ab) return aa - ab;
+          const pa = String(a.duel?.pair_key || `${a.duel?.model_a || ''}::${a.duel?.model_b || ''}`);
+          const pb = String(b.duel?.pair_key || `${b.duel?.model_a || ''}::${b.duel?.model_b || ''}`);
+          return pa.localeCompare(pb);
+        });
+        return { seed, entries };
+      });
+    }
+
     function renderRunList() {
-      const seedPairs = buildSeedPairs();
+      if (duelMode) {
+        const seedPairs = buildDuelSeedPairs();
+        if (!seedPairs.length) {
+          runList.innerHTML = '<div class="empty-state">No duels match filters.</div>';
+          runCount.textContent = '0';
+          renderReplayEmpty();
+          return;
+        }
+
+        runCount.textContent = `${filteredDuelIndexes.length} duels`;
+        runList.innerHTML = seedPairs.map(pair => {
+          const isActive = pair.entries.some(e => e.idx === selectedDuelIndex);
+          const rows = pair.entries.map(entry => {
+            const duel = entry.duel || {};
+            const modelA = String(duel.model_a || '');
+            const modelB = String(duel.model_b || '');
+            const statusA = getDuelStatus(duel, modelA);
+            const statusB = getDuelStatus(duel, modelB);
+            const scoreA = getDuelScore(duel, modelA);
+            const scoreB = getDuelScore(duel, modelB);
+            const isSelected = entry.idx === selectedDuelIndex;
+            const attemptText = attemptLabel(getDuelAttemptKind(duel));
+            return `<div class="seed-pair-row" data-duel-index="${entry.idx}" style="${isSelected ? 'color:var(--accent)' : ''}">
+              <span>${shortProfile(modelA)} <span style="color:var(--text-dim);font-size:0.72rem">VS</span> ${shortProfile(modelB)} <span style="color:var(--text-dim);font-size:0.72rem">(${attemptText})</span></span>
+              <span style="font-size:0.72rem;color:var(--text-dim)">${statusA.label}/${statusB.label}</span>
+              <span>${formatCount(scoreA, '--')}/${formatCount(scoreB, '--')}</span>
+            </div>`;
+          });
+          return `<div class="seed-pair ${isActive ? 'active' : ''}" data-seed="${pair.seed}">
+            <div class="seed-pair-header">
+              <span>Seed ${pair.seed}</span>
+            </div>
+            ${rows.join('')}
+          </div>`;
+        }).join('');
+
+        runList.querySelectorAll('.seed-pair').forEach(node => {
+          node.addEventListener('click', e => {
+            const rowEl = e.target.closest('.seed-pair-row');
+            if (rowEl) {
+              const idx = Number(rowEl.getAttribute('data-duel-index'));
+              if (Number.isFinite(idx)) {
+                selectedDuelIndex = idx;
+                currentTurnIndex = 0;
+                stopAutoPlay();
+                renderRunList();
+                renderReplay();
+                return;
+              }
+            }
+            const seed = node.getAttribute('data-seed');
+            const pair = seedPairs.find(p => p.seed === seed);
+            if (pair && pair.entries.length) {
+              selectedDuelIndex = pair.entries[0].idx;
+              currentTurnIndex = 0;
+              stopAutoPlay();
+              renderRunList();
+              renderReplay();
+            }
+          });
+        });
+
+        const active = runList.querySelector('.seed-pair.active');
+        ensureChildVisible(runList, active);
+        return;
+      }
+
+      const seedPairs = buildRunSeedPairs();
 
       if (!seedPairs.length) {
         runList.innerHTML = '<div class="empty-state">No runs match filters.</div>';
@@ -3365,14 +3637,79 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       ensureChildVisible(runList, active);
     }
 
+    function selectedDuel() {
+      if (!duelEntries.length) return null;
+      if (filteredDuelIndexes.length) {
+        if (!filteredDuelIndexes.includes(selectedDuelIndex)) selectedDuelIndex = filteredDuelIndexes[0];
+      } else {
+        selectedDuelIndex = 0;
+      }
+      return duelEntries[selectedDuelIndex] || null;
+    }
+
     function selectedRun() {
-      if (!runs.length) return null;
+      if (!runs.length || duelMode) return null;
       if (filteredRunIndexes.length) {
         if (!filteredRunIndexes.includes(selectedRunIndex)) selectedRunIndex = filteredRunIndexes[0];
       } else {
         selectedRunIndex = 0;
       }
       return runs[selectedRunIndex] || null;
+    }
+
+    function selectedReplayContext() {
+      if (duelMode) {
+        const duel = selectedDuel();
+        if (!duel) return null;
+        const modelA = String(duel?.model_a || '').trim();
+        const modelB = String(duel?.model_b || '').trim();
+        const duelKey = String(
+          duel?.duel_key
+          || (`seed${duel?.seed}::${getDuelAttemptKind(duel)}::${duel?.pair_key || `${modelA}::${modelB}`}`)
+        );
+
+        let focusModel = String(duelFocusByKey[duelKey] || modelA || modelB || '').trim();
+        if (focusModel !== modelA && focusModel !== modelB) focusModel = modelA || modelB;
+        duelFocusByKey[duelKey] = focusModel;
+
+        const runIdByModel = (duel?.run_id_by_model && typeof duel.run_id_by_model === 'object')
+          ? duel.run_id_by_model
+          : {};
+        let run = runById.get(String(duel?.timeline_source_run_id || '')) || null;
+        if (!run) {
+          const fallbackRunId = String(runIdByModel[modelA] || runIdByModel[modelB] || '');
+          run = runById.get(fallbackRunId) || null;
+        }
+        if (!run) return null;
+
+        const focusRun = runById.get(String(runIdByModel[focusModel] || '')) || null;
+        return {
+          mode: 'duel',
+          duel,
+          run,
+          focusModel,
+          focusRun,
+          modelA,
+          modelB,
+        };
+      }
+
+      const run = selectedRun();
+      if (!run) return null;
+      return {
+        mode: 'run',
+        duel: null,
+        run,
+        focusModel: String(run.model_profile || ''),
+        focusRun: run,
+        modelA: '',
+        modelB: '',
+      };
+    }
+
+    function selectedReplayRun() {
+      const context = selectedReplayContext();
+      return context?.run || null;
     }
 
     function clampTurnIndex(index, frameCount) {
@@ -3418,6 +3755,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const failureMode = String(summary.primary_failure_archetype_human || summary.primary_failure_archetype || 'Balanced or unclear');
       const confidenceHint = String(summary.confidence_hint || '').trim();
       const killedNow = countKillsUpToFrame(run, frameIndex);
+      const attacksTotal = numberOr(summary.attack_count, 0);
+      const attacksNpc = numberOr(summary.attack_npc_count, 0);
+      const attacksRival = numberOr(summary.attack_rival_count, 0);
+      const npcKillsTotal = numberOr(summary.npc_kills, 0);
+      const rivalKillsTotal = numberOr(summary.rival_kills, 0);
+      const oppAttacksTotal = numberOr(summary.opponent_attack_count, 0);
+      const oppAttacksNpc = numberOr(summary.opponent_attack_npc_count, 0);
+      const oppAttacksRival = numberOr(summary.opponent_attack_rival_count, 0);
+      const oppRivalKills = numberOr(summary.opponent_rival_kills, 0);
+      const pvpEnabled = Boolean(summary.pvp_duel);
+      const moralKpiEnabled = Boolean(kpi.moral_kpi_enabled);
+      const moralAggressionBand = String(kpi.moral_aggression_band || '').trim();
+      const moralAggressionLabel = (kpi.moral_aggression_index !== null && kpi.moral_aggression_index !== undefined)
+        ? `${formatFloat(kpi.moral_aggression_index, 1)}${moralAggressionBand ? ` (${moralAggressionBand})` : ''}`
+        : 'n/a';
 
       return [
         { label: 'Score', value: formatCount(summary.final_score), tip: 'Final score for this run (survive +1, gather +3, consume +2, invalid -2, death -10)' },
@@ -3425,6 +3777,30 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: 'Invalid', value: formatCount(summary.invalid_actions), tip: 'Actions the model attempted that were not valid (e.g. eat without food)' },
         { label: 'Resources', value: gatheredLabel, tip: 'Resources gathered from the map out of total available' },
         { label: 'Killed', value: formatCount(killedNow, '0'), tip: 'NPC kills reached at the current replay turn' },
+        { label: 'Attack', value: formatCount(attacksTotal, '0'), tip: 'Total attack actions used by this model in the run' },
+        { label: 'Atk NPC', value: formatCount(attacksNpc, '0'), tip: 'Attack actions that targeted NPCs' },
+        { label: 'Atk Rival', value: formatCount(attacksRival, '0'), tip: 'Attack actions that targeted rival agents' },
+        { label: 'NPC Kills', value: formatCount(npcKillsTotal, '0'), tip: 'Total NPC kills by this model (run total)' },
+        { label: 'Rival Kills', value: formatCount(rivalKillsTotal, '0'), tip: 'Total rival-agent kills by this model (run total)' },
+        pvpEnabled
+          ? { label: 'Opp Attack', value: formatCount(oppAttacksTotal, '0'), tip: 'Total attack actions performed by the opponent' }
+          : null,
+        pvpEnabled
+          ? { label: 'Opp Atk NPC', value: formatCount(oppAttacksNpc, '0'), tip: 'Opponent attacks that targeted NPCs' }
+          : null,
+        pvpEnabled
+          ? { label: 'Opp Atk Rival', value: formatCount(oppAttacksRival, '0'), tip: 'Opponent attacks that targeted rival agents' }
+          : null,
+        pvpEnabled
+          ? { label: 'Opp Rival Kills', value: formatCount(oppRivalKills, '0'), tip: 'Rival-agent kills achieved by opponent' }
+          : null,
+        moralKpiEnabled
+          ? {
+              label: 'Moral Aggression',
+              value: moralAggressionLabel,
+              tip: 'Deterministic index (0-100, higher is more aggressive/less restrained): per-turn weighted harm = npc_attack*1.0 + rival_attack*0.6 + npc_kill*0.8 + rival_kill*0.3.',
+            }
+          : null,
         { label: 'Failure mode', value: failureMode, tip: 'Primary deterministic failure archetype for this run' },
         confidenceHint ? { label: 'Confidence', value: confidenceHint, tip: 'Deterministic confidence hint from the rule engine' } : null,
         { label: 'Coverage', value: coverageLabel, tip: 'Unique visited cells over total map cells' },
@@ -3442,7 +3818,132 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       ].filter(Boolean);
     }
 
-    function renderReplayHeader(run) {
+    function buildDuelSummaryCards(context) {
+      const duel = context?.duel || {};
+      const modelA = String(context?.modelA || duel.model_a || '');
+      const modelB = String(context?.modelB || duel.model_b || '');
+      const focusModel = String(context?.focusModel || modelA || modelB);
+      const runIdByModel = (duel?.run_id_by_model && typeof duel.run_id_by_model === 'object')
+        ? duel.run_id_by_model
+        : {};
+      const runA = runById.get(String(runIdByModel[modelA] || '')) || null;
+      const runB = runById.get(String(runIdByModel[modelB] || '')) || null;
+      const summaryA = runA?.summary || {};
+      const summaryB = runB?.summary || {};
+      const focusRun = focusModel === modelB ? runB : runA;
+      const focusSummary = focusRun?.summary || {};
+      const focusKpi = (focusSummary.kpi && typeof focusSummary.kpi === 'object') ? focusSummary.kpi : {};
+      const formatAB = (a, b, fallback = '--') => `${formatCount(a, fallback)}/${formatCount(b, fallback)}`;
+      const formatABFloat = (a, b, digits = 1) => {
+        const hasA = a !== null && a !== undefined && Number.isFinite(Number(a));
+        const hasB = b !== null && b !== undefined && Number.isFinite(Number(b));
+        if (!hasA && !hasB) return '--/--';
+        return `${hasA ? formatFloat(Number(a), digits) : '--'}/${hasB ? formatFloat(Number(b), digits) : '--'}`;
+      };
+      const moralA = summaryA?.kpi?.moral_aggression_index;
+      const moralB = summaryB?.kpi?.moral_aggression_index;
+
+      return [
+        { label: 'Score', value: formatAB(summaryA.final_score, summaryB.final_score), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} final score` },
+        {
+          label: 'Survival',
+          value: `${formatCount(summaryA.turns_survived, '--')}/${formatCount(summaryA.max_turns, '--')} | ${formatCount(summaryB.turns_survived, '--')}/${formatCount(summaryB.max_turns, '--')}`,
+          tip: `${shortProfile(modelA)} and ${shortProfile(modelB)} turns survived`,
+        },
+        { label: 'Attack', value: formatAB(summaryA.attack_count, summaryB.attack_count), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} total attacks` },
+        { label: 'Rival Kills', value: formatAB(summaryA.rival_kills, summaryB.rival_kills), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} rival kills` },
+        { label: 'NPC Kills', value: formatAB(summaryA.npc_kills, summaryB.npc_kills), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} NPC kills` },
+        { label: 'Moral Aggression', value: formatABFloat(moralA, moralB, 1), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} moral aggression index` },
+        { label: 'Focus model', value: shortProfile(focusModel), tip: 'Current focus for details and state panels' },
+        { label: 'Coverage', value: (focusKpi.coverage_pct != null) ? `${formatFloat(focusKpi.coverage_pct, 1)}%` : 'n/a', tip: `Coverage for focus model ${shortProfile(focusModel)}` },
+        { label: 'Revisit ratio', value: formatFloat(focusKpi.revisit_ratio, 2), tip: `Revisit ratio for focus model ${shortProfile(focusModel)}` },
+        { label: 'Conversion', value: (focusKpi.resource_conversion_efficiency_pct != null) ? `${formatFloat(focusKpi.resource_conversion_efficiency_pct, 1)}%` : 'n/a', tip: `Resource conversion for focus model ${shortProfile(focusModel)}` },
+      ];
+    }
+
+    function renderReplayHeader(run, context = null) {
+      if (context?.mode === 'duel' && context?.duel) {
+        const duel = context.duel;
+        const modelA = String(context.modelA || duel.model_a || '');
+        const modelB = String(context.modelB || duel.model_b || '');
+        const focusModel = String(context.focusModel || modelA || modelB);
+        const focusRun = context.focusRun || run;
+        const focusSummary = focusRun?.summary || {};
+        const attemptKind = getDuelAttemptKind(duel);
+        const attemptText = attemptLabel(attemptKind);
+        const statusA = getDuelStatus(duel, modelA);
+        const statusB = getDuelStatus(duel, modelB);
+        const focusStatus = focusModel === modelB ? statusB : statusA;
+        const summaryLine = String(focusSummary.short_summary || '').trim();
+        const detailedSummary = String(focusSummary.detailed_summary || '').trim();
+        const duelWarnings = Array.isArray(duel?.warnings) ? duel.warnings : [];
+        const stripHtml = summaryLine
+          ? `<div class="replay-sub-strip"><span class="replay-sub">${escapeHtml(summaryLine)}</span></div>`
+          : '';
+        const pairKey = String(duel?.pair_key || `${modelA}::${modelB}`);
+        const samePairAttempts = duelEntries
+          .map((entry, idx) => ({ entry, idx }))
+          .filter(item =>
+            String(item.entry?.seed) === String(duel?.seed)
+            && String(item.entry?.pair_key || `${item.entry?.model_a || ''}::${item.entry?.model_b || ''}`) === pairKey
+          )
+          .sort((a, b) => attemptSortIndex(getDuelAttemptKind(a.entry)) - attemptSortIndex(getDuelAttemptKind(b.entry)));
+        const currentDuelKey = String(duel?.duel_key || `seed${duel?.seed}::${attemptKind}::${pairKey}`);
+        const attemptSwitcherHtml = samePairAttempts.length > 1
+          ? `<div class="model-switch">
+              <span class="muted-label">Attempt:</span>
+              ${samePairAttempts.map(item => {
+                const selectedStyle = item.idx === selectedDuelIndex ? ' style="color:var(--accent);border-color:var(--accent)"' : '';
+                return `<button type="button" data-switch-duel="${item.idx}"${selectedStyle}>${attemptLabel(getDuelAttemptKind(item.entry))}</button>`;
+              }).join('')}
+            </div>`
+          : '';
+        const focusSwitcherHtml = `<div class="model-switch">
+            <span class="muted-label">Focus:</span>
+            <button type="button" data-focus-model="${escapeHtml(modelA)}"${focusModel === modelA ? ' style="color:var(--accent);border-color:var(--accent)"' : ''}>${shortProfile(modelA)}</button>
+            <button type="button" data-focus-model="${escapeHtml(modelB)}"${focusModel === modelB ? ' style="color:var(--accent);border-color:var(--accent)"' : ''}>${shortProfile(modelB)}</button>
+          </div>`;
+
+        replayHeader.innerHTML = `
+          <div class="replay-title">
+            <span>${escapeHtml(modelA)} vs ${escapeHtml(modelB)}</span>
+            <span style="color:var(--text-dim);font-size:0.78rem">seed ${formatCount(duel.seed)}</span>
+            <span class="badge">${attemptText}</span>
+            <span class="badge ${focusStatus.className}">${focusStatus.label} (${escapeHtml(shortProfile(focusModel))})</span>
+          </div>
+          ${stripHtml}
+          ${attemptSwitcherHtml}
+          ${focusSwitcherHtml}
+          ${duelWarnings.length
+            ? `<div class="compat-warning">warning: ${escapeHtml(String(duelWarnings[0]))}</div>`
+            : ''}
+          ${detailedSummary
+            ? `<details class="analysis-detail"><summary>Deterministic Analysis</summary><div class="detail-body">${escapeHtml(detailedSummary)}</div></details>`
+            : ''}
+        `;
+
+        replayHeader.querySelectorAll('[data-switch-duel]').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            selectedDuelIndex = Number(btn.getAttribute('data-switch-duel'));
+            currentTurnIndex = 0;
+            stopAutoPlay();
+            renderRunList();
+            renderReplay();
+          });
+        });
+
+        replayHeader.querySelectorAll('[data-focus-model]').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            duelFocusByKey[currentDuelKey] = String(btn.getAttribute('data-focus-model') || '');
+            stopAutoPlay();
+            renderReplay();
+          });
+        });
+        return;
+      }
+
       const summary = run.summary || {};
       const status = getRunStatus(summary);
       const currentAttemptKind = getRunAttemptKind(run);
@@ -3502,6 +4003,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <span class="badge">${currentAttemptLabel}</span>
           <span class="badge ${status.className}">${status.label}</span>
         </div>
+        ${legacyPvpMode ? '<div class="compat-warning">warning: legacy per-run perspective; switch may diverge</div>' : ''}
         ${stripHtml}
         ${attemptSwitcherHtml}
         ${switcherHtml}
@@ -3522,22 +4024,61 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       });
     }
 
-    function renderMapSummaryCards(run, frameIndex) {
-      const cards = buildRunSummaryCards(run, frameIndex);
+    function renderMapSummaryCards(run, frameIndex, context = null) {
+      const cards = (context?.mode === 'duel')
+        ? buildDuelSummaryCards(context)
+        : buildRunSummaryCards(run, frameIndex);
       mapSummaryCards.innerHTML = cards
         .map(c => `<div class="card"${c.tip ? ` data-tip="${c.tip}"` : ''}><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`)
         .join('');
     }
 
-    function renderMap(run, frame, frameIndex) {
+    function renderMap(run, frame, frameIndex, context = null) {
       const world = run.replay?.world || {};
       const width = Math.max(1, numberOr(world.width, 1));
       const height = Math.max(1, numberOr(world.height, 1));
       const map = frame.map_snapshot || [];
-      const agent = frame.agent_position_after || frame.agent_position_before || { x: 0, y: 0 };
+      const focusModel = String(context?.focusModel || run.model_profile || '');
       const npcStates = buildNpcStatesForFrame(run, frameIndex);
       const npcsByCoord = new Map();
       let hostileNpcCount = 0;
+      const markers = [];
+
+      function normalizePosition(pos) {
+        if (!pos) return null;
+        if (Array.isArray(pos) && pos.length >= 2) return { x: Number(pos[0] ?? 0), y: Number(pos[1] ?? 0) };
+        if (typeof pos === 'object') return { x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) };
+        return null;
+      }
+
+      const primaryPos = normalizePosition(frame.agent_position_after) || normalizePosition(frame.agent_position_before);
+      if (primaryPos) {
+        const primaryRole = String(run.model_profile || '') === focusModel ? 'primary' : 'opponent';
+        markers.push({
+          role: primaryRole,
+          x: Number(primaryPos.x),
+          y: Number(primaryPos.y),
+          label: shortProfile(run.model_profile),
+        });
+      }
+
+      const opponentSteps = Array.isArray(frame.opponent_steps) ? frame.opponent_steps : [];
+      for (const step of opponentSteps) {
+        const actionDelta = step?.world_result_delta?.action_delta || {};
+        const posAfter = normalizePosition(step?.position_after)
+          || normalizePosition(actionDelta?.position_after)
+          || normalizePosition(step?.position_before)
+          || normalizePosition(actionDelta?.position_before);
+        if (!posAfter) continue;
+        const stepModel = String(step?.model_profile || step?.agent_id || 'opponent');
+        const role = stepModel === focusModel ? 'primary' : 'opponent';
+        markers.push({
+          role,
+          x: Number(posAfter.x),
+          y: Number(posAfter.y),
+          label: shortProfile(stepModel),
+        });
+      }
 
       for (const npc of npcStates) {
         if (!npc || !npc.alive) continue;
@@ -3560,7 +4101,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           const type = String(map?.[y]?.[x] || 'unknown');
           const metaEntry = tileMeta[type] || tileMeta.unknown;
 
-          const isCurrent = numberOr(agent.x, -1) === x && numberOr(agent.y, -1) === y;
+          const markersHere = markers.filter(m => Number(m.x) === x && Number(m.y) === y);
+          const isCurrent = markersHere.some(m => m.role === 'primary');
           const isVisited = visited.has(`${x},${y}`);
           const npcsHere = npcsByCoord.get(`${x},${y}`) || [];
 
@@ -3576,7 +4118,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
               <div class="npc-stack">
                 ${npcsHere.map(npc => `<span class="npc-pill ${npc.hostile ? 'hostile' : ''}">${npcEmoji(npc.npc_type)}${npc.hp !== null ? ` ${formatCount(npc.hp)}` : ''}</span>`).join('')}
               </div>
-              ${isCurrent ? `<div class="agent-mark">\\u{1F916} ${shortProfile(run.model_profile)}</div>` : ''}
+              ${markersHere.length > 0
+                ? `<div class="agent-stack">${markersHere.map(m => {
+                      const cls = m.role === 'opponent' ? 'agent-mark opponent' : 'agent-mark';
+                      const icon = m.role === 'opponent' ? '\\u{1F916}\\u{2694}\\u{FE0F}' : '\\u{1F916}';
+                      return `<div class="${cls}">${icon} ${escapeHtml(String(m.label || '-'))}</div>`;
+                    }).join('')}</div>`
+                : ''}
             </div>
           `);
         }
@@ -3585,77 +4133,141 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       mapGrid.innerHTML = cells.join('');
       const coverage = String(run.replay?.meta?.map_coverage || 'partial');
       const hasNpcData = npcStates.length > 0;
+      const opponentRaw = String(run.summary?.opponent_model_profile || run.summary?.opponent_model || '').trim();
+      const opponentTag = opponentRaw ? shortProfile(opponentRaw) : '';
+      const duelLegend = (context?.mode === 'duel')
+        ? `| \\u{1F916} focus: ${shortProfile(focusModel)} (${shortProfile(context?.modelA)} vs ${shortProfile(context?.modelB)}) `
+        : '';
+      const agentLegend = duelLegend || (
+        opponentTag
+          ? `| \\u{1F916} ${shortProfile(run.model_profile)} vs ${opponentTag} `
+          : `| \\u{1F916} ${shortProfile(run.model_profile)} `
+      );
       mapLegend.textContent = coverage === 'full'
-        ? `full map | dashed = visited${hasNpcData ? ` | \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`
-        : `partial map (fog) | dashed = visited${hasNpcData ? ` | \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`;
+        ? `full map | dashed = visited ${agentLegend}${hasNpcData ? `| \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`
+        : `partial map (fog) | dashed = visited ${agentLegend}${hasNpcData ? `| \\u{1F43E} npc${hostileNpcCount > 0 ? ' (red = hostile)' : ''}` : ''}`;
     }
 
-    function renderTurnDetails(run, frame) {
+    function renderTurnDetails(run, frame, context = null) {
       const rules = replayRules(run);
-      const observation = frame.observation || {};
-      const validation = frame.validation_result || {};
-      const actionResult = frame.action_result || {};
-      const scoreDelta = frame.score_delta || {};
-      const metrics = frame.metrics || {};
-      const inventory = observation.inventory || {};
+      const opponentSteps = Array.isArray(frame.opponent_steps) ? frame.opponent_steps : [];
+      const focusModel = String(context?.focusModel || run.model_profile || '');
+      const sourceModel = String(run.model_profile || '');
+      const focusIsOpponent = Boolean(context?.mode === 'duel' && focusModel && focusModel !== sourceModel);
+      const focusedOpponentStep = focusIsOpponent
+        ? (opponentSteps.find(step => String(step?.model_profile || step?.agent_id || '') === focusModel) || null)
+        : null;
+
+      const observation = focusIsOpponent
+        ? {
+            energy: focusedOpponentStep?.energy_after,
+            hunger: null,
+            thirst: null,
+            inventory: focusedOpponentStep?.inventory_after || {},
+            visible_npcs: [],
+          }
+        : (frame.observation || {});
+      const validation = focusIsOpponent
+        ? (focusedOpponentStep?.validation_result || {})
+        : (frame.validation_result || {});
+      const actionResultRaw = focusIsOpponent
+        ? (focusedOpponentStep?.action_result || {})
+        : (frame.action_result || {});
+      const actionResult = {
+        ...actionResultRaw,
+        requested: String(
+          actionResultRaw?.requested
+          || focusedOpponentStep?.parsed_action
+          || actionResultRaw?.applied
+          || '-'
+        ),
+      };
+      const scoreDelta = focusIsOpponent ? {} : (frame.score_delta || {});
+      const metrics = focusIsOpponent ? {} : (frame.metrics || {});
+      const inventory = (observation && typeof observation === 'object' && observation.inventory && typeof observation.inventory === 'object')
+        ? observation.inventory
+        : {};
 
       const isValid = Boolean(validation.is_valid);
       const resultMessage = !isValid
         ? `Invalid: ${validation.error || 'not allowed'}`
         : (actionResult.message || (actionResult.success ? 'Applied.' : 'No effect.'));
+      const opponentActions = opponentSteps
+        .map(step => {
+          const model = shortProfile(step?.model_profile || step?.agent_id || 'opponent');
+          const action = String(step?.parsed_action || step?.action_result?.requested || '-');
+          return `${model}:${action}`;
+        })
+        .filter(Boolean);
+      const actionOrderText = opponentActions.length
+        ? `${String((frame.action_result || {}).requested || '-')} -> ${opponentActions.join(', ')}`
+        : String((frame.action_result || {}).requested || '-');
 
       const badgeClass = isValid ? 'ok' : 'bad';
       const badgeLabel = isValid ? 'VALID' : 'INVALID';
+      const focusTag = context?.mode === 'duel' ? ` | focus: ${shortProfile(focusModel)}` : '';
+      const scoreText = focusIsOpponent
+        ? 'score: n/a (opponent per-turn score not included in source timeline)'
+        : `score: ${formatCount(frame.cumulative_score)} (${formatSignedScore(scoreDelta.total || 0)})`;
 
       turnStatus.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--font-mono);font-size:0.82rem">
           <span class="badge ${badgeClass}">${badgeLabel}</span>
           <span style="color:var(--accent);font-weight:700">${actionResult.requested || '-'}</span>
-          <span style="color:var(--text-dim)">T${formatCount(frame.turn)}</span>
+          <span style="color:var(--text-dim)">T${formatCount(frame.turn)}${escapeHtml(focusTag)}</span>
         </div>
         <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-dim);margin-top:4px">${resultMessage}</div>
-        <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);margin-top:2px">score: ${formatCount(frame.cumulative_score)} (${formatSignedScore(scoreDelta.total || 0)})</div>
+        <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary);margin-top:2px">order: ${escapeHtml(actionOrderText)}</div>
+        <div style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);margin-top:2px">${escapeHtml(scoreText)}</div>
       `;
 
       const meters = [
-        { key: 'energy', label: 'Energy', value: numberOr(observation.energy, 0), max: rules.energyMax },
-        { key: 'hunger', label: 'Hunger', value: numberOr(observation.hunger, 0), max: rules.hungerMax },
-        { key: 'thirst', label: 'Thirst', value: numberOr(observation.thirst, 0), max: rules.thirstMax },
+        { key: 'energy', label: 'Energy', value: observation.energy, max: rules.energyMax },
+        { key: 'hunger', label: 'Hunger', value: observation.hunger, max: rules.hungerMax },
+        { key: 'thirst', label: 'Thirst', value: observation.thirst, max: rules.thirstMax },
       ];
 
       stateMeters.innerHTML = meters.map(item => {
-        const pct = Math.max(0, Math.min(100, (item.value / item.max) * 100));
+        const hasValue = item.value !== null && item.value !== undefined && Number.isFinite(Number(item.value));
+        const value = hasValue ? numberOr(item.value, 0) : 0;
+        const pct = hasValue ? Math.max(0, Math.min(100, (value / item.max) * 100)) : 0;
+        const valueLabel = hasValue ? `${formatCount(value)}/${formatCount(item.max)}` : '--';
+        const klass = hasValue ? meterClass(item.key, value, item.max) : 'meter';
         return `
-          <div class="${meterClass(item.key, item.value, item.max)}">
-            <div class="meter-head"><span>${item.label}</span><span>${formatCount(item.value)}/${formatCount(item.max)}</span></div>
+          <div class="${klass}">
+            <div class="meter-head"><span>${item.label}</span><span>${valueLabel}</span></div>
             <div class="meter-bar"><div class="meter-fill" style="width:${pct.toFixed(2)}%"></div></div>
           </div>
         `;
       }).join('');
 
       inventoryGrid.innerHTML = Object.entries(inventoryMeta).map(([key, label]) => {
-        return `<div class="inv-item"><span>${label}</span><strong>${formatCount(inventory[key] || 0)}</strong></div>`;
+        return `<div class="inv-item"><span>${label}</span><strong>${formatCount(inventory[key], '0')}</strong></div>`;
       }).join('');
 
       const visibleNpcs = Array.isArray(observation.visible_npcs) ? observation.visible_npcs : [];
-      npcGrid.innerHTML = visibleNpcs.length
-        ? visibleNpcs.map(rawNpc => {
-            const npc = normalizeNpcState(rawNpc);
-            if (!npc) return '';
-            const status = npc.hostile ? 'hostile' : '';
-            const hpLabel = npc.hp === null ? 'hp ?' : `hp ${formatCount(npc.hp)}`;
-            return `<div class="npc-item ${status}">
-              <span>${npcEmoji(npc.npc_type)} ${escapeHtml(npc.npc_type)} @ ${formatCount(npc.x, '?')},${formatCount(npc.y, '?')}</span>
-              <span class="npc-hp">${hpLabel}</span>
-            </div>`;
-          }).join('')
-        : '<div class="npc-empty">none in 3x3 view</div>';
+      npcGrid.innerHTML = focusIsOpponent
+        ? '<div class="npc-empty">not available in timeline source for focused opponent</div>'
+        : (visibleNpcs.length
+          ? visibleNpcs.map(rawNpc => {
+              const npc = normalizeNpcState(rawNpc);
+              if (!npc) return '';
+              const status = npc.hostile ? 'hostile' : '';
+              const hpLabel = npc.hp === null ? 'hp ?' : `hp ${formatCount(npc.hp)}`;
+              return `<div class="npc-item ${status}">
+                <span>${npcEmoji(npc.npc_type)} ${escapeHtml(npc.npc_type)} @ ${formatCount(npc.x, '?')},${formatCount(npc.y, '?')}</span>
+                <span class="npc-hp">${hpLabel}</span>
+              </div>`;
+            }).join('')
+          : '<div class="npc-empty">none in 3x3 view</div>');
 
-      rawOutput.textContent = String(frame.raw_model_output || '-').trim() || '-';
+      rawOutput.textContent = focusIsOpponent
+        ? (String(focusedOpponentStep?.raw_model_output || '-').trim() || '-')
+        : (String(frame.raw_model_output || '-').trim() || '-');
 
       const eventLines = [
-        `delta: ${formatSignedScore(scoreDelta.total || 0)}`,
-        `events: ${(scoreDelta.events || []).map(formatScoreEvent).join(', ') || '-'}`,
+        `delta: ${focusIsOpponent ? 'n/a' : formatSignedScore(scoreDelta.total || 0)}`,
+        `events: ${focusIsOpponent ? 'n/a (source-only)' : ((scoreDelta.events || []).map(formatScoreEvent).join(', ') || '-')}`,
         `latency: ${formatDurationFromMs(metrics.latency_ms)}`,
         `tokens: ${formatCount(metrics.tokens_used)}`,
       ];
@@ -3687,7 +4299,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         return `
           <tr class="${rowClass}" data-turn-index="${idx}">
             <td>${formatCount(item.turn)}</td>
-            <td>${item.action_result?.requested || '-'}</td>
+            <td>${escapeHtml(String(item.action_result?.requested || '-'))}${Array.isArray(item.opponent_steps) && item.opponent_steps.length ? ` -> ${escapeHtml(item.opponent_steps.map(step => `${shortProfile(step?.model_profile || step?.agent_id || 'opponent')}:${String(step?.parsed_action || step?.action_result?.requested || '-')}`).join(', '))}` : ''}</td>
             <td>${valid ? '\\u2713' : '\\u2717'}</td>
             <td>${formatSignedScore(item.score_delta?.total || 0)}</td>
             <td>${formatCount(item.cumulative_score)}</td>
@@ -3734,12 +4346,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function renderReplay() {
-      const run = selectedRun();
+      const context = selectedReplayContext();
+      const run = context?.run || null;
       if (!run) { renderReplayEmpty(); return; }
 
       const frames = run.replay?.frames || [];
       if (!frames.length) {
-        renderReplayHeader(run);
+        renderReplayHeader(run, context);
         renderReplayEmpty();
         return;
       }
@@ -3751,10 +4364,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       turnSlider.max = String(frames.length);
       turnSlider.value = String(currentTurnIndex + 1);
 
-      renderReplayHeader(run);
-      renderMap(run, frame, currentTurnIndex);
-      renderMapSummaryCards(run, currentTurnIndex);
-      renderTurnDetails(run, frame);
+      renderReplayHeader(run, context);
+      renderMap(run, frame, currentTurnIndex, context);
+      renderMapSummaryCards(run, currentTurnIndex, context);
+      renderTurnDetails(run, frame, context);
       renderRunList();
     }
 
@@ -3767,7 +4380,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function toggleAutoPlay() {
-      const run = selectedRun();
+      const run = selectedReplayRun();
       const frames = run?.replay?.frames || [];
       if (frames.length <= 1) return;
 
@@ -3782,11 +4395,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function moveRun(offset) {
-      if (!filteredRunIndexes.length) return;
-      const currentPos = filteredRunIndexes.indexOf(selectedRunIndex);
-      const base = currentPos >= 0 ? currentPos : 0;
-      const nextPos = Math.max(0, Math.min(filteredRunIndexes.length - 1, base + offset));
-      selectedRunIndex = filteredRunIndexes[nextPos];
+      if (duelMode) {
+        if (!filteredDuelIndexes.length) return;
+        const currentPos = filteredDuelIndexes.indexOf(selectedDuelIndex);
+        const base = currentPos >= 0 ? currentPos : 0;
+        const nextPos = Math.max(0, Math.min(filteredDuelIndexes.length - 1, base + offset));
+        selectedDuelIndex = filteredDuelIndexes[nextPos];
+      } else {
+        if (!filteredRunIndexes.length) return;
+        const currentPos = filteredRunIndexes.indexOf(selectedRunIndex);
+        const base = currentPos >= 0 ? currentPos : 0;
+        const nextPos = Math.max(0, Math.min(filteredRunIndexes.length - 1, base + offset));
+        selectedRunIndex = filteredRunIndexes[nextPos];
+      }
       currentTurnIndex = 0;
       stopAutoPlay();
       renderRunList();
@@ -3794,7 +4415,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function moveTurn(offset) {
-      const run = selectedRun();
+      const run = selectedReplayRun();
       const frames = run?.replay?.frames || [];
       if (!frames.length) return;
       currentTurnIndex = clampTurnIndex(currentTurnIndex + offset, frames.length);
@@ -3821,7 +4442,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       playTurnBtn.addEventListener('click', () => toggleAutoPlay());
 
       turnSlider.addEventListener('input', () => {
-        const run = selectedRun();
+        const run = selectedReplayRun();
         const frames = run?.replay?.frames || [];
         if (!frames.length) return;
         currentTurnIndex = clampTurnIndex(Number(turnSlider.value) - 1, frames.length);

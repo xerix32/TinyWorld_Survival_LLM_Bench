@@ -122,6 +122,7 @@ def _build_frames(run_log: dict[str, Any], width: int, height: int) -> tuple[lis
                 "observation": observation,
                 "agent_position_before": before_position,
                 "agent_position_after": after_position,
+                "opponent_steps": turn.get("opponent_steps", []),
                 "map_snapshot": _copy_tiles(map_state),
                 "path_prefix": path_prefix[:],
                 "action_result": turn.get("action_result", {}),
@@ -739,6 +740,22 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       pointer-events: none;
       font-weight: 700;
       backdrop-filter: blur(4px);
+    }
+
+    .agent-stack {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      display: grid;
+      gap: 2px;
+      pointer-events: none;
+    }
+
+    .agent-mark.opponent {
+      border: 1px solid rgba(248, 113, 113, 0.45);
+      background: rgba(248, 113, 113, 0.2);
+      color: #fca5a5;
     }
 
     .agent-mark .name {
@@ -1472,6 +1489,53 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return tail;
     }
 
+    function compactOpponentName() {
+      const raw = String(DATA.summary?.opponent_model || DATA.summary?.opponent_model_profile || '').trim();
+      if (!raw) return '';
+      const parts = raw.split('/');
+      return (parts[parts.length - 1] || raw).trim();
+    }
+
+    function normalizePosition(pos) {
+      if (!pos) return null;
+      if (Array.isArray(pos) && pos.length >= 2) {
+        return { x: Number(pos[0] ?? 0), y: Number(pos[1] ?? 0) };
+      }
+      if (typeof pos === 'object') {
+        return { x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) };
+      }
+      return null;
+    }
+
+    function frameAgentMarkers(frame) {
+      const markers = [];
+      const mainPos = normalizePosition(frame.agent_position_after) || normalizePosition(frame.agent_position_before);
+      if (mainPos) {
+        markers.push({
+          role: 'primary',
+          x: Number(mainPos.x),
+          y: Number(mainPos.y),
+          label: compactModelName(),
+        });
+      }
+      const opponentSteps = Array.isArray(frame.opponent_steps) ? frame.opponent_steps : [];
+      for (const step of opponentSteps) {
+        const actionDelta = step?.world_result_delta?.action_delta || {};
+        const posAfter = normalizePosition(step?.position_after)
+          || normalizePosition(actionDelta?.position_after)
+          || normalizePosition(step?.position_before)
+          || normalizePosition(actionDelta?.position_before);
+        if (!posAfter) continue;
+        markers.push({
+          role: 'opponent',
+          x: Number(posAfter.x),
+          y: Number(posAfter.y),
+          label: String(step?.model || step?.model_profile || step?.agent_id || 'opponent'),
+        });
+      }
+      return markers;
+    }
+
     function inferInvalidReason(frame) {
       const validationError = frame.validation_result?.error || '';
       const requestedRaw = frame.action_result?.requested || frame.raw_model_output || '';
@@ -1614,6 +1678,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ? `${formatFloat(kpi.resource_conversion_efficiency_pct, 1)}%`
         : 'n/a';
       const distanceText = formatFloat(kpi.distance_per_useful_gain, 2, 'n/a');
+      const moralAggressionText = (kpi.moral_aggression_index !== null && kpi.moral_aggression_index !== undefined)
+        ? `${formatFloat(kpi.moral_aggression_index, 1)}${kpi.moral_aggression_band ? ` (${String(kpi.moral_aggression_band)})` : ''}`
+        : 'n/a';
+      const attackCount = formatCount(s.attack_count, '0');
+      const attackNpcCount = formatCount(s.attack_npc_count, '0');
+      const attackRivalCount = formatCount(s.attack_rival_count, '0');
+      const npcKillsCount = formatCount(s.npc_kills, '0');
+      const rivalKillsCount = formatCount(s.rival_kills, '0');
+      const opponentAttackCount = formatCount(s.opponent_attack_count, '0');
+      const opponentAttackNpcCount = formatCount(s.opponent_attack_npc_count, '0');
+      const opponentAttackRivalCount = formatCount(s.opponent_attack_rival_count, '0');
+      const opponentRivalKillsCount = formatCount(s.opponent_rival_kills, '0');
+      const pvpEnabled = Boolean(s.pvp_duel);
       const moralRaw = meta.moral_mode;
       const moralMode = (typeof moralRaw === 'boolean')
         ? (moralRaw ? 'on' : 'off')
@@ -1649,6 +1726,26 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         `<span class="chip"><span class="chip-key">revisit</span> <span class="chip-value">${revisitText}</span></span>`,
         `<span class="chip"><span class="chip-key">conversion</span> <span class="chip-value">${conversionText}</span></span>`,
         `<span class="chip"><span class="chip-key">dist/useful</span> <span class="chip-value">${distanceText}</span></span>`,
+        `<span class="chip"><span class="chip-key">attack</span> <span class="chip-value">${attackCount}</span></span>`,
+        `<span class="chip"><span class="chip-key">atk npc</span> <span class="chip-value">${attackNpcCount}</span></span>`,
+        `<span class="chip"><span class="chip-key">atk rival</span> <span class="chip-value">${attackRivalCount}</span></span>`,
+        `<span class="chip"><span class="chip-key">npc kills</span> <span class="chip-value">${npcKillsCount}</span></span>`,
+        `<span class="chip"><span class="chip-key">rival kills</span> <span class="chip-value">${rivalKillsCount}</span></span>`,
+        pvpEnabled
+          ? `<span class="chip"><span class="chip-key">opp attack</span> <span class="chip-value">${opponentAttackCount}</span></span>`
+          : '',
+        pvpEnabled
+          ? `<span class="chip"><span class="chip-key">opp atk npc</span> <span class="chip-value">${opponentAttackNpcCount}</span></span>`
+          : '',
+        pvpEnabled
+          ? `<span class="chip"><span class="chip-key">opp atk rival</span> <span class="chip-value">${opponentAttackRivalCount}</span></span>`
+          : '',
+        pvpEnabled
+          ? `<span class="chip"><span class="chip-key">opp rival kills</span> <span class="chip-value">${opponentRivalKillsCount}</span></span>`
+          : '',
+        (kpi.moral_kpi_enabled
+          ? `<span class="chip"><span class="chip-key">moral aggression</span> <span class="chip-value">${escapeHtml(moralAggressionText)}</span></span>`
+          : ''),
       ].filter(Boolean).join('');
 
       const protocolChip = document.getElementById('protocolChip');
@@ -1662,8 +1759,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         : 'partial (fog of war)';
 
       const modelTag = compactModelName();
-      document.getElementById('mapLegend').textContent =
-        `agent: ${modelTag} | \\u{1F332} tree \\u{1FAA8} rock \\u{1F34E} food \\u{1F4A7} water`;
+      const opponentTag = compactOpponentName();
+      document.getElementById('mapLegend').textContent = opponentTag
+        ? `agent: ${modelTag} | opponent: ${opponentTag} | \\u{1F332} tree \\u{1FAA8} rock \\u{1F34E} food \\u{1F4A7} water`
+        : `agent: ${modelTag} | \\u{1F332} tree \\u{1FAA8} rock \\u{1F34E} food \\u{1F4A7} water`;
     }
 
     function renderTimeline() {
@@ -1671,6 +1770,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       timelineBody.innerHTML = frames.map((frame, idx) => {
         const action = frame.action_result?.applied || frame.action_result?.requested || '-';
+        const opponentActions = Array.isArray(frame.opponent_steps)
+          ? frame.opponent_steps.map(step => `${String(step?.model_profile || step?.agent_id || 'opponent')}:${String(step?.parsed_action || step?.action_result?.requested || '-')}`).join(', ')
+          : '';
         const isValid = frame.validation_result?.is_valid;
         const valid = isValid ? '\\u2713' : '\\u2717';
         const delta = frame.score_delta?.total ?? 0;
@@ -1691,7 +1793,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         return `
           <tr data-idx="${idx}" class="${classes}">
             <td>${frame.turn}</td>
-            <td>${action}</td>
+            <td>${escapeHtml(String(action))}${opponentActions ? ` -> ${escapeHtml(opponentActions)}` : ''}</td>
             <td>${valid}</td>
             <td>${delta}</td>
             <td>${frame.cumulative_score ?? '-'}</td>
@@ -1730,10 +1832,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderMap(frame) {
       const map = frame.map_snapshot || [];
-      const afterPos = frame.agent_position_after || { x: 0, y: 0 };
+      const markers = frameAgentMarkers(frame);
       const pathSet = new Set((frame.path_prefix || []).map(p => `${p.x},${p.y}`));
-      const modelTag = compactModelName();
-      const modelTagEscaped = escapeHtml(modelTag);
 
       mapGrid.style.gridTemplateColumns = `repeat(${worldWidth}, minmax(42px, 1fr))`;
       mapGrid.innerHTML = '';
@@ -1742,7 +1842,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         for (let x = 0; x < worldWidth; x += 1) {
           const type = (map[y] && map[y][x]) || 'unknown';
           const meta = tileMeta[type] || tileMeta.unknown;
-          const isAgent = afterPos.x === x && afterPos.y === y;
+          const markersHere = markers.filter(m => Number(m.x) === x && Number(m.y) === y);
+          const isAgent = markersHere.length > 0;
           const isPath = pathSet.has(`${x},${y}`);
 
           const tile = document.createElement('div');
@@ -1751,7 +1852,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <span class="tile-type">${meta.label}</span>
             <span class="tile-emoji">${meta.emoji}</span>
             <span class="coord">${x},${y}</span>
-            ${isAgent ? `<span class="agent-mark">\\u{1F916} <span class="name">${modelTagEscaped}</span></span>` : ''}
+            ${isAgent
+              ? `<span class="agent-stack">${markersHere.map(m => {
+                    const cls = m.role === 'opponent' ? 'agent-mark opponent' : 'agent-mark';
+                    const icon = m.role === 'opponent' ? '\\u{1F916}\\u{2694}\\u{FE0F}' : '\\u{1F916}';
+                    return `<span class="${cls}">${icon} <span class="name">${escapeHtml(m.label)}</span></span>`;
+                  }).join('')}</span>`
+              : ''}
           `;
           tile.title = `${meta.label} @ (${x},${y})`;
           mapGrid.appendChild(tile);
@@ -1769,6 +1876,17 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const message = valid ? baseMessage : inferInvalidReason(frame);
       const actionDisplay = escapeHtml(actionApplied);
       const messageDisplay = escapeHtml(message);
+      const opponentSteps = Array.isArray(frame.opponent_steps) ? frame.opponent_steps : [];
+      const opponentActions = opponentSteps
+        .map(step => {
+          const model = String(step?.model_profile || step?.agent_id || 'opponent');
+          const action = String(step?.parsed_action || step?.action_result?.requested || '-');
+          return `${model}:${action}`;
+        })
+        .filter(Boolean);
+      const actionOrderText = opponentActions.length
+        ? `${String(actionApplied)} -> ${opponentActions.join(', ')}`
+        : String(actionApplied);
 
       const deltaTotal = frame.score_delta?.total ?? 0;
       const deltaClass = deltaTotal < 0 ? 'delta-negative' : (deltaTotal > 0 ? 'delta-positive' : '');
@@ -1780,6 +1898,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <code class="cmd-action">${actionDisplay}</code>
         </div>
         <div style="color:var(--text-dim);font-size:0.78rem;font-family:var(--font-mono)">${messageDisplay}</div>
+        <div style="color:var(--text-secondary);font-size:0.74rem;font-family:var(--font-mono)">order: ${escapeHtml(actionOrderText)}</div>
         <div class="action-row">
           <span class="score-delta ${deltaClass}">${frame.cumulative_score ?? '-'} (${formatSignedScore(deltaTotal)})</span>
         </div>

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bench.common import run_match_once
+import yaml
+
+from bench.common import load_yaml_file, run_match_once
 
 
 # Expected values for deterministic seed/model/config in v0.1.
@@ -65,3 +67,72 @@ def test_run_match_is_reproducible_for_fixed_seed(tmp_path: Path) -> None:
     assert "revisit_ratio" in kpi_a
     assert "resource_conversion_efficiency_pct" in kpi_a
     assert "distance_per_useful_gain" in kpi_a
+    assert kpi_a.get("moral_kpi_enabled") is False
+    assert kpi_a.get("moral_aggression_index") is None
+
+
+def test_run_match_pvp_duel_smoke(tmp_path: Path) -> None:
+    run_log = run_match_once(
+        seed=5,
+        model_name="dummy",
+        scenario_name="v0_2_pvp_duel",
+        max_turns=12,
+        output_path=tmp_path / "run_pvp.json",
+    )
+
+    summary = run_log["run_summary"]
+    assert summary.get("pvp_duel") is True
+    assert int(summary.get("opponent_agent_count") or 0) >= 1
+    assert summary.get("opponent_model_profile") is not None
+    assert summary.get("opponent_model") is not None
+    assert int(summary.get("attack_npc_count") or 0) >= 0
+    assert int(summary.get("attack_rival_count") or 0) >= 0
+    assert int(summary.get("rival_kills") or 0) >= 0
+    initial_npcs = run_log.get("world_snapshots", {}).get("initial_npcs", [])
+    assert isinstance(initial_npcs, list)
+    assert len(initial_npcs) >= 1
+    assert summary.get("end_reason") in {"agent_dead", "opponent_defeated", "max_turns_reached"}
+    assert summary.get("end_reason_human")
+
+
+def test_run_match_moral_kpi_enabled(tmp_path: Path) -> None:
+    run_log = run_match_once(
+        seed=9,
+        model_name="dummy_v0_1",
+        scenario_name="v0_2_pvp_duel",
+        max_turns=10,
+        output_path=tmp_path / "run_pvp_moral.json",
+        moral_mode=True,
+    )
+    summary = run_log["run_summary"]
+    kpi = summary.get("kpi") or {}
+    assert bool(summary.get("moral_mode")) is True
+    assert bool(kpi.get("moral_kpi_enabled")) is True
+    assert kpi.get("moral_aggression_index") is not None
+    assert kpi.get("moral_restraint_score") is not None
+    assert isinstance(kpi.get("moral_aggression_band"), str)
+
+
+def test_run_match_pvp_supports_opponent_model_override(tmp_path: Path) -> None:
+    providers_cfg = load_yaml_file("configs/providers.yaml")
+    profiles = dict(providers_cfg.get("model_profiles", {}))
+    profiles["dummy_v0_1_b"] = {
+        "provider": "dummy_provider",
+        "model_name": "dummy_random_v0_1_b",
+    }
+    providers_cfg["model_profiles"] = profiles
+    providers_cfg_path = tmp_path / "providers.test.yaml"
+    providers_cfg_path.write_text(yaml.safe_dump(providers_cfg, sort_keys=False), encoding="utf-8")
+
+    run_log = run_match_once(
+        seed=11,
+        model_name="dummy_v0_1",
+        opponent_model_name="dummy_v0_1_b",
+        scenario_name="v0_2_pvp_duel",
+        max_turns=8,
+        providers_config_path=providers_cfg_path,
+        output_path=tmp_path / "run_pvp_vs.json",
+    )
+    summary = run_log["run_summary"]
+    assert summary.get("model_profile") == "dummy_v0_1"
+    assert summary.get("opponent_model_profile") == "dummy_v0_1_b"

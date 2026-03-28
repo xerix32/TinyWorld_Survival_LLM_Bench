@@ -1,5 +1,5 @@
-version: 0.2.3
-protocol_version: AIB-0.2.1
+version: 3.0.0
+protocol_version: AIB-0.3.0
 pricing_config_path: configs/pricing.yaml
 default_scenario: v0_2_hunt
 max_turns: 50

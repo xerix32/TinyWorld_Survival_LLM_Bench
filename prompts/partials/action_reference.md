@@ -4,7 +4,7 @@
 - move east: move one tile east if in bounds.
 - move west: move one tile west if in bounds.
 - gather: collect a resource from your current tile.
-- attack: attack an NPC on your current tile (if present); if it survives it counterattacks immediately, if defeated it drops food directly into inventory.
+- attack: attack a target on your current tile (NPC or rival agent). NPCs counterattack immediately if they survive; defeated NPCs drop food directly into inventory.
 - eat: consume 1 food from inventory to reduce hunger.
 - drink: consume 1 water from inventory to reduce thirst.
 - rest: immediate +12 energy (capped at max), then normal end-of-turn updates still apply.

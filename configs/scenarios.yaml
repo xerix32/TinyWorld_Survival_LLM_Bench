@@ -21,3 +21,17 @@ scenarios:
     npc_distribution:
       animal: 4
     agent_start_mode: seeded_empty_tile
+  v0_2_pvp_duel:
+    name: V0.2 PvP Duel
+    width: 6
+    height: 6
+    tile_distribution:
+      tree: 6
+      rock: 6
+      food: 4
+      water: 4
+    agent_count: 2
+    pvp_duel: true
+    npc_distribution:
+      animal: 4
+    agent_start_mode: seeded_empty_tile
