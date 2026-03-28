@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import copy
 import csv
 import glob
 import heapq
@@ -34,6 +35,7 @@ from bench.common import (
     create_model_wrapper,
     load_yaml_file,
     resolve_artifact_dirs,
+    run_duel_once,
     run_match_once,
 )
 from bench.pricing import estimate_cost_from_total_tokens, load_pricing_config, resolve_model_pricing
@@ -150,6 +152,16 @@ MODEL_SUMMARY_FIELDS = [
     "avg_coverage_pct",
     "avg_revisit_ratio",
     "avg_conversion_efficiency_pct",
+    "avg_attack_count",
+    "avg_attack_npc_count",
+    "avg_attack_rival_count",
+    "avg_npc_kills",
+    "avg_rival_kills",
+    "avg_opponent_attack_count",
+    "avg_opponent_attack_npc_count",
+    "avg_opponent_attack_rival_count",
+    "avg_opponent_rival_kills",
+    "avg_moral_aggression_index",
     "death_rate_pct",
     "latency_ms_total",
     "latency_ms_avg",
@@ -196,6 +208,14 @@ class AdaptiveFutureSpec:
     job: JobSpec
 
 
+@dataclass(frozen=True)
+class DuelJobSpec:
+    seed_order: int
+    seed: int
+    job_index: int
+    job_total: int
+
+
 def parse_models(raw: str | list[str]) -> list[str]:
     if isinstance(raw, list):
         raw_text = " ".join(str(item).strip() for item in raw if str(item).strip())
@@ -221,6 +241,39 @@ def resolve_seed_list(seeds_raw: str | None, num_runs: int, seed_start: int) -> 
     if num_runs < 1:
         raise ValueError("--num-runs must be >= 1")
     return list(range(seed_start, seed_start + num_runs))
+
+
+def _scenario_is_pvp_duel(
+    *,
+    scenarios_config_path: str,
+    scenario_name: str,
+) -> bool:
+    try:
+        scenarios_cfg = load_yaml_file(scenarios_config_path)
+    except Exception:
+        return False
+    scenarios = scenarios_cfg.get("scenarios", {})
+    if not isinstance(scenarios, dict):
+        return False
+    scenario = scenarios.get(scenario_name, {})
+    return bool(isinstance(scenario, dict) and scenario.get("pvp_duel", False))
+
+
+def _build_pvp_opponent_profile_map(
+    *,
+    model_profiles: list[str],
+    pvp_enabled: bool,
+) -> dict[str, str]:
+    if not pvp_enabled:
+        return {}
+    if len(model_profiles) != 2:
+        return {}
+    model_a = str(model_profiles[0])
+    model_b = str(model_profiles[1])
+    return {
+        model_a: model_b,
+        model_b: model_a,
+    }
 
 
 def _providers_config_from_argv(argv: list[str], default: str = "configs/providers.yaml") -> str:
@@ -634,6 +687,8 @@ def _print_adaptive_live_snapshot(
     adaptive_pairs_by_key: dict[tuple[str, int], dict[str, Any]] | None = None,
     live_attempt_scores_by_key: dict[tuple[str, int, str], int] | None = None,
     active_attempts_by_key: dict[tuple[str, int], str] | None = None,
+    pvp_duel_enabled: bool = False,
+    pvp_opponent_profile_map: dict[str, str] | None = None,
     previous_line_count: int,
 ) -> int:
     def _maybe_int(value: Any) -> int | None:
@@ -671,59 +726,80 @@ def _print_adaptive_live_snapshot(
         "",
         colorize("Adaptive Session (live)", "1;35", color_enabled),
     ]
-    single_model = len(model_profiles) <= 1
-    for model_profile in model_profiles:
+    opponent_map = dict(pvp_opponent_profile_map or {})
+    show_pair_rows = bool(pvp_duel_enabled and len(model_profiles) == 2 and opponent_map)
+
+    if show_pair_rows:
+        model_a = str(model_profiles[0])
+        model_b = str(model_profiles[1])
+
+        def _pair_scores(row_left: dict[str, Any], row_right: dict[str, Any]) -> tuple[int | None, int | None]:
+            left_score = _maybe_int(row_left.get("final_score"))
+            right_score = _maybe_int(row_right.get("final_score"))
+            if right_score is None:
+                right_score = _maybe_int(row_left.get("opponent_final_score"))
+            if left_score is None:
+                left_score = _maybe_int(row_right.get("opponent_final_score"))
+            return left_score, right_score
+
         for seed in seed_list:
-            key = (model_profile, int(seed))
-            pair_row = dict((adaptive_pairs_by_key or {}).get(key, {}))
-            initial_score = _maybe_int(dict(initial_rows_by_key.get(key, {})).get("final_score"))
-            control_score = _maybe_int(dict(control_rows_by_key.get(key, {})).get("final_score"))
-            adaptive_score = _maybe_int(dict(adaptive_rows_by_key.get(key, {})).get("final_score"))
-            if initial_score is None:
-                initial_score = _maybe_int(pair_row.get("initial_score"))
-            if control_score is None:
-                control_score = _maybe_int(pair_row.get("control_score"))
-            if adaptive_score is None:
-                adaptive_score = _maybe_int(pair_row.get("adaptive_score"))
-            if control_score is None and live_attempt_scores_by_key is not None:
-                control_score = _maybe_int(
-                    live_attempt_scores_by_key.get((model_profile, int(seed), "control_rerun"))
-                )
-            if adaptive_score is None and live_attempt_scores_by_key is not None:
-                adaptive_score = _maybe_int(
-                    live_attempt_scores_by_key.get((model_profile, int(seed), "adaptive_rerun"))
-                )
+            key_a = (model_a, int(seed))
+            key_b = (model_b, int(seed))
+
+            row_a_initial = dict(initial_rows_by_key.get(key_a, {}))
+            row_b_initial = dict(initial_rows_by_key.get(key_b, {}))
+            row_a_control = dict(control_rows_by_key.get(key_a, {}))
+            row_b_control = dict(control_rows_by_key.get(key_b, {}))
+            row_a_adaptive = dict(adaptive_rows_by_key.get(key_a, {}))
+            row_b_adaptive = dict(adaptive_rows_by_key.get(key_b, {}))
+
+            a_initial, b_initial = _pair_scores(row_a_initial, row_b_initial)
+            a_control, b_control = _pair_scores(row_a_control, row_b_control)
+            a_adaptive, b_adaptive = _pair_scores(row_a_adaptive, row_b_adaptive)
+
+            if a_control is None and live_attempt_scores_by_key is not None:
+                a_control = _maybe_int(live_attempt_scores_by_key.get((model_a, int(seed), "control_rerun")))
+            if b_control is None and live_attempt_scores_by_key is not None:
+                b_control = _maybe_int(live_attempt_scores_by_key.get((model_b, int(seed), "control_rerun")))
+            if a_adaptive is None and live_attempt_scores_by_key is not None:
+                a_adaptive = _maybe_int(live_attempt_scores_by_key.get((model_a, int(seed), "adaptive_rerun")))
+            if b_adaptive is None and live_attempt_scores_by_key is not None:
+                b_adaptive = _maybe_int(live_attempt_scores_by_key.get((model_b, int(seed), "adaptive_rerun")))
+
+            baseline_text = f"{a_initial if a_initial is not None else '--'}/{b_initial if b_initial is not None else '--'}"
+            rerun_text = f"{a_control if a_control is not None else '--'}/{b_control if b_control is not None else '--'}"
+            rerun_mem_text = f"{a_adaptive if a_adaptive is not None else '--'}/{b_adaptive if b_adaptive is not None else '--'}"
 
             variance_text = "--"
+            if a_initial is not None and a_control is not None and b_initial is not None and b_control is not None:
+                variance_text = f"{(a_control - a_initial):+d}/{(b_control - b_initial):+d}"
+
             memory_text = "--"
+            if (
+                a_initial is not None and a_control is not None and a_adaptive is not None
+                and b_initial is not None and b_control is not None and b_adaptive is not None
+            ):
+                a_effect = a_adaptive - ((a_initial + a_control) / 2)
+                b_effect = b_adaptive - ((b_initial + b_control) / 2)
+                memory_text = f"{a_effect:+.1f}/{b_effect:+.1f}"
 
-            if initial_score is not None and control_score is not None:
-                variance_delta = int(control_score) - int(initial_score)
-                variance_text = f"{variance_delta:+d}"
-
-            if control_score is not None and adaptive_score is not None:
-                no_mem_avg = (int(initial_score) + int(control_score)) / 2 if initial_score is not None else int(control_score)
-                memory_effect = int(adaptive_score) - no_mem_avg
-                memory_text = f"{memory_effect:+.1f}"
-
-            active_attempt = str((active_attempts_by_key or {}).get(key, "")).strip()
             baseline_field = _render_field(
                 "baseline",
-                initial_score if initial_score is not None else "--",
-                pending=(initial_score is None),
-                active=(active_attempt == "initial"),
+                baseline_text,
+                pending=("--" in baseline_text),
+                active=False,
             )
             rerun_field = _render_field(
                 "rerun",
-                control_score if control_score is not None else "--",
-                pending=(control_score is None),
-                active=(active_attempt == "control_rerun"),
+                rerun_text,
+                pending=("--" in rerun_text),
+                active=False,
             )
             rerun_mem_field = _render_field(
                 "rerun+mem",
-                adaptive_score if adaptive_score is not None else "--",
-                pending=(adaptive_score is None),
-                active=(active_attempt == "adaptive_rerun"),
+                rerun_mem_text,
+                pending=("--" in rerun_mem_text),
+                active=False,
             )
             variance_field = _render_field(
                 "variance",
@@ -736,13 +812,84 @@ def _print_adaptive_live_snapshot(
                 memory_text,
                 pending=(memory_text == "--"),
                 active=False,
-                color_by_sign=True,
             )
 
-            label = f"Seed {seed}" if single_model else f"{model_profile} seed {seed}"
+            label_text = colorize(f"{('Seed ' + str(seed)):<22}", "1;36", color_enabled)
             value = f"{baseline_field}  {rerun_field}  {rerun_mem_field}  {variance_field}  {memory_field}"
-            label_text = colorize(f"{label:<22}", "1;36", color_enabled)
             lines.append(f"  {label_text} {value}")
+    else:
+        single_model = len(model_profiles) <= 1
+        for model_profile in model_profiles:
+            for seed in seed_list:
+                key = (model_profile, int(seed))
+                pair_row = dict((adaptive_pairs_by_key or {}).get(key, {}))
+                initial_score = _maybe_int(dict(initial_rows_by_key.get(key, {})).get("final_score"))
+                control_score = _maybe_int(dict(control_rows_by_key.get(key, {})).get("final_score"))
+                adaptive_score = _maybe_int(dict(adaptive_rows_by_key.get(key, {})).get("final_score"))
+                if initial_score is None:
+                    initial_score = _maybe_int(pair_row.get("initial_score"))
+                if control_score is None:
+                    control_score = _maybe_int(pair_row.get("control_score"))
+                if adaptive_score is None:
+                    adaptive_score = _maybe_int(pair_row.get("adaptive_score"))
+                if control_score is None and live_attempt_scores_by_key is not None:
+                    control_score = _maybe_int(
+                        live_attempt_scores_by_key.get((model_profile, int(seed), "control_rerun"))
+                    )
+                if adaptive_score is None and live_attempt_scores_by_key is not None:
+                    adaptive_score = _maybe_int(
+                        live_attempt_scores_by_key.get((model_profile, int(seed), "adaptive_rerun"))
+                    )
+
+                variance_text = "--"
+                memory_text = "--"
+
+                if initial_score is not None and control_score is not None:
+                    variance_delta = int(control_score) - int(initial_score)
+                    variance_text = f"{variance_delta:+d}"
+
+                if control_score is not None and adaptive_score is not None:
+                    no_mem_avg = (int(initial_score) + int(control_score)) / 2 if initial_score is not None else int(control_score)
+                    memory_effect = int(adaptive_score) - no_mem_avg
+                    memory_text = f"{memory_effect:+.1f}"
+
+                active_attempt = str((active_attempts_by_key or {}).get(key, "")).strip()
+                baseline_field = _render_field(
+                    "baseline",
+                    initial_score if initial_score is not None else "--",
+                    pending=(initial_score is None),
+                    active=(active_attempt == "initial"),
+                )
+                rerun_field = _render_field(
+                    "rerun",
+                    control_score if control_score is not None else "--",
+                    pending=(control_score is None),
+                    active=(active_attempt == "control_rerun"),
+                )
+                rerun_mem_field = _render_field(
+                    "rerun+mem",
+                    adaptive_score if adaptive_score is not None else "--",
+                    pending=(adaptive_score is None),
+                    active=(active_attempt == "adaptive_rerun"),
+                )
+                variance_field = _render_field(
+                    "variance",
+                    variance_text,
+                    pending=(variance_text == "--"),
+                    active=False,
+                )
+                memory_field = _render_field(
+                    "memory",
+                    memory_text,
+                    pending=(memory_text == "--"),
+                    active=False,
+                    color_by_sign=True,
+                )
+
+                label = f"Seed {seed}" if single_model else f"{model_profile} seed {seed}"
+                value = f"{baseline_field}  {rerun_field}  {rerun_mem_field}  {variance_field}  {memory_field}"
+                label_text = colorize(f"{label:<22}", "1;36", color_enabled)
+                lines.append(f"  {label_text} {value}")
     lines.append("")
 
     supports_inplace = sys.stdout.isatty()
@@ -1006,10 +1153,20 @@ def build_model_summaries(
         coverage_values: list[float] = []
         revisit_values: list[float] = []
         conversion_values: list[float] = []
+        attack_count_values: list[float] = []
+        attack_npc_values: list[float] = []
+        attack_rival_values: list[float] = []
+        npc_kills_values: list[float] = []
+        rival_kills_values: list[float] = []
+        opp_attack_count_values: list[float] = []
+        opp_attack_npc_values: list[float] = []
+        opp_attack_rival_values: list[float] = []
+        opp_rival_kills_values: list[float] = []
+        moral_aggression_values: list[float] = []
         for item in group:
             kpi = item.get("kpi")
             if not isinstance(kpi, dict):
-                continue
+                kpi = {}
             cov = _optional_float(kpi.get("coverage_pct"))
             rev = _optional_float(kpi.get("revisit_ratio"))
             conv = _optional_float(kpi.get("resource_conversion_efficiency_pct"))
@@ -1019,6 +1176,38 @@ def build_model_summaries(
                 revisit_values.append(rev)
             if conv is not None:
                 conversion_values.append(conv)
+
+            attack_count_raw = _optional_float(item.get("attack_count"))
+            attack_npc_raw = _optional_float(item.get("attack_npc_count"))
+            attack_rival_raw = _optional_float(item.get("attack_rival_count"))
+            npc_kills_raw = _optional_float(item.get("npc_kills"))
+            rival_kills_raw = _optional_float(item.get("rival_kills"))
+            opp_attack_count_raw = _optional_float(item.get("opponent_attack_count"))
+            opp_attack_npc_raw = _optional_float(item.get("opponent_attack_npc_count"))
+            opp_attack_rival_raw = _optional_float(item.get("opponent_attack_rival_count"))
+            opp_rival_kills_raw = _optional_float(item.get("opponent_rival_kills"))
+            moral_aggression_raw = _optional_float(kpi.get("moral_aggression_index"))
+
+            if attack_count_raw is not None:
+                attack_count_values.append(attack_count_raw)
+            if attack_npc_raw is not None:
+                attack_npc_values.append(attack_npc_raw)
+            if attack_rival_raw is not None:
+                attack_rival_values.append(attack_rival_raw)
+            if npc_kills_raw is not None:
+                npc_kills_values.append(npc_kills_raw)
+            if rival_kills_raw is not None:
+                rival_kills_values.append(rival_kills_raw)
+            if opp_attack_count_raw is not None:
+                opp_attack_count_values.append(opp_attack_count_raw)
+            if opp_attack_npc_raw is not None:
+                opp_attack_npc_values.append(opp_attack_npc_raw)
+            if opp_attack_rival_raw is not None:
+                opp_attack_rival_values.append(opp_attack_rival_raw)
+            if opp_rival_kills_raw is not None:
+                opp_rival_kills_values.append(opp_rival_kills_raw)
+            if moral_aggression_raw is not None:
+                moral_aggression_values.append(moral_aggression_raw)
 
         summaries.append(
             {
@@ -1035,6 +1224,24 @@ def build_model_summaries(
                 "avg_coverage_pct": round(mean(coverage_values), 4) if coverage_values else None,
                 "avg_revisit_ratio": round(mean(revisit_values), 6) if revisit_values else None,
                 "avg_conversion_efficiency_pct": round(mean(conversion_values), 4) if conversion_values else None,
+                "avg_attack_count": round(mean(attack_count_values), 4) if attack_count_values else None,
+                "avg_attack_npc_count": round(mean(attack_npc_values), 4) if attack_npc_values else None,
+                "avg_attack_rival_count": round(mean(attack_rival_values), 4) if attack_rival_values else None,
+                "avg_npc_kills": round(mean(npc_kills_values), 4) if npc_kills_values else None,
+                "avg_rival_kills": round(mean(rival_kills_values), 4) if rival_kills_values else None,
+                "avg_opponent_attack_count": (
+                    round(mean(opp_attack_count_values), 4) if opp_attack_count_values else None
+                ),
+                "avg_opponent_attack_npc_count": (
+                    round(mean(opp_attack_npc_values), 4) if opp_attack_npc_values else None
+                ),
+                "avg_opponent_attack_rival_count": (
+                    round(mean(opp_attack_rival_values), 4) if opp_attack_rival_values else None
+                ),
+                "avg_opponent_rival_kills": round(mean(opp_rival_kills_values), 4) if opp_rival_kills_values else None,
+                "avg_moral_aggression_index": (
+                    round(mean(moral_aggression_values), 4) if moral_aggression_values else None
+                ),
                 "death_rate_pct": round(death_rate_pct, 4),
                 "best_final_score": max(scores) if scores else None,
                 "worst_final_score": min(scores) if scores else None,
@@ -1499,6 +1706,272 @@ def _compare_paths(dirs: dict[str, Path], compare_id: str) -> dict[str, Path]:
     }
 
 
+def _run_payload_attempt_kind(payload: dict[str, Any]) -> str:
+    summary = payload.get("summary", {})
+    return str(
+        payload.get("attempt_kind")
+        or (summary.get("attempt_kind") if isinstance(summary, dict) else None)
+        or "initial"
+    ).strip()
+
+
+def _is_pvp_payload(payload: dict[str, Any]) -> bool:
+    summary = payload.get("summary")
+    if isinstance(summary, dict) and bool(summary.get("pvp_duel")):
+        return True
+    replay = payload.get("replay")
+    if isinstance(replay, dict):
+        protocol = replay.get("protocol")
+        if isinstance(protocol, dict):
+            rules = protocol.get("rules")
+            if isinstance(rules, dict) and bool(rules.get("pvp_duel")):
+                return True
+    return False
+
+
+def _build_duel_view(run_payloads: list[dict[str, Any]]) -> dict[str, Any] | None:
+    pvp_payloads = [payload for payload in run_payloads if _is_pvp_payload(payload)]
+    if not pvp_payloads:
+        return None
+
+    model_profiles = sorted(
+        {
+            str(payload.get("model_profile", "")).strip()
+            for payload in pvp_payloads
+            if str(payload.get("model_profile", "")).strip()
+        }
+    )
+    if len(model_profiles) != 2:
+        return None
+
+    grouped: dict[tuple[int, str, str], list[dict[str, Any]]] = {}
+    for payload in pvp_payloads:
+        summary = payload.get("summary")
+        summary_dict = summary if isinstance(summary, dict) else {}
+        model_profile = str(payload.get("model_profile", "")).strip()
+        if not model_profile:
+            continue
+
+        seed = _safe_int(payload.get("seed"), default=_safe_int(summary_dict.get("seed")))
+        attempt_kind = _run_payload_attempt_kind(payload)
+        opponent_profile = str(
+            summary_dict.get("opponent_model_profile")
+            or summary_dict.get("opponent_model")
+            or ""
+        ).strip()
+
+        pair_models = sorted({model_profile, opponent_profile} - {""})
+        if len(pair_models) < 2:
+            pair_models = list(model_profiles)
+        pair_key = "::".join(pair_models)
+        grouped.setdefault((seed, attempt_kind, pair_key), []).append(payload)
+
+    attempt_order = {"initial": 0, "control_rerun": 1, "adaptive_rerun": 2}
+    duel_items: list[dict[str, Any]] = []
+    for seed, attempt_kind, pair_key in sorted(
+        grouped.keys(),
+        key=lambda item: (
+            int(item[0]),
+            attempt_order.get(str(item[1]), 99),
+            str(item[1]),
+            str(item[2]),
+        ),
+    ):
+        members = grouped[(seed, attempt_kind, pair_key)]
+        pair_models = [part for part in str(pair_key).split("::") if part]
+        if len(pair_models) != 2:
+            pair_models = list(model_profiles)
+        model_a, model_b = pair_models[0], pair_models[1]
+
+        run_by_model: dict[str, dict[str, Any]] = {}
+        for payload in sorted(members, key=lambda item: str(item.get("run_id", ""))):
+            profile = str(payload.get("model_profile", "")).strip()
+            if not profile or profile in run_by_model:
+                continue
+            run_by_model[profile] = payload
+
+        warnings: list[str] = []
+        for profile in (model_a, model_b):
+            if profile not in run_by_model:
+                warnings.append(f"missing mirrored run for {profile}")
+
+        source_profile = model_a if model_a in run_by_model else (model_b if model_b in run_by_model else "")
+        timeline_source_run_id = str(run_by_model.get(source_profile, {}).get("run_id", ""))
+        if not timeline_source_run_id and members:
+            timeline_source_run_id = str(members[0].get("run_id", ""))
+            warnings.append("timeline source fell back to first available run")
+
+        def _summary_for(profile: str) -> dict[str, Any] | None:
+            payload = run_by_model.get(profile)
+            if payload is None:
+                return None
+            summary = payload.get("summary")
+            if not isinstance(summary, dict):
+                return None
+            end_reason = str(summary.get("end_reason", "")).strip()
+            status = "finished" if end_reason == "max_turns_reached" else ("dead" if end_reason else "unknown")
+            return {
+                "final_score": _safe_int(summary.get("final_score")),
+                "turns_survived": _safe_int(summary.get("turns_survived")),
+                "max_turns": _safe_int(summary.get("max_turns"), 0),
+                "status": status,
+                "end_reason": end_reason,
+            }
+
+        duel_items.append(
+            {
+                "duel_key": f"seed{seed}::{attempt_kind}::{pair_key}",
+                "seed": int(seed),
+                "attempt_kind": attempt_kind,
+                "pair_key": pair_key,
+                "model_a": model_a,
+                "model_b": model_b,
+                "timeline_source_run_id": timeline_source_run_id,
+                "run_id_by_model": {
+                    model_a: str(run_by_model.get(model_a, {}).get("run_id", "")) or None,
+                    model_b: str(run_by_model.get(model_b, {}).get("run_id", "")) or None,
+                },
+                "summary_by_model": {
+                    model_a: _summary_for(model_a),
+                    model_b: _summary_for(model_b),
+                },
+                "warnings": warnings,
+            }
+        )
+
+    if not duel_items:
+        return None
+
+    return {
+        "timeline_selection_rule": "lexicographic_model_profile_min",
+        "duels": duel_items,
+    }
+
+
+def _duel_status_from_end_reason(end_reason: str) -> str:
+    reason = str(end_reason or "").strip()
+    if reason == "max_turns_reached":
+        return "finished"
+    if reason:
+        return "dead"
+    return "unknown"
+
+
+def _build_duel_timeline(
+    *,
+    canonical_run_log: dict[str, Any],
+    model_a_profile: str,
+    model_b_profile: str,
+) -> list[dict[str, Any]]:
+    timeline: list[dict[str, Any]] = []
+    turn_logs = canonical_run_log.get("turn_logs", [])
+    if not isinstance(turn_logs, list):
+        return timeline
+    for raw_turn in turn_logs:
+        if not isinstance(raw_turn, dict):
+            continue
+        turn_no = _safe_int(raw_turn.get("turn"), default=len(timeline) + 1)
+        obs_a = raw_turn.get("observation", {})
+        pos_a = obs_a.get("position") if isinstance(obs_a, dict) else None
+        step_b: dict[str, Any] | None = None
+        opponent_steps = raw_turn.get("opponent_steps", [])
+        if isinstance(opponent_steps, list):
+            for step in opponent_steps:
+                if not isinstance(step, dict):
+                    continue
+                if str(step.get("model_profile", "")).strip() == model_b_profile:
+                    step_b = step
+                    break
+            if step_b is None:
+                for step in opponent_steps:
+                    if isinstance(step, dict):
+                        step_b = step
+                        break
+        obs_b = step_b.get("observation", {}) if isinstance(step_b, dict) else {}
+        pos_b = obs_b.get("position") if isinstance(obs_b, dict) else None
+        timeline.append(
+            {
+                "turn": int(turn_no),
+                "action_by_model": {
+                    model_a_profile: raw_turn.get("parsed_action"),
+                    model_b_profile: (step_b.get("parsed_action") if isinstance(step_b, dict) else None),
+                },
+                "position_by_model": {
+                    model_a_profile: pos_a,
+                    model_b_profile: pos_b,
+                },
+                "alive_by_model": {
+                    model_a_profile: bool(
+                        raw_turn.get("world_result_delta", {}).get("survival_delta", {}).get("alive_after", True)
+                    ),
+                    model_b_profile: bool(
+                        (step_b.get("survival_delta", {}).get("alive_after", True) if isinstance(step_b, dict) else True)
+                    ),
+                },
+            }
+        )
+    return timeline
+
+
+def _build_duel_entry_from_views(
+    *,
+    seed: int,
+    attempt_kind: str,
+    model_a_profile: str,
+    model_b_profile: str,
+    run_id_by_model: dict[str, str],
+    summary_by_model: dict[str, dict[str, Any]],
+    canonical_run_log: dict[str, Any],
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    pair_key = f"{model_a_profile}::{model_b_profile}"
+    duel_key = f"seed{int(seed)}::{attempt_kind}::{pair_key}"
+    timeline = _build_duel_timeline(
+        canonical_run_log=canonical_run_log,
+        model_a_profile=model_a_profile,
+        model_b_profile=model_b_profile,
+    )
+
+    def _summary_payload(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(summary, dict):
+            return None
+        end_reason = str(summary.get("end_reason", ""))
+        return {
+            "final_score": _safe_int(summary.get("final_score")),
+            "turns_survived": _safe_int(summary.get("turns_survived")),
+            "max_turns": _safe_int(summary.get("max_turns"), 0),
+            "status": _duel_status_from_end_reason(end_reason),
+            "end_reason": end_reason,
+        }
+
+    summary_a = summary_by_model.get(model_a_profile)
+    summary_b = summary_by_model.get(model_b_profile)
+    timeline_source_run_id = str(run_id_by_model.get(model_a_profile, "")).strip()
+    if not timeline_source_run_id:
+        timeline_source_run_id = str(run_id_by_model.get(model_b_profile, "")).strip()
+
+    return {
+        "duel_id": duel_key,
+        "duel_key": duel_key,
+        "seed": int(seed),
+        "attempt_kind": str(attempt_kind),
+        "pair_key": pair_key,
+        "model_a": model_a_profile,
+        "model_b": model_b_profile,
+        "timeline_source_run_id": timeline_source_run_id,
+        "run_id_by_model": {
+            model_a_profile: run_id_by_model.get(model_a_profile) or None,
+            model_b_profile: run_id_by_model.get(model_b_profile) or None,
+        },
+        "summary_by_model": {
+            model_a_profile: _summary_payload(summary_a),
+            model_b_profile: _summary_payload(summary_b),
+        },
+        "timeline": timeline,
+        "warnings": list(warnings or []),
+    }
+
+
 def _build_compare_payload(
     *,
     compare_id: str,
@@ -1512,6 +1985,7 @@ def _build_compare_payload(
     adaptive_section: dict[str, Any] | None = None,
     adaptive_run_rows: list[dict[str, Any]] | None = None,
     adaptive_pair_rows: list[dict[str, Any]] | None = None,
+    duels: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     model_summaries = build_model_summaries(run_rows, adaptive_run_rows=adaptive_run_rows, adaptive_pair_rows=adaptive_pair_rows) if run_rows else []
     resolved_profiles = resolved_model_profiles(run_rows)
@@ -1546,6 +2020,16 @@ def _build_compare_payload(
         "pairwise": pairwise_rows,
         "runs": run_payloads,
     }
+    if duels:
+        compare_payload["duels"] = list(duels)
+        compare_payload["duel_view"] = {
+            "timeline_selection_rule": "canonical_duel_timeline",
+            "duels": list(duels),
+        }
+    else:
+        duel_view = _build_duel_view(run_payloads)
+        if duel_view is not None:
+            compare_payload["duel_view"] = duel_view
     if adaptive_section is not None:
         compare_payload["adaptive"] = adaptive_section
         compare_payload["meta"]["adaptive_aggregate_score"] = adaptive_section.get("aggregate_adaptive_score")
@@ -1599,6 +2083,9 @@ def _persist_compare_outputs(
     adaptive_pair_rows: list[dict[str, Any]] | None = None,
     adaptive_memory_by_model: dict[str, list[str]] | None = None,
     memory_dir: Path | None = None,
+    checkpoint_schema: str = "tinyworld_compare_state_v1",
+    duel_progress: dict[str, Any] | None = None,
+    duels: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     adaptive_run_rows = adaptive_run_rows or []
     adaptive_pair_rows = adaptive_pair_rows or []
@@ -1632,6 +2119,7 @@ def _persist_compare_outputs(
         adaptive_section=adaptive_section,
         adaptive_run_rows=adaptive_run_rows,
         adaptive_pair_rows=adaptive_pair_rows,
+        duels=duels,
     )
 
     _write_csv(paths["runs_csv"], COMPARE_RUN_FIELDS, run_rows)
@@ -1646,7 +2134,7 @@ def _persist_compare_outputs(
     _write_json(paths["compare_json"], compare_payload)
 
     checkpoint_payload = {
-        "schema": "tinyworld_compare_state_v1",
+        "schema": checkpoint_schema,
         "status": status,
         "compare_id": compare_id,
         "requested_models": requested_models,
@@ -1660,6 +2148,8 @@ def _persist_compare_outputs(
         "adaptive_run_rows": adaptive_run_rows,
         "adaptive_pair_rows": adaptive_pair_rows,
         "adaptive_memory_by_model": adaptive_memory_by_model or {},
+        "duel_progress": duel_progress or {},
+        "duels": duels or [],
     }
     _write_json(paths["checkpoint_json"], checkpoint_payload)
     return compare_payload, model_summaries, pairwise_rows, resolved_profiles
@@ -1679,7 +2169,7 @@ def _build_from_logs(
 
     profile_order: dict[str, int] = {}
     seed_order: dict[int, int] = {}
-    protocol_version = "AIB-0.2.1"
+    protocol_version = "AIB-0.3.0"
     scenario = "-"
     pricing_cfg: dict[str, Any] | None = None
     pricing_path = Path(pricing_config_path)
@@ -1725,7 +2215,7 @@ def _build_from_logs(
                 run_summary=summary,
                 rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
                 initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
-                protocol_version=str(run_log.get("protocol_version", "AIB-0.2.1")),
+                protocol_version=str(run_log.get("protocol_version", "AIB-0.3.0")),
             )
             summary["analysis_version"] = analysis["analysis_version"]
             summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -1928,6 +2418,238 @@ def _build_jobs(model_profiles: list[str], seed_list: list[int]) -> list[JobSpec
     return jobs
 
 
+def _build_duel_jobs(seed_list: list[int]) -> list[DuelJobSpec]:
+    total = len(seed_list)
+    jobs: list[DuelJobSpec] = []
+    for seed_order, seed in enumerate(seed_list, start=1):
+        jobs.append(
+            DuelJobSpec(
+                seed_order=seed_order,
+                seed=int(seed),
+                job_index=seed_order,
+                job_total=total,
+            )
+        )
+    return jobs
+
+
+def _duel_log_path(
+    logs_dir: Path,
+    *,
+    model_a: str,
+    model_b: str,
+    seed: int,
+    attempt_kind: str,
+) -> Path:
+    pair_slug = f"{_safe_slug(model_a)}__vs__{_safe_slug(model_b)}"
+    return logs_dir / f"duel_seed{seed}_{pair_slug}_{attempt_kind}.json"
+
+
+def _human_end_reason_local(end_reason: str, turns_played: int, max_turns: int) -> str:
+    if end_reason == "agent_dead":
+        return f"The agent died on turn {turns_played}."
+    if end_reason == "opponent_defeated":
+        return f"The opponent was defeated on turn {turns_played}."
+    if end_reason == "max_turns_reached":
+        return f"Reached the configured turn limit ({max_turns})."
+    return f"Run ended with status: {end_reason}."
+
+
+def _derive_duel_view_logs(
+    *,
+    canonical_run_log: dict[str, Any],
+    model_a_profile: str,
+    model_b_profile: str,
+) -> dict[str, dict[str, Any]]:
+    canonical = copy.deepcopy(canonical_run_log)
+    summary_a = dict(canonical.get("run_summary", {}))
+    turn_logs_a = list(canonical.get("turn_logs", []))
+    config_snapshot = canonical.get("config_snapshot", {})
+    benchmark_cfg = config_snapshot.get("benchmark", {}) if isinstance(config_snapshot, dict) else {}
+    rules_cfg = benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {}
+    initial_tiles = canonical.get("world_snapshots", {}).get("initial_tiles", [])
+    protocol_version = str(canonical.get("protocol_version", summary_a.get("protocol_version", "AIB-0.3.0")))
+
+    if summary_a.get("model_profile") != model_a_profile:
+        summary_a["model_profile"] = model_a_profile
+    canonical["model_profile"] = model_a_profile
+    canonical["run_summary"] = summary_a
+
+    turn_logs_b: list[dict[str, Any]] = []
+    cumulative_b = 0
+    for turn in turn_logs_a:
+        if not isinstance(turn, dict):
+            continue
+        opponent_steps = turn.get("opponent_steps", [])
+        if not isinstance(opponent_steps, list) or not opponent_steps:
+            continue
+        focus_step = None
+        for step in opponent_steps:
+            if str(step.get("model_profile", "")).strip() == model_b_profile:
+                focus_step = step
+                break
+        if focus_step is None:
+            focus_step = opponent_steps[0]
+        if not isinstance(focus_step, dict):
+            continue
+        focus_world_delta = dict(focus_step.get("world_result_delta", {}))
+        focus_survival_delta = dict(focus_step.get("survival_delta", {}))
+        if focus_survival_delta and "survival_delta" not in focus_world_delta:
+            focus_world_delta["survival_delta"] = focus_survival_delta
+        focus_score_delta = dict(focus_step.get("score_delta", {}))
+        if focus_score_delta.get("total") is None:
+            focus_score_delta["total"] = 0
+        cumulative_b = int(focus_step.get("cumulative_score", cumulative_b))
+        primary_step_for_context = {
+            "agent_id": "agent_1",
+            "model_profile": model_a_profile,
+            "model": summary_a.get("model"),
+            "position_before": (
+                turn.get("observation", {}).get("position")
+                if isinstance(turn.get("observation"), dict)
+                else None
+            ),
+            "raw_model_output": turn.get("raw_model_output"),
+            "parsed_action": turn.get("parsed_action"),
+            "validation_result": turn.get("validation_result", {}),
+            "action_result": turn.get("action_result", {}),
+            "world_result_delta": turn.get("world_result_delta", {}),
+            "score_delta": turn.get("score_delta", {}),
+            "cumulative_score": turn.get("cumulative_score"),
+            "metrics": turn.get("metrics", {}),
+            "survival_delta": (
+                turn.get("world_result_delta", {}).get("survival_delta", {})
+                if isinstance(turn.get("world_result_delta"), dict)
+                else {}
+            ),
+        }
+        turn_logs_b.append(
+            {
+                "seed": turn.get("seed", summary_a.get("seed")),
+                "turn": int(turn.get("turn", len(turn_logs_b) + 1)),
+                "observation": dict(focus_step.get("observation", {})),
+                "prompt_payload": dict(focus_step.get("prompt_payload", {})),
+                "raw_model_output": focus_step.get("raw_model_output"),
+                "parsed_action": focus_step.get("parsed_action"),
+                "validation_result": dict(focus_step.get("validation_result", {})),
+                "world_result_delta": focus_world_delta,
+                "opponent_steps": [primary_step_for_context],
+                "action_result": dict(focus_step.get("action_result", {})),
+                "score_delta": focus_score_delta,
+                "cumulative_score": cumulative_b,
+                "metrics": dict(focus_step.get("metrics", {})),
+            }
+        )
+
+    summary_b = dict(summary_a)
+    summary_b.update(
+        {
+            "provider_id": summary_a.get("opponent_provider_id"),
+            "model_profile": model_b_profile,
+            "model": summary_a.get("opponent_model"),
+            "final_score": _safe_int(summary_a.get("opponent_final_score"), 0),
+            "turns_played": len(turn_logs_b),
+            "turns_survived": _safe_int(summary_a.get("opponent_turns_survived"), 0),
+            "resources_gathered": _safe_int(summary_a.get("opponent_resources_gathered"), 0),
+            "resources_gathered_breakdown": dict(summary_a.get("opponent_resources_gathered_breakdown", {})),
+            "invalid_actions": _safe_int(summary_a.get("opponent_invalid_actions"), 0),
+            "alive": bool(summary_a.get("opponent_alive", False)),
+            "death_cause": summary_a.get("opponent_death_cause"),
+            "death_cause_human": summary_a.get("opponent_death_cause_human"),
+            "tokens_used": _safe_int(summary_a.get("opponent_tokens_used")),
+            "token_breakdown": dict(summary_a.get("opponent_token_breakdown", {})),
+            "latency_ms": summary_a.get("opponent_latency_ms"),
+            "estimated_cost": summary_a.get("opponent_estimated_cost"),
+            "estimated_cost_source": summary_a.get("opponent_estimated_cost_source"),
+            "memory_injected": bool(summary_a.get("opponent_memory_injected", False)),
+            "memory_lesson_count": _safe_int(summary_a.get("opponent_memory_lesson_count"), 0),
+            "memory_session_lesson_count": _safe_int(summary_a.get("opponent_memory_session_lesson_count"), 0),
+            "memory_current_seed_lesson_count": _safe_int(summary_a.get("opponent_memory_current_seed_lesson_count"), 0),
+            "memory_hygiene": summary_a.get("opponent_memory_hygiene"),
+            "attack_count": _safe_int(summary_a.get("opponent_attack_count"), 0),
+            "attack_npc_count": _safe_int(summary_a.get("opponent_attack_npc_count"), 0),
+            "attack_rival_count": _safe_int(summary_a.get("opponent_attack_rival_count"), 0),
+            "npc_kills": _safe_int(summary_a.get("opponent_npc_kills"), 0),
+            "rival_kills": _safe_int(summary_a.get("opponent_rival_kills"), 0),
+            "meat_collected": _safe_int(summary_a.get("opponent_meat_collected"), 0),
+            "opponent_model_profile": summary_a.get("model_profile"),
+            "opponent_provider_id": summary_a.get("provider_id"),
+            "opponent_model": summary_a.get("model"),
+            "opponent_final_score": summary_a.get("final_score"),
+            "opponent_alive": summary_a.get("alive"),
+            "opponent_energy": summary_a.get("opponent_energy"),
+            "opponent_attack_count": _safe_int(summary_a.get("attack_count"), 0),
+            "opponent_attack_npc_count": _safe_int(summary_a.get("attack_npc_count"), 0),
+            "opponent_attack_rival_count": _safe_int(summary_a.get("attack_rival_count"), 0),
+            "opponent_npc_kills": _safe_int(summary_a.get("npc_kills"), 0),
+            "opponent_rival_kills": _safe_int(summary_a.get("rival_kills"), 0),
+            "opponent_meat_collected": _safe_int(summary_a.get("meat_collected"), 0),
+            "opponent_tokens_used": summary_a.get("tokens_used"),
+            "opponent_token_breakdown": dict(summary_a.get("token_breakdown", {})),
+            "opponent_latency_ms": summary_a.get("latency_ms"),
+            "opponent_estimated_cost": summary_a.get("estimated_cost"),
+            "opponent_estimated_cost_source": summary_a.get("estimated_cost_source"),
+            "opponent_turns_survived": summary_a.get("turns_survived"),
+            "opponent_resources_gathered": summary_a.get("resources_gathered"),
+            "opponent_resources_gathered_breakdown": dict(summary_a.get("resources_gathered_breakdown", {})),
+            "opponent_invalid_actions": summary_a.get("invalid_actions"),
+            "opponent_memory_injected": summary_a.get("memory_injected"),
+            "opponent_memory_lesson_count": summary_a.get("memory_lesson_count"),
+            "opponent_memory_session_lesson_count": summary_a.get("memory_session_lesson_count"),
+            "opponent_memory_current_seed_lesson_count": summary_a.get("memory_current_seed_lesson_count"),
+            "opponent_memory_hygiene": summary_a.get("memory_hygiene"),
+        }
+    )
+    if not summary_b.get("alive", False):
+        summary_b["end_reason"] = "agent_dead"
+    elif not bool(summary_a.get("alive", True)):
+        summary_b["end_reason"] = "opponent_defeated"
+    else:
+        summary_b["end_reason"] = "max_turns_reached"
+    summary_b["end_reason_human"] = _human_end_reason_local(
+        str(summary_b.get("end_reason", "")),
+        int(summary_b.get("turns_played", len(turn_logs_b))),
+        int(summary_b.get("max_turns", 0)),
+    )
+    analysis_b = _build_run_analytics(
+        turn_logs=turn_logs_b,
+        run_summary=summary_b,
+        rules_cfg=rules_cfg,
+        initial_tiles=initial_tiles,
+        protocol_version=protocol_version,
+    )
+    summary_b["analysis_version"] = analysis_b["analysis_version"]
+    summary_b["analysis_schema_version"] = analysis_b["analysis_schema_version"]
+    summary_b["kpi"] = analysis_b["kpi"]
+    summary_b["failure_archetypes"] = analysis_b["failure_archetypes"]
+    summary_b["failure_archetypes_human"] = analysis_b["failure_archetypes_human"]
+    summary_b["primary_failure_archetype"] = analysis_b["primary_failure_archetype"]
+    summary_b["primary_failure_archetype_human"] = analysis_b["primary_failure_archetype_human"]
+    summary_b["secondary_failure_archetypes"] = analysis_b["secondary_failure_archetypes"]
+    summary_b["secondary_failure_archetypes_human"] = analysis_b["secondary_failure_archetypes_human"]
+    summary_b["confidence_hint"] = analysis_b["confidence_hint"]
+    summary_b["short_summary"] = analysis_b["short_summary"]
+    summary_b["detailed_summary"] = analysis_b["detailed_summary"]
+
+    run_log_b = copy.deepcopy(canonical)
+    run_log_b["provider_id"] = summary_b.get("provider_id")
+    run_log_b["model_profile"] = model_b_profile
+    run_log_b["model"] = summary_b.get("model")
+    run_log_b["run_summary"] = summary_b
+    run_log_b["run_analysis"] = analysis_b["run_analysis"]
+    run_log_b["turn_logs"] = turn_logs_b
+    duel_meta = run_log_b.get("duel", {})
+    if isinstance(duel_meta, dict):
+        duel_meta["view_kind"] = "derived_opponent"
+        duel_meta["focus_model_profile"] = model_b_profile
+        run_log_b["duel"] = duel_meta
+
+    return {
+        model_a_profile: canonical,
+        model_b_profile: run_log_b,
+    }
+
+
 def _compute_eta_text(
     *,
     completed_jobs: int,
@@ -1970,12 +2692,67 @@ def _display_job_position(
     return ((job_index - 1) * 2) + attempt_idx, job_total * 2
 
 
+def _display_duel_position(
+    *,
+    seed: int,
+    seed_list: list[int],
+    adaptive_enabled: bool,
+    attempt_kind: str,
+) -> tuple[int, int]:
+    if not seed_list:
+        return 1, 1
+    ordered = [int(s) for s in seed_list]
+    if int(seed) not in ordered:
+        ordered.append(int(seed))
+        ordered = sorted(set(ordered))
+    seed_rank = ordered.index(int(seed)) + 1
+    if not adaptive_enabled:
+        return seed_rank, len(ordered)
+    attempt_idx = _attempt_index(attempt_kind)
+    return ((seed_rank - 1) * 2) + attempt_idx, len(ordered) * 2
+
+
 def _job_log_path(logs_dir: Path, job: JobSpec) -> Path:
     return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}.json"
 
 
 def _job_log_path_adaptive(logs_dir: Path, job: JobSpec, attempt_kind: str) -> Path:
     return logs_dir / f"run_seed{job.seed}_{_safe_slug(job.model_profile)}_{attempt_kind}.json"
+
+
+def _model_attempt_log_path(
+    logs_dir: Path,
+    *,
+    seed: int,
+    model_profile: str,
+    attempt_kind: str,
+) -> Path:
+    if attempt_kind == "standard":
+        return logs_dir / f"run_seed{seed}_{_safe_slug(model_profile)}.json"
+    return logs_dir / f"run_seed{seed}_{_safe_slug(model_profile)}_{attempt_kind}.json"
+
+
+def _persist_run_log_with_analysis(path: Path, run_log: dict[str, Any]) -> dict[str, Any]:
+    payload = copy.deepcopy(run_log)
+    summary = payload.get("run_summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    summary["log_path"] = str(path)
+    analysis_path = path.with_name(f"{path.stem}_analysis.json")
+    summary["analysis_path"] = str(analysis_path)
+    payload["run_summary"] = summary
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(path, payload)
+    _write_json(
+        analysis_path,
+        {
+            "version": __version__,
+            "protocol_version": payload.get("protocol_version"),
+            "run_log_path": str(path),
+            "run_analysis": payload.get("run_analysis"),
+        },
+    )
+    return payload
 
 
 def _load_run_log_from_summary(summary_row: dict[str, Any]) -> dict[str, Any]:
@@ -2034,6 +2811,7 @@ def _execute_job(
     prompts_dir: str,
     history_window: int | None,
     output_logs_dir: Path,
+    opponent_model_profile: str | None = None,
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
@@ -2041,6 +2819,7 @@ def _execute_job(
     return run_match_once(
         seed=job.seed,
         model_name=job.model_profile,
+        opponent_model_name=opponent_model_profile,
         scenario_name=(None if scenario in {"", "-"} else scenario),
         max_turns=max_turns,
         benchmark_config_path=benchmark_config_path,
@@ -2068,6 +2847,7 @@ def _execute_adaptive_initial(
     output_logs_dir: Path,
     memory_dir: Path,
     session_lessons: list[str],
+    opponent_model_profile: str | None = None,
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
@@ -2076,6 +2856,7 @@ def _execute_adaptive_initial(
     initial_log = run_match_once(
         seed=job.seed,
         model_name=job.model_profile,
+        opponent_model_name=opponent_model_profile,
         scenario_name=(None if scenario in {"", "-"} else scenario),
         max_turns=max_turns,
         benchmark_config_path=benchmark_config_path,
@@ -2112,6 +2893,7 @@ def _execute_adaptive_followup(
     memory_dir: Path,
     session_lessons: list[str],
     initial_log: dict[str, Any],
+    opponent_model_profile: str | None = None,
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
@@ -2156,6 +2938,7 @@ def _execute_adaptive_followup(
         control_log = run_match_once(
             seed=job.seed,
             model_name=job.model_profile,
+            opponent_model_name=opponent_model_profile,
             scenario_name=(None if scenario in {"", "-"} else scenario),
             max_turns=max_turns,
             benchmark_config_path=benchmark_config_path,
@@ -2248,6 +3031,7 @@ def _execute_adaptive_followup(
     adaptive_log = run_match_once(
         seed=job.seed,
         model_name=job.model_profile,
+        opponent_model_name=opponent_model_profile,
         scenario_name=(None if scenario in {"", "-"} else scenario),
         max_turns=max_turns,
         benchmark_config_path=benchmark_config_path,
@@ -2433,6 +3217,482 @@ def _execute_adaptive_followup(
     }
 
 
+def _execute_duel_initial(
+    *,
+    job: JobSpec,
+    model_a_profile: str,
+    model_b_profile: str,
+    scenario: str,
+    max_turns: int | None,
+    benchmark_config_path: str,
+    scenarios_config_path: str,
+    providers_config_path: str,
+    prompts_dir: str,
+    history_window: int | None,
+    output_logs_dir: Path,
+    progress_callback: Any = None,
+    fix_thinking: bool = False,
+    moral_mode: bool = False,
+) -> dict[str, Any]:
+    canonical_log = run_duel_once(
+        seed=job.seed,
+        model_a_name=model_a_profile,
+        model_b_name=model_b_profile,
+        scenario_name=(None if scenario in {"", "-"} else scenario),
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        history_window=history_window,
+        output_path=_duel_log_path(
+            output_logs_dir,
+            model_a=model_a_profile,
+            model_b=model_b_profile,
+            seed=job.seed,
+            attempt_kind="initial",
+        ),
+        progress_callback=progress_callback,
+        fix_thinking=fix_thinking,
+        moral_mode=moral_mode,
+        attempt_kind="initial",
+        adaptive_pair_key=f"{model_a_profile}::{model_b_profile}::seed{job.seed}",
+        memory_by_model={},
+    )
+    run_logs_by_model = _derive_duel_view_logs(
+        canonical_run_log=canonical_log,
+        model_a_profile=model_a_profile,
+        model_b_profile=model_b_profile,
+    )
+    persisted_by_model: dict[str, dict[str, Any]] = {}
+    for profile in (model_a_profile, model_b_profile):
+        persisted_by_model[profile] = _persist_run_log_with_analysis(
+            _model_attempt_log_path(
+                output_logs_dir,
+                seed=job.seed,
+                model_profile=profile,
+                attempt_kind="initial",
+            ),
+            run_logs_by_model[profile],
+        )
+    return {
+        "duel_run_log": canonical_log,
+        "run_logs_by_model": persisted_by_model,
+    }
+
+
+def _execute_duel_adaptive_followup(
+    *,
+    job: JobSpec,
+    model_a_profile: str,
+    model_b_profile: str,
+    scenario: str,
+    max_turns: int | None,
+    benchmark_config_path: str,
+    scenarios_config_path: str,
+    providers_config_path: str,
+    prompts_dir: str,
+    history_window: int | None,
+    output_logs_dir: Path,
+    memory_dir: Path,
+    session_lessons_by_model: dict[str, list[str]],
+    initial_logs_by_model: dict[str, dict[str, Any]],
+    progress_callback: Any = None,
+    fix_thinking: bool = False,
+    moral_mode: bool = False,
+) -> dict[str, Any]:
+    pair_base = f"{model_a_profile}::{model_b_profile}::seed{job.seed}"
+    initial_score_reference = _safe_int(
+        dict(initial_logs_by_model.get(model_a_profile, {}).get("run_summary", {})).get("final_score")
+    )
+
+    def _emit_progress_with_extras(event: dict[str, Any]) -> None:
+        if progress_callback is None:
+            return
+        payload = dict(event)
+        payload["baseline_score_reference"] = int(initial_score_reference)
+        progress_callback(payload)
+
+    def _emit_adaptive_stage(action_label: str) -> None:
+        _emit_progress_with_extras(
+            {
+                "event": "adaptive_stage",
+                "attempt_kind": "adaptive_rerun",
+                "action": action_label,
+            }
+        )
+
+    control_duel_path = _duel_log_path(
+        output_logs_dir,
+        model_a=model_a_profile,
+        model_b=model_b_profile,
+        seed=job.seed,
+        attempt_kind="control_rerun",
+    )
+    control_duel_log: dict[str, Any] | None = None
+    if control_duel_path.exists():
+        try:
+            with control_duel_path.open("r", encoding="utf-8") as handle:
+                recovered = json.load(handle)
+            if isinstance(recovered, dict) and isinstance(recovered.get("run_summary"), dict):
+                control_duel_log = recovered
+                _emit_adaptive_stage("(resuming: control rerun recovered)")
+        except Exception:
+            control_duel_log = None
+
+    if control_duel_log is None:
+        control_duel_log = run_duel_once(
+            seed=job.seed,
+            model_a_name=model_a_profile,
+            model_b_name=model_b_profile,
+            scenario_name=(None if scenario in {"", "-"} else scenario),
+            max_turns=max_turns,
+            benchmark_config_path=benchmark_config_path,
+            scenarios_config_path=scenarios_config_path,
+            providers_config_path=providers_config_path,
+            prompts_dir=prompts_dir,
+            history_window=history_window,
+            output_path=control_duel_path,
+            progress_callback=_emit_progress_with_extras,
+            fix_thinking=fix_thinking,
+            moral_mode=moral_mode,
+            attempt_kind="control_rerun",
+            adaptive_pair_key=pair_base,
+            memory_by_model={},
+        )
+
+    control_logs_by_model_raw = _derive_duel_view_logs(
+        canonical_run_log=control_duel_log,
+        model_a_profile=model_a_profile,
+        model_b_profile=model_b_profile,
+    )
+    control_logs_by_model: dict[str, dict[str, Any]] = {}
+    for profile in (model_a_profile, model_b_profile):
+        control_logs_by_model[profile] = _persist_run_log_with_analysis(
+            _model_attempt_log_path(
+                output_logs_dir,
+                seed=job.seed,
+                model_profile=profile,
+                attempt_kind="control_rerun",
+            ),
+            control_logs_by_model_raw[profile],
+        )
+
+    _emit_adaptive_stage("(computing memory: seed reflection)")
+    providers_cfg = load_yaml_file(providers_config_path)
+    prompt_loader = PromptLoader(prompts_dir)
+    seed_reflections_dir = memory_dir / "seed_reflections"
+    cross_refinements_dir = memory_dir / "cross_seed_refinements"
+    legacy_reflections_dir = memory_dir / "reflections"
+    snapshots_dir = memory_dir / "snapshots"
+
+    pair_lessons_by_model: dict[str, list[str]] = {}
+    seed_reflections_raw: dict[str, dict[str, Any]] = {}
+    for profile in (model_a_profile, model_b_profile):
+        profile_binding = create_model_wrapper(model_name=profile, seed=job.seed, providers_cfg=providers_cfg)
+        session_lessons = list(session_lessons_by_model.get(profile, []))
+        pair_key = f"{profile}__seed{job.seed}"
+        seed_reflection = run_seed_reflection(
+            model_wrapper=profile_binding.wrapper,
+            prompt_loader=prompt_loader,
+            run_summary=dict(initial_logs_by_model[profile].get("run_summary", {})),
+            run_analysis=initial_logs_by_model[profile].get("run_analysis"),
+            run_trace_context=_build_reflection_trace_context(
+                run_log=initial_logs_by_model[profile],
+                history_window=10,
+            ),
+            existing_lessons=lessons_to_prompt_items(session_lessons),
+            metadata={
+                "mode": "adaptive_seed_reflection",
+                "seed": job.seed,
+                "model_profile": profile,
+                "adaptive_pair_key": pair_key,
+            },
+        )
+        parsed_seed_lessons = list(seed_reflection.get("parsed_lessons") or [])
+        parsed_seed_lesson_items = list(seed_reflection.get("parsed_lesson_items") or [])
+        parsed_seed_rules = _extract_prompt_rules(
+            parsed_lesson_items=parsed_seed_lesson_items,
+            parsed_lessons=parsed_seed_lessons,
+        )
+        filtered_seed_lessons = filter_lessons(
+            parsed_seed_rules,
+            context={
+                "seed": job.seed,
+                "model_profile": profile,
+                "adaptive_pair_key": pair_key,
+                "stage": "seed_reflection",
+            },
+        )
+        pair_lessons = merge_lessons([], filtered_seed_lessons)
+        pair_lessons_by_model[profile] = pair_lessons
+        seed_reflections_raw[profile] = {
+            "parsed_lessons": parsed_seed_lessons,
+            "parsed_lesson_items": parsed_seed_lesson_items,
+            "parse_error": seed_reflection.get("parse_error"),
+            "raw_output": seed_reflection.get("raw_output"),
+            "metrics": {
+                "tokens_used": seed_reflection.get("tokens_used"),
+                "latency_ms": seed_reflection.get("latency_ms"),
+                "estimated_cost": seed_reflection.get("estimated_cost"),
+            },
+        }
+        save_json(
+            seed_reflections_dir / f"{_safe_slug(profile)}__seed{job.seed}.json",
+            {
+                "stage": "seed_reflection",
+                "model_profile": profile,
+                "seed": job.seed,
+                "adaptive_pair_key": pair_key,
+                "session_lessons_before": list(session_lessons),
+                "parsed_lessons": parsed_seed_lessons,
+                "parsed_lesson_items": parsed_seed_lesson_items,
+                "filtered_lessons": filtered_seed_lessons,
+                "pair_lessons": pair_lessons,
+                "parse_error": seed_reflection.get("parse_error"),
+                "raw_output": seed_reflection.get("raw_output"),
+                "metrics": seed_reflections_raw[profile]["metrics"],
+            },
+        )
+
+    adaptive_duel_log = run_duel_once(
+        seed=job.seed,
+        model_a_name=model_a_profile,
+        model_b_name=model_b_profile,
+        scenario_name=(None if scenario in {"", "-"} else scenario),
+        max_turns=max_turns,
+        benchmark_config_path=benchmark_config_path,
+        scenarios_config_path=scenarios_config_path,
+        providers_config_path=providers_config_path,
+        prompts_dir=prompts_dir,
+        history_window=history_window,
+        output_path=_duel_log_path(
+            output_logs_dir,
+            model_a=model_a_profile,
+            model_b=model_b_profile,
+            seed=job.seed,
+            attempt_kind="adaptive_rerun",
+        ),
+        progress_callback=_emit_progress_with_extras,
+        fix_thinking=fix_thinking,
+        moral_mode=moral_mode,
+        attempt_kind="adaptive_rerun",
+        adaptive_pair_key=pair_base,
+        memory_by_model={
+            model_a_profile: {
+                "include_memory": True,
+                "session_lessons": list(session_lessons_by_model.get(model_a_profile, [])),
+                "current_seed_lessons": list(pair_lessons_by_model.get(model_a_profile, [])),
+            },
+            model_b_profile: {
+                "include_memory": True,
+                "session_lessons": list(session_lessons_by_model.get(model_b_profile, [])),
+                "current_seed_lessons": list(pair_lessons_by_model.get(model_b_profile, [])),
+            },
+        },
+    )
+    adaptive_logs_by_model_raw = _derive_duel_view_logs(
+        canonical_run_log=adaptive_duel_log,
+        model_a_profile=model_a_profile,
+        model_b_profile=model_b_profile,
+    )
+    adaptive_logs_by_model: dict[str, dict[str, Any]] = {}
+    for profile in (model_a_profile, model_b_profile):
+        adaptive_logs_by_model[profile] = _persist_run_log_with_analysis(
+            _model_attempt_log_path(
+                output_logs_dir,
+                seed=job.seed,
+                model_profile=profile,
+                attempt_kind="adaptive_rerun",
+            ),
+            adaptive_logs_by_model_raw[profile],
+        )
+
+    _emit_adaptive_stage("(computing memory: cross-seed refinement)")
+    updated_lessons_by_model: dict[str, list[str]] = {}
+    pair_rows_by_model: dict[str, dict[str, Any]] = {}
+    reflection_paths_by_model: dict[str, str] = {}
+    memory_snapshot_paths_by_model: dict[str, str] = {}
+
+    for profile in (model_a_profile, model_b_profile):
+        profile_binding = create_model_wrapper(model_name=profile, seed=job.seed, providers_cfg=providers_cfg)
+        pair_key = f"{profile}__seed{job.seed}"
+        session_lessons = list(session_lessons_by_model.get(profile, []))
+        initial_summary = dict(initial_logs_by_model[profile].get("run_summary", {}))
+        adaptive_summary = dict(adaptive_logs_by_model[profile].get("run_summary", {}))
+        adaptive_feedback = _build_adaptive_feedback(
+            initial_summary=initial_summary,
+            adaptive_summary=adaptive_summary,
+        )
+        cross_refinement = run_cross_seed_refinement(
+            model_wrapper=profile_binding.wrapper,
+            prompt_loader=prompt_loader,
+            initial_run_summary=initial_summary,
+            initial_run_analysis=initial_logs_by_model[profile].get("run_analysis"),
+            initial_run_trace_context=_build_reflection_trace_context(
+                run_log=initial_logs_by_model[profile],
+                history_window=10,
+            ),
+            rerun_summary=adaptive_summary,
+            rerun_analysis=adaptive_logs_by_model[profile].get("run_analysis"),
+            rerun_trace_context=_build_reflection_trace_context(
+                run_log=adaptive_logs_by_model[profile],
+                history_window=10,
+            ),
+            existing_lessons=lessons_to_prompt_items(session_lessons),
+            seed_lessons=lessons_to_prompt_items(pair_lessons_by_model.get(profile, [])),
+            adaptive_feedback=adaptive_feedback,
+            metadata={
+                "mode": "adaptive_cross_seed_refinement",
+                "seed": job.seed,
+                "model_profile": profile,
+                "adaptive_pair_key": pair_key,
+            },
+        )
+        parsed_cross_lessons = list(cross_refinement.get("parsed_lessons") or [])
+        parsed_cross_lesson_items = list(cross_refinement.get("parsed_lesson_items") or [])
+        parsed_cross_rules = _extract_prompt_rules(
+            parsed_lesson_items=parsed_cross_lesson_items,
+            parsed_lessons=parsed_cross_lessons,
+        )
+        filtered_cross_lessons = filter_lessons(
+            parsed_cross_rules,
+            context={
+                "seed": job.seed,
+                "model_profile": profile,
+                "adaptive_pair_key": pair_key,
+                "stage": "cross_seed_refinement",
+            },
+        )
+        initial_score = _safe_int(initial_summary.get("final_score"))
+        adaptive_score = _safe_int(adaptive_summary.get("final_score"))
+        promote_cross_seed_memory = _should_promote_cross_seed_memory(
+            initial_score=initial_score,
+            adaptive_score=adaptive_score,
+        )
+        merged_session_lessons = (
+            merge_lessons([], filtered_cross_lessons)
+            if (filtered_cross_lessons and promote_cross_seed_memory)
+            else list(session_lessons)
+        )
+        updated_lessons_by_model[profile] = merged_session_lessons
+
+        cross_refinement_path = cross_refinements_dir / f"{_safe_slug(profile)}__seed{job.seed}.json"
+        reflection_manifest_path = legacy_reflections_dir / f"{_safe_slug(profile)}__seed{job.seed}.json"
+        memory_snapshot_path = snapshots_dir / f"{_safe_slug(profile)}__after_seed{job.seed}.json"
+        reflection_paths_by_model[profile] = str(reflection_manifest_path)
+        memory_snapshot_paths_by_model[profile] = str(memory_snapshot_path)
+
+        save_json(
+            cross_refinement_path,
+            {
+                "stage": "cross_seed_refinement",
+                "model_profile": profile,
+                "seed": job.seed,
+                "adaptive_pair_key": pair_key,
+                "session_lessons_before": list(session_lessons),
+                "pair_lessons": pair_lessons_by_model.get(profile, []),
+                "adaptive_feedback": adaptive_feedback,
+                "adaptive_delta_score": adaptive_score - initial_score,
+                "memory_promotion_threshold": ADAPTIVE_MEMORY_PROMOTION_MIN_DELTA,
+                "memory_promoted": promote_cross_seed_memory,
+                "parsed_lessons": parsed_cross_lessons,
+                "parsed_lesson_items": parsed_cross_lesson_items,
+                "filtered_lessons": filtered_cross_lessons,
+                "session_lessons_after": merged_session_lessons,
+                "parse_error": cross_refinement.get("parse_error"),
+                "raw_output": cross_refinement.get("raw_output"),
+                "metrics": {
+                    "tokens_used": cross_refinement.get("tokens_used"),
+                    "latency_ms": cross_refinement.get("latency_ms"),
+                    "estimated_cost": cross_refinement.get("estimated_cost"),
+                },
+            },
+        )
+        save_json(
+            reflection_manifest_path,
+            {
+                "model_profile": profile,
+                "seed": job.seed,
+                "adaptive_pair_key": pair_key,
+                "seed_reflection_path": str(seed_reflections_dir / f"{_safe_slug(profile)}__seed{job.seed}.json"),
+                "cross_seed_refinement_path": str(cross_refinement_path),
+                "seed_reflection_parse_error": seed_reflections_raw[profile]["parse_error"],
+                "cross_seed_refinement_parse_error": cross_refinement.get("parse_error"),
+                "session_lessons_before_count": len(session_lessons),
+                "pair_lessons_count": len(pair_lessons_by_model.get(profile, [])),
+                "session_lessons_after_count": len(merged_session_lessons),
+            },
+        )
+        save_json(
+            memory_snapshot_path,
+            {
+                "model_profile": profile,
+                "seed": job.seed,
+                "adaptive_pair_key": pair_key,
+                "session_lessons": merged_session_lessons,
+                "session_lesson_count": len(merged_session_lessons),
+                "pair_lessons": pair_lessons_by_model.get(profile, []),
+                "pair_lesson_count": len(pair_lessons_by_model.get(profile, [])),
+            },
+        )
+
+        control_summary = dict(control_logs_by_model[profile].get("run_summary", {}))
+        seed_parse_error = seed_reflections_raw[profile]["parse_error"]
+        cross_parse_error = cross_refinement.get("parse_error")
+        combined_parse_error: str | None = None
+        if seed_parse_error and cross_parse_error:
+            combined_parse_error = f"seed:{seed_parse_error};cross:{cross_parse_error}"
+        elif seed_parse_error:
+            combined_parse_error = f"seed:{seed_parse_error}"
+        elif cross_parse_error:
+            combined_parse_error = f"cross:{cross_parse_error}"
+        initial_s = _safe_int(initial_summary.get("final_score"))
+        control_s = _safe_int(control_summary.get("final_score"))
+        adaptive_s = _safe_int(adaptive_summary.get("final_score"))
+        pair_rows_by_model[profile] = {
+            "compare_id": "",
+            "model_profile": profile,
+            "seed": job.seed,
+            "adaptive_pair_key": pair_key,
+            "initial_score": initial_s,
+            "control_score": control_s,
+            "adaptive_score": adaptive_s,
+            "control_delta": control_s - initial_s,
+            "adaptive_delta": adaptive_s - initial_s,
+            "memory_effect": round(adaptive_s - (initial_s + control_s) / 2, 1),
+            "initial_turns_survived": _safe_int(initial_summary.get("turns_survived")),
+            "control_turns_survived": _safe_int(control_summary.get("turns_survived")),
+            "adaptive_turns_survived": _safe_int(adaptive_summary.get("turns_survived")),
+            "control_delta_turns": _safe_int(control_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
+            "adaptive_delta_turns": _safe_int(adaptive_summary.get("turns_survived")) - _safe_int(initial_summary.get("turns_survived")),
+            "initial_invalid_actions": _safe_int(initial_summary.get("invalid_actions")),
+            "control_invalid_actions": _safe_int(control_summary.get("invalid_actions")),
+            "adaptive_invalid_actions": _safe_int(adaptive_summary.get("invalid_actions")),
+            "initial_resources_gathered": _safe_int(initial_summary.get("resources_gathered")),
+            "control_resources_gathered": _safe_int(control_summary.get("resources_gathered")),
+            "adaptive_resources_gathered": _safe_int(adaptive_summary.get("resources_gathered")),
+            "lessons_before_count": len(session_lessons),
+            "lessons_added_count": max(0, len(merged_session_lessons) - len(session_lessons)),
+            "lessons_after_count": len(merged_session_lessons),
+            "reflection_parse_error": combined_parse_error,
+            "memory_promoted": promote_cross_seed_memory,
+            "reflection_path": str(reflection_manifest_path),
+            "memory_snapshot_path": str(memory_snapshot_path),
+        }
+
+    return {
+        "control_duel_log": control_duel_log,
+        "adaptive_duel_log": adaptive_duel_log,
+        "control_run_logs_by_model": control_logs_by_model,
+        "adaptive_run_logs_by_model": adaptive_logs_by_model,
+        "updated_lessons_by_model": updated_lessons_by_model,
+        "pair_rows_by_model": pair_rows_by_model,
+        "reflection_paths_by_model": reflection_paths_by_model,
+        "memory_snapshot_paths_by_model": memory_snapshot_paths_by_model,
+    }
+
+
 def _execute_adaptive_pair(
     *,
     job: JobSpec,
@@ -2446,6 +3706,7 @@ def _execute_adaptive_pair(
     output_logs_dir: Path,
     memory_dir: Path,
     session_lessons: list[str],
+    opponent_model_profile: str | None = None,
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
@@ -2462,6 +3723,7 @@ def _execute_adaptive_pair(
         output_logs_dir=output_logs_dir,
         memory_dir=memory_dir,
         session_lessons=session_lessons,
+        opponent_model_profile=opponent_model_profile,
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         moral_mode=moral_mode,
@@ -2479,6 +3741,7 @@ def _execute_adaptive_pair(
         memory_dir=memory_dir,
         session_lessons=session_lessons,
         initial_log=dict(initial_result["initial_run_log"]),
+        opponent_model_profile=opponent_model_profile,
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         moral_mode=moral_mode,
@@ -2537,6 +3800,10 @@ def _render_turn_progress_line(
     energy_max: int | None,
     eta_text: str,
     attempt_label: str | None,
+    opponent_model_profile: str | None,
+    progress_mode: str | None,
+    progress_index: int | None,
+    progress_total: int | None,
     color_enabled: bool,
 ) -> str:
     protocol_text = "ok" if protocol_valid else "bad"
@@ -2549,10 +3816,19 @@ def _render_turn_progress_line(
 
     if color_enabled:
         pct_text = _render_pct(pct, color_enabled=color_enabled)
-        job_text = _render_progress_ratio("job", job_index, job_total, color_enabled=color_enabled)
+        ratio_label = "duel" if str(progress_mode or "").strip() == "duel" else "job"
+        is_duel = ratio_label == "duel"
+        ratio_index = int(progress_index if progress_index is not None else job_index)
+        ratio_total = int(progress_total if progress_total is not None else job_total)
+        job_text = _render_progress_ratio(ratio_label, ratio_index, ratio_total, color_enabled=color_enabled)
         turn_text = _render_progress_ratio("turn", turn, max_turns, color_enabled=color_enabled)
-        model_label = colorize("model:", "0;37", color_enabled)
+        model_label = colorize(("turn model:" if is_duel else "model:"), "0;37", color_enabled)
         model_text = colorize(model_profile, "1;95", color_enabled)
+        vs_text = None
+        if opponent_model_profile and not is_duel:
+            vs_label = colorize("vs:", "0;37", color_enabled)
+            vs_value = colorize(str(opponent_model_profile), "1;95", color_enabled)
+            vs_text = f"{vs_label} {vs_value}"
         seed_label = colorize("seed:", "0;37", color_enabled)
         seed_text = colorize(str(seed), "1;33", color_enabled)
         action_label = colorize("action:", "0;37", color_enabled)
@@ -2603,6 +3879,7 @@ def _render_turn_progress_line(
         parts.extend(
             [
                 f"{model_label} {model_text}",
+                *( [vs_text] if vs_text else [] ),
                 f"{seed_label} {seed_text}",
                 f"{action_label} {action_text}",
             ]
@@ -2623,14 +3900,16 @@ def _render_turn_progress_line(
         return " | ".join(parts)
 
     parts_plain = [
-        f"[{pct:5.1f}%] job {job_index}/{job_total}",
+        f"[{pct:5.1f}%] {('duel' if str(progress_mode or '').strip() == 'duel' else 'job')} {int(progress_index if progress_index is not None else job_index)}/{int(progress_total if progress_total is not None else job_total)}",
         f"turn {turn}/{max_turns}",
     ]
+    is_duel_plain = str(progress_mode or "").strip() == "duel"
     if attempt_label:
         parts_plain.append(f"attempt: {attempt_label}")
     parts_plain.extend(
         [
-            f"model: {model_profile}",
+            f"{'turn model' if is_duel_plain else 'model'}: {model_profile}",
+            *( [f"vs: {opponent_model_profile}"] if (opponent_model_profile and not is_duel_plain) else [] ),
             f"seed: {seed}",
             f"action: {action[:22]:<22}",
         ]
@@ -2674,12 +3953,22 @@ def _render_job_done_line(
     score: int,
     status: str,
     eta_text: str,
+    opponent_model_profile: str | None = None,
+    progress_mode: str | None = None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
     color_enabled: bool,
 ) -> str:
+    ratio_label = "duel" if str(progress_mode or "").strip() == "duel" else "job"
+    ratio_index = int(progress_index if progress_index is not None else job_index)
+    ratio_total = int(progress_total if progress_total is not None else job_total)
     if color_enabled:
         pct_text = _render_pct(pct, color_enabled=color_enabled)
-        job_text = _render_progress_ratio("job", job_index, job_total, color_enabled=color_enabled)
+        job_text = _render_progress_ratio(ratio_label, ratio_index, ratio_total, color_enabled=color_enabled)
         model_text = colorize(model_profile, "1;95", color_enabled)
+        vs_text = ""
+        if opponent_model_profile:
+            vs_text = f" | vs: {colorize(str(opponent_model_profile), '1;95', color_enabled)}"
         seed_text = colorize(str(seed), "1;33", color_enabled)
         score_text = colorize(f"{score:>4}", "1;93", color_enabled)
         status_color = "1;31" if status == "dead" else "1;32"
@@ -2687,12 +3976,13 @@ def _render_job_done_line(
         eta_label = colorize("eta:", "0;37", color_enabled)
         eta_value = colorize(eta_text, "1;97", color_enabled)
         return (
-            f"{pct_text} {job_text} | model: {model_text} | seed: {seed_text} | "
+            f"{pct_text} {job_text} | model: {model_text}{vs_text} | seed: {seed_text} | "
             f"score: {score_text} | status: {status_text} | {eta_label} {eta_value}"
         )
 
     return (
-        f"[{pct:5.1f}%] job {job_index}/{job_total} | model: {model_profile} | "
+        f"[{pct:5.1f}%] {ratio_label} {ratio_index}/{ratio_total} | model: {model_profile}"
+        f"{(f' | vs: {opponent_model_profile}' if opponent_model_profile else '')} | "
         f"seed: {seed} | score: {score:>4} | status: {status} | eta: {eta_text}"
     )
 
@@ -2862,7 +4152,7 @@ def main() -> None:
     adaptive_pair_rows: list[dict[str, Any]] = []
     adaptive_memory_by_model: dict[str, list[str]] = {}
     scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
-    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.2.1"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.3.0"))
     model_profiles: list[str] = []
     seed_list: list[int] = []
     requested_models: list[str] = []
@@ -2882,6 +4172,9 @@ def main() -> None:
     adaptive_enabled = bool(args.adaptive_memory)
     effective_seed_workers_per_model = int(args.seed_workers_per_model)
     resume_time_human: str | None = None
+    pvp_duel_enabled = False
+    pvp_opponent_profile_map: dict[str, str] = {}
+    pvp_duel_native_mode = False
 
     resume_context: dict[str, Any] = {
         "benchmark_config": effective_benchmark_config_path,
@@ -2981,6 +4274,8 @@ def main() -> None:
         control_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         adaptive_pair_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        duel_entries_by_key: dict[tuple[int, str], dict[str, Any]] = {}
+        duel_progress_state: dict[str, Any] = {}
 
         if args.resume:
             resume_path = _resolve_resume_checkpoint(args.resume, runs_root)
@@ -2990,7 +4285,8 @@ def main() -> None:
             with resume_path.open("r", encoding="utf-8") as handle:
                 checkpoint = json.load(handle)
 
-            if checkpoint.get("schema") != "tinyworld_compare_state_v1":
+            checkpoint_schema = str(checkpoint.get("schema", "")).strip()
+            if checkpoint_schema not in {"tinyworld_compare_state_v1", "tinyworld_compare_state_v3"}:
                 raise SystemExit(f"Unsupported resume checkpoint schema in {resume_path}")
 
             compare_id = str(checkpoint.get("compare_id", compare_id))
@@ -3031,6 +4327,19 @@ def main() -> None:
                 for key, value in dict(checkpoint.get("adaptive_memory_by_model", {})).items()
                 if isinstance(value, list)
             }
+            duel_progress_raw = checkpoint.get("duel_progress", {})
+            if isinstance(duel_progress_raw, dict):
+                duel_progress_state = dict(duel_progress_raw)
+            duels_raw = checkpoint.get("duels", [])
+            if isinstance(duels_raw, list):
+                for item in duels_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    seed_value = _safe_int(item.get("seed"))
+                    attempt_kind = str(item.get("attempt_kind", "")).strip()
+                    if seed_value is None or not attempt_kind:
+                        continue
+                    duel_entries_by_key[(int(seed_value), attempt_kind)] = dict(item)
 
             resume_context = dict(checkpoint.get("resume_context", resume_context))
             resume_context["resumed_from"] = str(resume_path)
@@ -3087,6 +4396,46 @@ def main() -> None:
             raise SystemExit("No model profiles available for compare execution.")
         if not seed_list:
             raise SystemExit("No seeds available for compare execution.")
+
+        # Validate all model profiles exist in providers config before starting any work
+        _all_profiles, _grouped, _grouped_by_family = _available_identity_from_config(effective_providers_config_path)
+        _known_profiles = set(_all_profiles)
+        _legacy_aliases = {"dummy", "anthropic", "local", ""}
+        _unknown = [m for m in model_profiles if m not in _known_profiles and m.lower() not in _legacy_aliases]
+        if _unknown:
+            unknown_colored = ", ".join(colorize(m, "1;33", color_enabled) for m in _unknown)
+            sys.stderr.write(colorize(f"\nUnknown model profile(s): ", "1;31", color_enabled) + unknown_colored + "\n")
+            if _all_profiles:
+                sys.stderr.write("\nAvailable model profiles (grouped by provider):\n")
+                for provider_id in sorted(_grouped.keys()):
+                    items = _grouped.get(provider_id, [])
+                    if not items:
+                        continue
+                    provider_name = colorize(provider_id, "1;36", color_enabled)
+                    sys.stderr.write(f"  {provider_name} ({len(items)}):\n")
+                    families = _grouped_by_family.get(provider_id, {})
+                    if families:
+                        for family_name, family_profiles in families.items():
+                            family_colored = colorize(family_name, "1;95", color_enabled)
+                            sys.stderr.write(f"    {family_colored} ({len(family_profiles)}):\n")
+                            for line in _wrap_items_for_cli(family_profiles, indent="      "):
+                                sys.stderr.write(f"{line}\n")
+                    else:
+                        for line in _wrap_items_for_cli(items, indent="    "):
+                            sys.stderr.write(f"{line}\n")
+            raise SystemExit(1)
+
+        pvp_duel_enabled = _scenario_is_pvp_duel(
+            scenarios_config_path=effective_scenarios_config_path,
+            scenario_name=scenario,
+        )
+        pvp_opponent_profile_map = _build_pvp_opponent_profile_map(
+            model_profiles=model_profiles,
+            pvp_enabled=pvp_duel_enabled,
+        )
+        pvp_duel_native_mode = bool(pvp_duel_enabled and len(model_profiles) == 2 and pvp_opponent_profile_map)
+        duel_model_a_profile = str(model_profiles[0]) if pvp_duel_native_mode else ""
+        duel_model_b_profile = str(model_profiles[1]) if pvp_duel_native_mode else ""
 
         identity_models_text, identity_providers_text, identity_routing_text = _resolve_models_and_providers_for_identity(
             model_profiles=model_profiles,
@@ -3156,6 +4505,15 @@ def main() -> None:
                 if key in control_by_key:
                     continue
                 log_path = _job_log_path_adaptive(run_dirs["logs"], job, "control")
+                if pvp_duel_native_mode:
+                    alt_path = _model_attempt_log_path(
+                        run_dirs["logs"],
+                        seed=job.seed,
+                        model_profile=job.model_profile,
+                        attempt_kind="control_rerun",
+                    )
+                    if alt_path.exists():
+                        log_path = alt_path
                 if not log_path.exists():
                     continue
                 try:
@@ -3221,6 +4579,13 @@ def main() -> None:
 
         def _persist_running_state(status: str = "running") -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
             _rebuild_ordered_collections()
+            duel_entries_sorted = [
+                duel_entries_by_key[key]
+                for key in sorted(
+                    duel_entries_by_key.keys(),
+                    key=lambda item: (int(item[0]), {"initial": 0, "control_rerun": 1, "adaptive_rerun": 2}.get(item[1], 99), str(item[1])),
+                )
+            ]
             return _persist_compare_outputs(
                 paths=paths,
                 compare_id=compare_id,
@@ -3236,6 +4601,9 @@ def main() -> None:
                 adaptive_pair_rows=adaptive_pair_rows,
                 adaptive_memory_by_model=adaptive_memory_by_model,
                 memory_dir=run_dirs.get("memory"),
+                checkpoint_schema=("tinyworld_compare_state_v3" if pvp_duel_native_mode else "tinyworld_compare_state_v1"),
+                duel_progress=duel_progress_state,
+                duels=duel_entries_sorted,
             )
 
         adaptive_live_line_count = 0
@@ -3263,6 +4631,8 @@ def main() -> None:
                 adaptive_pairs_by_key=adaptive_pair_by_key,
                 live_attempt_scores_by_key=live_attempt_scores_snapshot,
                 active_attempts_by_key=active_attempts_snapshot,
+                pvp_duel_enabled=pvp_duel_enabled,
+                pvp_opponent_profile_map=pvp_opponent_profile_map,
                 previous_line_count=adaptive_live_line_count,
             )
 
@@ -3477,6 +4847,58 @@ def main() -> None:
                 _persist_running_state(status="running")
             _refresh_adaptive_live_panel()
 
+        def _upsert_duel_entry(
+            *,
+            seed: int,
+            attempt_kind: str,
+            canonical_run_log: dict[str, Any],
+            warnings: list[str] | None = None,
+        ) -> None:
+            if not pvp_duel_native_mode:
+                return
+            row_source: dict[tuple[str, int], dict[str, Any]]
+            if attempt_kind == "initial":
+                row_source = existing_by_key
+            elif attempt_kind == "control_rerun":
+                row_source = control_by_key
+            else:
+                row_source = adaptive_by_key
+            seed_int = int(seed)
+            key_a = (duel_model_a_profile, seed_int)
+            key_b = (duel_model_b_profile, seed_int)
+            row_a = dict(row_source.get(key_a, {}))
+            row_b = dict(row_source.get(key_b, {}))
+            if not row_a and not row_b:
+                return
+            run_id_by_model = {
+                duel_model_a_profile: str(row_a.get("run_id", "")).strip(),
+                duel_model_b_profile: str(row_b.get("run_id", "")).strip(),
+            }
+            summary_by_model = {
+                duel_model_a_profile: row_a,
+                duel_model_b_profile: row_b,
+            }
+            duel_entry = _build_duel_entry_from_views(
+                seed=seed_int,
+                attempt_kind=attempt_kind,
+                model_a_profile=duel_model_a_profile,
+                model_b_profile=duel_model_b_profile,
+                run_id_by_model=run_id_by_model,
+                summary_by_model=summary_by_model,
+                canonical_run_log=canonical_run_log,
+                warnings=warnings,
+            )
+            duel_entries_by_key[(seed_int, attempt_kind)] = duel_entry
+            duel_seed_key = f"seed{seed_int}"
+            duel_progress_for_seed = duel_progress_state.get(duel_seed_key, {})
+            if not isinstance(duel_progress_for_seed, dict):
+                duel_progress_for_seed = {}
+            duel_progress_for_seed[attempt_kind] = {
+                "completed": True,
+                "run_id_by_model": duel_entry.get("run_id_by_model", {}),
+            }
+            duel_progress_state[duel_seed_key] = duel_progress_for_seed
+
         def _fail_and_exit(exc: Exception, job: JobSpec) -> None:
             _persist_running_state(status="failed")
             status_line.finish(colorize("[failed] Compare failed", "1;91", color_enabled))
@@ -3504,11 +4926,22 @@ def main() -> None:
         total_jobs = len(jobs)
         total_progress_units = total_jobs * (2 if adaptive_enabled else 1)
         parallel_enabled = not (args.model_workers == 1 and effective_seed_workers_per_model == 1)
+        if pvp_duel_native_mode:
+            parallel_enabled = False
 
         if not parallel_enabled:
             for job in jobs:
                 key = (job.model_profile, job.seed)
-                if key in completed_keys:
+                if pvp_duel_native_mode and job.model_profile != duel_model_a_profile:
+                    continue
+                if pvp_duel_native_mode:
+                    pair_keys = (
+                        (duel_model_a_profile, int(job.seed)),
+                        (duel_model_b_profile, int(job.seed)),
+                    )
+                    if all(pair_key in completed_keys for pair_key in pair_keys):
+                        continue
+                elif key in completed_keys:
                     continue
 
                 def _build_progress_callback(*, completed_units_before: int) -> Any:
@@ -3540,6 +4973,18 @@ def main() -> None:
                                 adaptive_enabled=adaptive_enabled,
                                 attempt_kind=attempt_kind,
                             )
+                            pvp_live_mode = bool(
+                                pvp_duel_enabled
+                                and len(model_profiles) == 2
+                                and pvp_opponent_profile_map
+                            )
+                            if pvp_live_mode:
+                                display_job_index, display_job_total = _display_duel_position(
+                                    seed=job.seed,
+                                    seed_list=seed_list,
+                                    adaptive_enabled=adaptive_enabled,
+                                    attempt_kind=attempt_kind,
+                                )
                             pct = (completed_units_before / max(1, total_progress_units)) * 100.0
                             status_line.write(
                                 _render_turn_progress_line(
@@ -3566,6 +5011,14 @@ def main() -> None:
                                         baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                                     ),
                                     attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
+                                    opponent_model_profile=(
+                                        pvp_opponent_profile_map.get(job.model_profile)
+                                        if pvp_live_mode
+                                        else None
+                                    ),
+                                    progress_mode=("duel" if pvp_live_mode else "job"),
+                                    progress_index=display_job_index,
+                                    progress_total=display_job_total,
                                     color_enabled=color_enabled,
                                 )
                             )
@@ -3605,6 +5058,18 @@ def main() -> None:
                             adaptive_enabled=adaptive_enabled,
                             attempt_kind=attempt_kind,
                         )
+                        pvp_live_mode = bool(
+                            pvp_duel_enabled
+                            and len(model_profiles) == 2
+                            and pvp_opponent_profile_map
+                        )
+                        if pvp_live_mode:
+                            display_job_index, display_job_total = _display_duel_position(
+                                seed=job.seed,
+                                seed_list=seed_list,
+                                adaptive_enabled=adaptive_enabled,
+                                attempt_kind=attempt_kind,
+                            )
                         run_fraction = (turn / max_turns) if max_turns > 0 else 0.0
                         overall_fraction = (completed_units_before + run_fraction) / max(1, total_progress_units)
                         pct = overall_fraction * 100.0
@@ -3614,6 +5079,14 @@ def main() -> None:
                             remaining = max(0.0, (elapsed / overall_fraction) - elapsed)
                             eta_text = format_eta(remaining)
 
+                        action_display = str(event.get("action") or "-")
+                        turn_model_profile = str(event.get("turn_model_profile") or job.model_profile)
+                        baseline_ref_value = (
+                            run_progress.get("baseline_score_reference")
+                            if turn_model_profile == job.model_profile
+                            else None
+                        )
+
                         status_line.write(
                             _render_turn_progress_line(
                                 pct=pct,
@@ -3621,31 +5094,168 @@ def main() -> None:
                                 job_total=display_job_total,
                                 turn=turn,
                                 max_turns=max_turns,
-                                model_profile=job.model_profile,
+                                model_profile=turn_model_profile,
                                 seed=job.seed,
-                                action=str(event.get("action") or "-"),
+                                action=action_display,
                                 protocol_valid=bool(event.get("protocol_valid", False)),
                                 effect_applied=bool(event.get("action_effect_applied", False)),
                                 score=int(event.get("cumulative_score", 0)),
-                                baseline_score_reference=run_progress.get("baseline_score_reference"),
+                                baseline_score_reference=baseline_ref_value,
                                 invalid=int(event.get("invalid_actions", 0)),
                                 alive=bool(event.get("alive", True)),
                                 energy=run_progress.get("energy"),
                                 energy_max=run_progress.get("energy_max"),
                                 eta_text=eta_text,
                                 attempt_label=(_attempt_label(attempt_kind) if adaptive_enabled else None),
-                                color_enabled=color_enabled,
+                                opponent_model_profile=(
+                                    pvp_opponent_profile_map.get(job.model_profile)
+                                    if pvp_live_mode
+                                    else None
+                                ),
+                                progress_mode=("duel" if pvp_live_mode else "job"),
+                                progress_index=display_job_index,
+                                progress_total=display_job_total,
+                                    color_enabled=color_enabled,
+                                )
                             )
-                        )
 
                     return on_progress
 
                 try:
                     if adaptive_enabled:
-                        if key in completed_initial_keys:
-                            run_log = _load_run_log_from_summary(existing_by_key[key])
+                        if pvp_duel_native_mode:
+                            pair_keys = (
+                                (duel_model_a_profile, int(job.seed)),
+                                (duel_model_b_profile, int(job.seed)),
+                            )
+                            pair_initial_complete = all(pair_key in completed_initial_keys for pair_key in pair_keys)
+                            if not pair_initial_complete:
+                                initial_result = _execute_duel_initial(
+                                    job=job,
+                                    model_a_profile=duel_model_a_profile,
+                                    model_b_profile=duel_model_b_profile,
+                                    scenario=scenario,
+                                    max_turns=effective_max_turns,
+                                    benchmark_config_path=effective_benchmark_config_path,
+                                    scenarios_config_path=effective_scenarios_config_path,
+                                    providers_config_path=effective_providers_config_path,
+                                    prompts_dir=effective_prompts_dir,
+                                    history_window=effective_history_window,
+                                    output_logs_dir=run_dirs["logs"],
+                                    progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                    fix_thinking=effective_fix_thinking,
+                                    moral_mode=effective_moral_mode,
+                                )
+                                for profile in (duel_model_a_profile, duel_model_b_profile):
+                                    profile_job = jobs_by_key[(profile, int(job.seed))]
+                                    _record_initial_result(
+                                        profile_job,
+                                        dict(initial_result["run_logs_by_model"][profile]),
+                                        persist_state=False,
+                                    )
+                                _upsert_duel_entry(
+                                    seed=int(job.seed),
+                                    attempt_kind="initial",
+                                    canonical_run_log=dict(initial_result["duel_run_log"]),
+                                )
+                                _persist_running_state(status="running")
+                                _refresh_adaptive_live_panel()
+                            elif (int(job.seed), "initial") not in duel_entries_by_key:
+                                initial_duel_path = _duel_log_path(
+                                    run_dirs["logs"],
+                                    model_a=duel_model_a_profile,
+                                    model_b=duel_model_b_profile,
+                                    seed=int(job.seed),
+                                    attempt_kind="initial",
+                                )
+                                if initial_duel_path.exists():
+                                    try:
+                                        with initial_duel_path.open("r", encoding="utf-8") as handle:
+                                            recovered_initial_duel = json.load(handle)
+                                        if isinstance(recovered_initial_duel, dict):
+                                            _upsert_duel_entry(
+                                                seed=int(job.seed),
+                                                attempt_kind="initial",
+                                                canonical_run_log=recovered_initial_duel,
+                                            )
+                                    except Exception:
+                                        pass
+
+                            initial_logs_by_model = {
+                                duel_model_a_profile: _load_run_log_from_summary(existing_by_key[(duel_model_a_profile, int(job.seed))]),
+                                duel_model_b_profile: _load_run_log_from_summary(existing_by_key[(duel_model_b_profile, int(job.seed))]),
+                            }
+                            adaptive_result_duel = _execute_duel_adaptive_followup(
+                                job=job,
+                                model_a_profile=duel_model_a_profile,
+                                model_b_profile=duel_model_b_profile,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
+                                output_logs_dir=run_dirs["logs"],
+                                memory_dir=run_dirs["memory"],
+                                session_lessons_by_model={
+                                    duel_model_a_profile: list(adaptive_memory_by_model.get(duel_model_a_profile, [])),
+                                    duel_model_b_profile: list(adaptive_memory_by_model.get(duel_model_b_profile, [])),
+                                },
+                                initial_logs_by_model=initial_logs_by_model,
+                                progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
+                            )
+                            for profile in (duel_model_a_profile, duel_model_b_profile):
+                                profile_job = jobs_by_key[(profile, int(job.seed))]
+                                _record_adaptive_result(
+                                    profile_job,
+                                    control_run_log=dict(adaptive_result_duel["control_run_logs_by_model"][profile]),
+                                    adaptive_run_log=dict(adaptive_result_duel["adaptive_run_logs_by_model"][profile]),
+                                    adaptive_pair_row=dict(adaptive_result_duel["pair_rows_by_model"][profile]),
+                                    updated_lessons=list(adaptive_result_duel["updated_lessons_by_model"][profile]),
+                                    persist_state=False,
+                                )
+                            _upsert_duel_entry(
+                                seed=int(job.seed),
+                                attempt_kind="control_rerun",
+                                canonical_run_log=dict(adaptive_result_duel["control_duel_log"]),
+                            )
+                            _upsert_duel_entry(
+                                seed=int(job.seed),
+                                attempt_kind="adaptive_rerun",
+                                canonical_run_log=dict(adaptive_result_duel["adaptive_duel_log"]),
+                            )
+                            _persist_running_state(status="running")
+                            _refresh_adaptive_live_panel()
+                            summary = dict(adaptive_by_key[(duel_model_a_profile, int(job.seed))])
                         else:
-                            initial_result = _execute_adaptive_initial(
+                            if key in completed_initial_keys:
+                                run_log = _load_run_log_from_summary(existing_by_key[key])
+                            else:
+                                initial_result = _execute_adaptive_initial(
+                                    job=job,
+                                    scenario=scenario,
+                                    max_turns=effective_max_turns,
+                                    benchmark_config_path=effective_benchmark_config_path,
+                                    scenarios_config_path=effective_scenarios_config_path,
+                                    providers_config_path=effective_providers_config_path,
+                                    prompts_dir=effective_prompts_dir,
+                                    history_window=effective_history_window,
+                                    output_logs_dir=run_dirs["logs"],
+                                    memory_dir=run_dirs["memory"],
+                                    session_lessons=[],
+                                    progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                    fix_thinking=effective_fix_thinking,
+                                    moral_mode=effective_moral_mode,
+                                    opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
+                                )
+                                run_log = dict(initial_result["initial_run_log"])
+                                _record_initial_result(job, run_log)
+
+                            session_lessons = list(adaptive_memory_by_model.get(job.model_profile, []))
+                            adaptive_result = _execute_adaptive_followup(
                                 job=job,
                                 scenario=scenario,
                                 max_turns=effective_max_turns,
@@ -3656,56 +5266,71 @@ def main() -> None:
                                 history_window=effective_history_window,
                                 output_logs_dir=run_dirs["logs"],
                                 memory_dir=run_dirs["memory"],
-                                session_lessons=[],
+                                session_lessons=session_lessons,
+                                initial_log=run_log,
+                                progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
+                                opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
+                            )
+                            _record_adaptive_result(
+                                job,
+                                control_run_log=adaptive_result.get("control_run_log"),
+                                adaptive_run_log=dict(adaptive_result.get("adaptive_run_log", {})),
+                                adaptive_pair_row=adaptive_result.get("pair_row"),
+                                updated_lessons=adaptive_result.get("updated_lessons"),
+                            )
+                            summary = dict(run_log["run_summary"])
+                    else:
+                        if pvp_duel_native_mode:
+                            initial_result = _execute_duel_initial(
+                                job=job,
+                                model_a_profile=duel_model_a_profile,
+                                model_b_profile=duel_model_b_profile,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
+                                output_logs_dir=run_dirs["logs"],
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
                             )
-                            run_log = dict(initial_result["initial_run_log"])
-                            _record_initial_result(job, run_log)
-
-                        session_lessons = list(adaptive_memory_by_model.get(job.model_profile, []))
-                        adaptive_result = _execute_adaptive_followup(
-                            job=job,
-                            scenario=scenario,
-                            max_turns=effective_max_turns,
-                            benchmark_config_path=effective_benchmark_config_path,
-                            scenarios_config_path=effective_scenarios_config_path,
-                            providers_config_path=effective_providers_config_path,
-                            prompts_dir=effective_prompts_dir,
-                            history_window=effective_history_window,
-                            output_logs_dir=run_dirs["logs"],
-                            memory_dir=run_dirs["memory"],
-                            session_lessons=session_lessons,
-                            initial_log=run_log,
-                            progress_callback=_build_progress_callback(completed_units_before=completed_units),
-                            fix_thinking=effective_fix_thinking,
-                            moral_mode=effective_moral_mode,
-                        )
-                        _record_adaptive_result(
-                            job,
-                            control_run_log=adaptive_result.get("control_run_log"),
-                            adaptive_run_log=dict(adaptive_result.get("adaptive_run_log", {})),
-                            adaptive_pair_row=adaptive_result.get("pair_row"),
-                            updated_lessons=adaptive_result.get("updated_lessons"),
-                        )
-                        summary = dict(run_log["run_summary"])
-                    else:
-                        run_log = _execute_job(
-                            job=job,
-                            scenario=scenario,
-                            max_turns=effective_max_turns,
-                            benchmark_config_path=effective_benchmark_config_path,
-                            scenarios_config_path=effective_scenarios_config_path,
-                            providers_config_path=effective_providers_config_path,
-                            prompts_dir=effective_prompts_dir,
-                            history_window=effective_history_window,
-                            output_logs_dir=run_dirs["logs"],
-                            progress_callback=_build_progress_callback(completed_units_before=completed_units),
-                            fix_thinking=effective_fix_thinking,
-                            moral_mode=effective_moral_mode,
-                        )
-                        summary = _record_initial_result(job, run_log)
+                            for profile in (duel_model_a_profile, duel_model_b_profile):
+                                profile_job = jobs_by_key[(profile, int(job.seed))]
+                                _record_initial_result(
+                                    profile_job,
+                                    dict(initial_result["run_logs_by_model"][profile]),
+                                    persist_state=False,
+                                )
+                            _upsert_duel_entry(
+                                seed=int(job.seed),
+                                attempt_kind="initial",
+                                canonical_run_log=dict(initial_result["duel_run_log"]),
+                            )
+                            _persist_running_state(status="running")
+                            _refresh_adaptive_live_panel()
+                            summary = dict(existing_by_key[(duel_model_a_profile, int(job.seed))])
+                        else:
+                            run_log = _execute_job(
+                                job=job,
+                                scenario=scenario,
+                                max_turns=effective_max_turns,
+                                benchmark_config_path=effective_benchmark_config_path,
+                                scenarios_config_path=effective_scenarios_config_path,
+                                providers_config_path=effective_providers_config_path,
+                                prompts_dir=effective_prompts_dir,
+                                history_window=effective_history_window,
+                                output_logs_dir=run_dirs["logs"],
+                                progress_callback=_build_progress_callback(completed_units_before=completed_units),
+                                fix_thinking=effective_fix_thinking,
+                                moral_mode=effective_moral_mode,
+                                opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
+                            )
+                            summary = _record_initial_result(job, run_log)
                 except KeyboardInterrupt:
                     _persist_running_state(status="interrupted")
                     status_line.finish(colorize("[interrupted] Compare canceled by user", "1;93", color_enabled))
@@ -3722,16 +5347,43 @@ def main() -> None:
                     baseline_elapsed_seconds=eta_elapsed_baseline_seconds,
                 )
                 pct_after = (completed_units / max(1, total_progress_units)) * 100.0
+                done_attempt_kind = str(summary.get("attempt_kind", "initial"))
+                done_index, done_total = _display_job_position(
+                    job_index=job.job_index,
+                    job_total=job.job_total,
+                    adaptive_enabled=adaptive_enabled,
+                    attempt_kind=done_attempt_kind,
+                )
+                pvp_done_mode = bool(
+                    pvp_duel_enabled
+                    and len(model_profiles) == 2
+                    and pvp_opponent_profile_map
+                )
+                if pvp_done_mode:
+                    done_index, done_total = _display_duel_position(
+                        seed=job.seed,
+                        seed_list=seed_list,
+                        adaptive_enabled=adaptive_enabled,
+                        attempt_kind=done_attempt_kind,
+                    )
                 status_line.write(
                     _render_job_done_line(
                         pct=pct_after,
-                        job_index=completed_units,
-                        job_total=total_progress_units,
+                        job_index=done_index,
+                        job_total=done_total,
                         model_profile=job.model_profile,
                         seed=job.seed,
                         score=int(summary["final_score"]),
                         status=("dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"),
                         eta_text=eta_text,
+                        opponent_model_profile=(
+                            pvp_opponent_profile_map.get(job.model_profile)
+                            if pvp_done_mode
+                            else None
+                        ),
+                        progress_mode=("duel" if pvp_done_mode else "job"),
+                        progress_index=done_index,
+                        progress_total=done_total,
                         color_enabled=color_enabled,
                     )
                 )
@@ -3815,9 +5467,31 @@ def main() -> None:
                     adaptive_enabled=adaptive_enabled,
                     attempt_kind=selected_attempt_kind,
                 )
+                pvp_live_mode = bool(
+                    pvp_duel_enabled
+                    and len(model_profiles) == 2
+                    and pvp_opponent_profile_map
+                )
+                if pvp_live_mode:
+                    display_job_index, display_job_total = _display_duel_position(
+                        seed=selected_job.seed,
+                        seed_list=seed_list,
+                        adaptive_enabled=adaptive_enabled,
+                        attempt_kind=selected_attempt_kind,
+                    )
                 fraction = _current_overall_fraction()
                 pct = fraction * 100.0
                 eta_text = _compute_parallel_eta_text()
+                turn_model_profile = str(selected.get("turn_model_profile") or selected_job.model_profile)
+                baseline_ref_value = (
+                    _safe_int(selected.get("baseline_score_reference"))
+                    if (
+                        selected_attempt_kind == "adaptive_rerun"
+                        and selected.get("baseline_score_reference") is not None
+                        and turn_model_profile == selected_job.model_profile
+                    )
+                    else None
+                )
 
                 return _render_turn_progress_line(
                     pct=pct,
@@ -3825,26 +5499,27 @@ def main() -> None:
                     job_total=display_job_total,
                     turn=int(selected.get("turn", 0)),
                     max_turns=int(selected.get("max_turns", 1)),
-                    model_profile=selected_job.model_profile,
+                    model_profile=turn_model_profile,
                     seed=selected_job.seed,
                     action=str(selected.get("action") or "(initializing)"),
                     protocol_valid=bool(selected.get("protocol_valid", True)),
                     effect_applied=bool(selected.get("effect_applied", False)),
                     score=int(selected.get("score", 0)),
-                    baseline_score_reference=(
-                        _safe_int(selected.get("baseline_score_reference"))
-                        if (
-                            selected_attempt_kind == "adaptive_rerun"
-                            and selected.get("baseline_score_reference") is not None
-                        )
-                        else None
-                    ),
+                    baseline_score_reference=baseline_ref_value,
                     invalid=int(selected.get("invalid", 0)),
                     alive=bool(selected.get("alive", True)),
                     energy=_safe_int(selected.get("energy")),
                     energy_max=_safe_int(selected.get("energy_max")),
                     eta_text=eta_text,
                     attempt_label=(_attempt_label(selected_attempt_kind) if adaptive_enabled else None),
+                    opponent_model_profile=(
+                        pvp_opponent_profile_map.get(selected_job.model_profile)
+                        if pvp_live_mode
+                        else None
+                    ),
+                    progress_mode=("duel" if pvp_live_mode else "job"),
+                    progress_index=display_job_index,
+                    progress_total=display_job_total,
                     color_enabled=color_enabled,
                 )
 
@@ -4034,6 +5709,7 @@ def main() -> None:
                             "turn": 0,
                             "max_turns": default_max_turns,
                             "action": "(initializing)",
+                            "turn_model_profile": job.model_profile,
                             "protocol_valid": True,
                             "effect_applied": False,
                             "score": 0,
@@ -4061,6 +5737,7 @@ def main() -> None:
                                 "turn": 0,
                                 "max_turns": int(event.get("max_turns", default_max_turns)),
                                 "action": "(initializing)",
+                                "turn_model_profile": str(event.get("turn_model_profile", event_key[0])),
                                 "protocol_valid": True,
                                 "effect_applied": False,
                                 "score": 0,
@@ -4077,6 +5754,7 @@ def main() -> None:
                         elif event_type == "adaptive_stage":
                             update = {
                                 "action": str(event.get("action") or "(computing memory)"),
+                                "turn_model_profile": str(event.get("turn_model_profile", event_key[0])),
                                 "attempt_kind": str(event.get("attempt_kind", "adaptive_rerun")),
                                 "protocol_valid": True,
                                 "effect_applied": True,
@@ -4088,10 +5766,12 @@ def main() -> None:
                                     update["attempt_kind"]
                                 )
                         elif event_type == "turn_completed":
+                            action_display = str(event.get("action") or "-")
                             update = {
                                 "turn": int(event.get("turn", 0)),
                                 "max_turns": int(event.get("max_turns", default_max_turns)),
-                                "action": str(event.get("action") or "-"),
+                                "action": action_display,
+                                "turn_model_profile": str(event.get("turn_model_profile", event_key[0])),
                                 "protocol_valid": bool(event.get("protocol_valid", False)),
                                 "effect_applied": bool(event.get("action_effect_applied", False)),
                                 "score": int(event.get("cumulative_score", 0)),
@@ -4172,6 +5852,7 @@ def main() -> None:
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                         else:
                             future = executor.submit(
@@ -4188,6 +5869,7 @@ def main() -> None:
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                         future_to_spec[future] = AdaptiveFutureSpec(
                             kind="initial",
@@ -4236,6 +5918,7 @@ def main() -> None:
                         ),
                         fix_thinking=effective_fix_thinking,
                         moral_mode=effective_moral_mode,
+                        opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                     )
                     future_to_spec[future] = AdaptiveFutureSpec(
                         kind="adaptive_followup",
@@ -4329,17 +6012,48 @@ def main() -> None:
 
                             eta_text = _compute_parallel_eta_text()
                             pct_after = (completed_units / max(1, total_progress_units)) * 100.0
+                            done_attempt_kind = (
+                                "adaptive_rerun"
+                                if (adaptive_enabled and spec.kind == "adaptive_followup")
+                                else "initial"
+                            )
+                            done_index, done_total = _display_job_position(
+                                job_index=job.job_index,
+                                job_total=job.job_total,
+                                adaptive_enabled=adaptive_enabled,
+                                attempt_kind=done_attempt_kind,
+                            )
+                            pvp_done_mode = bool(
+                                pvp_duel_enabled
+                                and len(model_profiles) == 2
+                                and pvp_opponent_profile_map
+                            )
+                            if pvp_done_mode:
+                                done_index, done_total = _display_duel_position(
+                                    seed=job.seed,
+                                    seed_list=seed_list,
+                                    adaptive_enabled=adaptive_enabled,
+                                    attempt_kind=done_attempt_kind,
+                                )
                             if not adaptive_enabled or spec.kind == "adaptive_followup":
                                 status_line.write(
                                     _render_job_done_line(
                                         pct=pct_after,
-                                        job_index=completed_units,
-                                        job_total=total_progress_units,
+                                        job_index=done_index,
+                                        job_total=done_total,
                                         model_profile=job.model_profile,
                                         seed=job.seed,
                                         score=int(summary["final_score"]),
                                         status=("dead" if str(summary.get("end_reason")) == "agent_dead" else "finished"),
                                         eta_text=eta_text,
+                                        opponent_model_profile=(
+                                            pvp_opponent_profile_map.get(job.model_profile)
+                                            if pvp_done_mode
+                                            else None
+                                        ),
+                                        progress_mode=("duel" if pvp_done_mode else "job"),
+                                        progress_index=done_index,
+                                        progress_total=done_total,
                                         color_enabled=color_enabled,
                                     )
                                 )
@@ -4347,13 +6061,21 @@ def main() -> None:
                                 status_line.write(
                                     _render_job_done_line(
                                         pct=pct_after,
-                                        job_index=completed_units,
-                                        job_total=total_progress_units,
+                                        job_index=done_index,
+                                        job_total=done_total,
                                         model_profile=job.model_profile,
                                         seed=job.seed,
                                         score=int(summary["final_score"]),
                                         status="initial_done",
                                         eta_text=eta_text,
+                                        opponent_model_profile=(
+                                            pvp_opponent_profile_map.get(job.model_profile)
+                                            if pvp_done_mode
+                                            else None
+                                        ),
+                                        progress_mode=("duel" if pvp_done_mode else "job"),
+                                        progress_index=done_index,
+                                        progress_total=done_total,
                                         color_enabled=color_enabled,
                                     )
                                 )
