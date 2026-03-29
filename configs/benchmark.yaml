@@ -23,10 +23,10 @@ metrics:
   usage_fallback: null
 
 rules:
-  energy_max: 100
+  energy_max: 140
   hunger_max: 100
   thirst_max: 100
-  start_energy: 80
+  start_energy: 120
   start_hunger: 20
   start_thirst: 20
   passive_energy_loss: 2

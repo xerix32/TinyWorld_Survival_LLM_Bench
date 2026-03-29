@@ -1,6 +1,6 @@
 ## General Rules
 - Survive as many turns as possible while managing energy, hunger, and thirst.
-- You start with energy=80 (max 100), hunger=20 (max 100), thirst=20 (max 100).
+- You start with energy=120 (max 140), hunger=20 (max 100), thirst=20 (max 100).
 - If your energy reaches 0, you die.
 - Gather resources when available and consume food/water when useful.
 - Invalid actions are penalized and still consume the turn.

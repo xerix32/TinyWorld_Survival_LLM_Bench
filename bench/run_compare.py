@@ -2817,6 +2817,7 @@ def _execute_job(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     return run_match_once(
         seed=job.seed,
@@ -2833,6 +2834,7 @@ def _execute_job(
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         moral_mode=moral_mode,
+        pvp_continue=pvp_continue,
     )
 
 
@@ -2853,6 +2855,7 @@ def _execute_adaptive_initial(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     pair_key = f"{job.model_profile}__seed{job.seed}"
     initial_log = run_match_once(
@@ -2877,6 +2880,7 @@ def _execute_adaptive_initial(
         attempt_kind="initial",
         adaptive_pair_key=pair_key,
         moral_mode=moral_mode,
+        pvp_continue=pvp_continue,
     )
     return {"initial_run_log": initial_log}
 
@@ -2899,6 +2903,7 @@ def _execute_adaptive_followup(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     pair_key = f"{job.model_profile}__seed{job.seed}"
     initial_score_reference = _safe_int(
@@ -2957,6 +2962,7 @@ def _execute_adaptive_followup(
             attempt_kind="control_rerun",
             adaptive_pair_key=pair_key,
             moral_mode=moral_mode,
+            pvp_continue=pvp_continue,
         )
 
     _emit_adaptive_stage("(computing memory: seed reflection)")
@@ -3051,6 +3057,7 @@ def _execute_adaptive_followup(
         attempt_kind="adaptive_rerun",
         adaptive_pair_key=pair_key,
         moral_mode=moral_mode,
+        pvp_continue=pvp_continue,
     )
 
     initial_summary = dict(initial_log.get("run_summary", {}))
@@ -3235,6 +3242,7 @@ def _execute_duel_initial(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     canonical_log = run_duel_once(
         seed=job.seed,
@@ -3260,6 +3268,7 @@ def _execute_duel_initial(
         attempt_kind="initial",
         adaptive_pair_key=f"{model_a_profile}::{model_b_profile}::seed{job.seed}",
         memory_by_model={},
+        pvp_continue=pvp_continue,
     )
     run_logs_by_model = _derive_duel_view_logs(
         canonical_run_log=canonical_log,
@@ -3302,6 +3311,7 @@ def _execute_duel_adaptive_followup(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     pair_base = f"{model_a_profile}::{model_b_profile}::seed{job.seed}"
     initial_score_reference = _safe_int(
@@ -3361,6 +3371,7 @@ def _execute_duel_adaptive_followup(
             attempt_kind="control_rerun",
             adaptive_pair_key=pair_base,
             memory_by_model={},
+            pvp_continue=pvp_continue,
         )
 
     control_logs_by_model_raw = _derive_duel_view_logs(
@@ -3492,6 +3503,7 @@ def _execute_duel_adaptive_followup(
                 "current_seed_lessons": list(pair_lessons_by_model.get(model_b_profile, [])),
             },
         },
+        pvp_continue=pvp_continue,
     )
     adaptive_logs_by_model_raw = _derive_duel_view_logs(
         canonical_run_log=adaptive_duel_log,
@@ -3712,6 +3724,7 @@ def _execute_adaptive_pair(
     progress_callback: Any = None,
     fix_thinking: bool = False,
     moral_mode: bool = False,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     initial_result = _execute_adaptive_initial(
         job=job,
@@ -3729,6 +3742,7 @@ def _execute_adaptive_pair(
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         moral_mode=moral_mode,
+        pvp_continue=pvp_continue,
     )
     followup_result = _execute_adaptive_followup(
         job=job,
@@ -3747,6 +3761,7 @@ def _execute_adaptive_pair(
         progress_callback=progress_callback,
         fix_thinking=fix_thinking,
         moral_mode=moral_mode,
+        pvp_continue=pvp_continue,
     )
     return {
         "initial_run_log": dict(initial_result["initial_run_log"]),
@@ -4074,6 +4089,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable optional moral framing in the system prompt (default: off).",
     )
+    parser.add_argument(
+        "--pvp-continue",
+        action="store_true",
+        help="In PvP scenarios, continue until max turns even if opponent is already defeated (default: off).",
+    )
     parser.add_argument("--model-workers", type=int, default=1, help="Number of model pipelines running in parallel.")
     parser.add_argument("--seed-workers-per-model", type=int, default=1, help="Concurrent seeds per active model.")
     parser.add_argument(
@@ -4171,6 +4191,7 @@ def main() -> None:
     effective_history_window = args.history_window
     effective_fix_thinking = bool(args.fix_thinking)
     effective_moral_mode = bool(args.moral)
+    effective_pvp_continue = bool(args.pvp_continue)
     adaptive_enabled = bool(args.adaptive_memory)
     effective_seed_workers_per_model = int(args.seed_workers_per_model)
     resume_time_human: str | None = None
@@ -4188,6 +4209,7 @@ def main() -> None:
         "history_window": effective_history_window,
         "fix_thinking": effective_fix_thinking,
         "moral_mode": effective_moral_mode,
+        "pvp_continue": effective_pvp_continue,
         "adaptive_memory": adaptive_enabled,
         "runs_root": str(runs_root),
         "run_id": compare_id,
@@ -4369,11 +4391,13 @@ def main() -> None:
             )
             effective_fix_thinking = bool(resume_context.get("fix_thinking", effective_fix_thinking))
             effective_moral_mode = bool(resume_context.get("moral_mode", effective_moral_mode))
+            effective_pvp_continue = bool(resume_context.get("pvp_continue", effective_pvp_continue))
             adaptive_enabled = bool(resume_context.get("adaptive_memory", adaptive_enabled))
             effective_seed_workers_per_model = int(resume_context.get("seed_workers_per_model", effective_seed_workers_per_model))
             resume_context["history_window"] = effective_history_window
             resume_context["fix_thinking"] = effective_fix_thinking
             resume_context["moral_mode"] = effective_moral_mode
+            resume_context["pvp_continue"] = effective_pvp_continue
             resume_context["adaptive_memory"] = adaptive_enabled
             resume_context["seed_workers_per_model"] = effective_seed_workers_per_model
             benchmark_cfg = load_yaml_file(effective_benchmark_config_path)
@@ -5147,6 +5171,7 @@ def main() -> None:
                                     progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                     fix_thinking=effective_fix_thinking,
                                     moral_mode=effective_moral_mode,
+                                    pvp_continue=effective_pvp_continue,
                                 )
                                 for profile in (duel_model_a_profile, duel_model_b_profile):
                                     profile_job = jobs_by_key[(profile, int(job.seed))]
@@ -5208,6 +5233,7 @@ def main() -> None:
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                             )
                             for profile in (duel_model_a_profile, duel_model_b_profile):
                                 profile_job = jobs_by_key[(profile, int(job.seed))]
@@ -5251,6 +5277,7 @@ def main() -> None:
                                     progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                     fix_thinking=effective_fix_thinking,
                                     moral_mode=effective_moral_mode,
+                                    pvp_continue=effective_pvp_continue,
                                     opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                                 )
                                 run_log = dict(initial_result["initial_run_log"])
@@ -5273,6 +5300,7 @@ def main() -> None:
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                                 opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                             _record_adaptive_result(
@@ -5300,6 +5328,7 @@ def main() -> None:
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                             )
                             for profile in (duel_model_a_profile, duel_model_b_profile):
                                 profile_job = jobs_by_key[(profile, int(job.seed))]
@@ -5330,6 +5359,7 @@ def main() -> None:
                                 progress_callback=_build_progress_callback(completed_units_before=completed_units),
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                                 opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                             summary = _record_initial_result(job, run_log)
@@ -5854,6 +5884,7 @@ def main() -> None:
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                                 opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                         else:
@@ -5871,6 +5902,7 @@ def main() -> None:
                                 progress_callback=callback,
                                 fix_thinking=effective_fix_thinking,
                                 moral_mode=effective_moral_mode,
+                                pvp_continue=effective_pvp_continue,
                                 opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                             )
                         future_to_spec[future] = AdaptiveFutureSpec(
@@ -5920,6 +5952,7 @@ def main() -> None:
                         ),
                         fix_thinking=effective_fix_thinking,
                         moral_mode=effective_moral_mode,
+                        pvp_continue=effective_pvp_continue,
                         opponent_model_profile=pvp_opponent_profile_map.get(job.model_profile),
                     )
                     future_to_spec[future] = AdaptiveFutureSpec(

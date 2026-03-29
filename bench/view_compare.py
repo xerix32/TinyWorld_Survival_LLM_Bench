@@ -5,8 +5,13 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import socket
+import subprocess
 from pathlib import Path
+import sys
+import time
 from typing import Any
+from urllib.parse import quote
 import webbrowser
 
 from bench.cli_ui import colorize, use_color
@@ -17,6 +22,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     safe_title = html.escape(page_title)
     payload_json = json.dumps(payload, ensure_ascii=False)
     payload_json = payload_json.replace("</", "<\\/")
+    arcade_template_path = Path(__file__).resolve().parent.parent / "showcase" / "tinyworld_arcade_engine_template.html"
+    arcade_template_html = ""
+    if arcade_template_path.exists():
+        arcade_template_html = arcade_template_path.read_text(encoding="utf-8")
+    arcade_template_json = json.dumps(arcade_template_html, ensure_ascii=False).replace("</", "<\\/")
 
     html_head = """<!doctype html>
 <html lang=\"en\">
@@ -862,6 +872,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       color: var(--accent);
     }
 
+    button:disabled,
+    button:disabled:hover {
+      border-color: #2b2c31;
+      color: #5b5d66;
+      background: #14151a;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
     /* ── RUN NAV ── */
     .run-nav {
       display: flex;
@@ -1615,6 +1634,149 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       color: var(--accent);
     }
 
+    /* ── ARCADE TAB ── */
+    .arcade-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .arcade-sidebar {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-raised);
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+      position: sticky;
+      top: 12px;
+    }
+
+    .arcade-shell {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: #05070f;
+      min-height: 620px;
+    }
+
+    .arcade-frame {
+      width: 100%;
+      height: 76vh;
+      min-height: 620px;
+      border: 0;
+      display: block;
+      background: #05070f;
+    }
+
+    .arcade-meta {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      margin: 0;
+      letter-spacing: 0.02em;
+      display: none;
+    }
+
+    .arcade-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      margin: 0;
+    }
+
+    .arcade-controls label {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+      min-width: 0;
+    }
+
+    .arcade-controls select {
+      min-width: 0;
+      width: 100%;
+      font-size: 0.72rem;
+      padding: 6px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arcade-nav-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .arcade-note {
+      margin-top: 0;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      letter-spacing: 0.02em;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .arcade-runid {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.02em;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      padding: 6px 8px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .arcade-attempt {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 20px;
+    }
+
+    .arcade-attempt-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+    }
+
+    .arcade-attempt-badge {
+      display: inline;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .arcade-attempt-badge.kind-initial {
+      color: var(--green);
+    }
+
+    .arcade-attempt-badge.kind-rerun {
+      color: var(--orange);
+    }
+
+    .arcade-attempt-badge.kind-rerun-mem {
+      color: var(--accent);
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 1100px) {
       .explorer-layout { grid-template-columns: 1fr; }
@@ -1622,6 +1784,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       .summary-cards { grid-template-columns: repeat(4, 1fr); }
       .filter-row { grid-template-columns: 1fr; }
       .sidebar { max-height: none; }
+      .arcade-layout { grid-template-columns: 1fr; }
+      .arcade-sidebar { position: static; }
+      .arcade-shell { min-height: 460px; }
+      .arcade-frame { min-height: 460px; height: 68vh; }
     }
   </style>
 </head>
@@ -1635,6 +1801,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     <nav class=\"tab-bar\">
       <button class=\"tab-btn active\" data-tab=\"leaderboard\" type=\"button\">Leaderboard</button>
       <button class=\"tab-btn\" data-tab=\"explorer\" type=\"button\">Run Explorer</button>
+      <button class=\"tab-btn\" data-tab=\"arcade\" type=\"button\">Arcade Render</button>
     </nav>
 
     <!-- TAB 1: LEADERBOARD -->
@@ -1869,6 +2036,39 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       </div>
     </div>
 
+    <!-- TAB 3: ARCADE RENDER -->
+    <div class=\"tab-panel\" id=\"tab-arcade\">
+      <section class=\"panel\">
+        <div class=\"arcade-layout\">
+          <aside class=\"arcade-sidebar\">
+            <div class=\"arcade-meta\" id=\"arcadeMeta\"></div>
+            <div class=\"arcade-controls\">
+              <label>Seed
+                <select id=\"arcadeSeedSelect\"></select>
+              </label>
+              <label>Run
+                <select id=\"arcadeRunSelect\"></select>
+              </label>
+              <div class=\"arcade-nav-row\">
+                <button type=\"button\" id=\"arcadePrevBtn\">&#9664; Prev</button>
+                <button type=\"button\" id=\"arcadePlayBtn\">Play</button>
+                <button type=\"button\" id=\"arcadeNextBtn\">Next &#9654;</button>
+              </div>
+              <div class=\"arcade-attempt\">
+                <div class=\"arcade-attempt-label\">Run type:</div>
+                <div class=\"arcade-attempt-badge\" id=\"arcadeAttemptBadge\">n/a</div>
+              </div>
+            </div>
+            <div class=\"arcade-runid\" id=\"arcadeRunId\">run_id: n/a</div>
+            <div class=\"arcade-note\" id=\"arcadeNote\">Source run: n/a.</div>
+          </aside>
+          <div class=\"arcade-shell\">
+            <iframe id=\"arcadeFrame\" class=\"arcade-frame\" title=\"TinyWorld Arcade Renderer\" loading=\"lazy\"></iframe>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <section class=\"tech-accordion\">
       <button class=\"tech-toggle\" id=\"techToggle\" type=\"button\">
         // technical details <span id=\"techArrow\">&#9654;</span>
@@ -1887,10 +2087,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 """
 
     html_data = '<script id="compareData" type="application/json">' + payload_json + "</script>"
+    html_arcade_template = '<script id="arcadeEngineTemplate" type="application/json">' + arcade_template_json + "</script>"
 
     html_tail = """
   <script>
     const DATA = JSON.parse(document.getElementById('compareData').textContent || '{}');
+    const ARCADE_ENGINE_TEMPLATE = JSON.parse(document.getElementById('arcadeEngineTemplate').textContent || '""');
 
     const tileMeta = {
       empty: { emoji: '\\u25AB', label: '' },
@@ -1941,6 +2143,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const rawOutput = document.getElementById('rawOutput');
     const scoreEvents = document.getElementById('scoreEvents');
     const timelineBody = document.getElementById('timelineBody');
+    const arcadeFrame = document.getElementById('arcadeFrame');
+    const arcadeMeta = document.getElementById('arcadeMeta');
+    const arcadeNote = document.getElementById('arcadeNote');
+    const arcadePrevBtn = document.getElementById('arcadePrevBtn');
+    const arcadePlayBtn = document.getElementById('arcadePlayBtn');
+    const arcadeNextBtn = document.getElementById('arcadeNextBtn');
+    const arcadeSeedSelect = document.getElementById('arcadeSeedSelect');
+    const arcadeRunSelect = document.getElementById('arcadeRunSelect');
+    const arcadeAttemptBadge = document.getElementById('arcadeAttemptBadge');
+    const arcadeRunId = document.getElementById('arcadeRunId');
 
     // 16 maximally distinct hues – no two adjacent colours should be confusable
     const MODEL_COLORS = [
@@ -1977,6 +2189,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         .map(run => [String(run.run_id), run])
     );
     const meta = DATA.meta || {};
+    const dashboardRunId = String(meta.run_id || meta.compare_id || meta.session_id || 'n/a');
     const duelView = (DATA.duel_view && typeof DATA.duel_view === 'object') ? DATA.duel_view : null;
     const canonicalDuels = Array.isArray(DATA.duels) ? DATA.duels : [];
     const duelEntries = canonicalDuels.length > 0
@@ -2041,6 +2254,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     const duelFocusByKey = {};
     let currentTurnIndex = 0;
     let autoPlayTimer = null;
+    let arcadeCacheKey = '';
+    const arcadeDataCache = new Map();
     let tooltipEl = null;
     let tooltipTarget = null;
 
@@ -2052,6 +2267,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         btn.classList.add('active');
         const panel = document.getElementById('tab-' + btn.getAttribute('data-tab'));
         if (panel) panel.classList.add('active');
+        if (btn.getAttribute('data-tab') === 'arcade') {
+          renderArcade(true);
+        }
       });
     });
 
@@ -2212,7 +2430,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     function shortProfile(value) {
-      const text = String(value || 'model');
+      const text = String(value || 'model')
+        .trim()
+        .replace(/^vercel_/, '')
+        .replace(/^local_/, '')
+        .replace(/^groq_/, '');
       return text.length <= 18 ? text : `${text.slice(0, 18)}...`;
     }
 
@@ -2323,6 +2545,20 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (kind === 'control_rerun') return 'rerun';
       if (kind === 'adaptive_rerun') return 'rerun+mem';
       return String(kind || 'run').replaceAll('_', ' ');
+    }
+
+    function attemptBadgeClass(kind) {
+      if (kind === 'initial') return 'kind-initial';
+      if (kind === 'control_rerun') return 'kind-rerun';
+      if (kind === 'adaptive_rerun') return 'kind-rerun-mem';
+      return '';
+    }
+
+    function setArcadeAttemptBadge(kind) {
+      if (!arcadeAttemptBadge) return;
+      const cls = attemptBadgeClass(kind);
+      arcadeAttemptBadge.className = `arcade-attempt-badge${cls ? ` ${cls}` : ''}`;
+      arcadeAttemptBadge.textContent = attemptLabel(kind || 'run');
     }
 
     function getRunStatus(summary) {
@@ -3500,6 +3736,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (!seedPairs.length) {
           runList.innerHTML = '<div class="empty-state">No duels match filters.</div>';
           runCount.textContent = '0';
+          syncArcadeControls();
           renderReplayEmpty();
           return;
         }
@@ -3559,6 +3796,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
         const active = runList.querySelector('.seed-pair.active');
         ensureChildVisible(runList, active);
+        syncArcadeControls();
         return;
       }
 
@@ -3567,6 +3805,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (!seedPairs.length) {
         runList.innerHTML = '<div class="empty-state">No runs match filters.</div>';
         runCount.textContent = '0';
+        syncArcadeControls();
         renderReplayEmpty();
         return;
       }
@@ -3635,6 +3874,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       const active = runList.querySelector('.seed-pair.active');
       ensureChildVisible(runList, active);
+      syncArcadeControls();
     }
 
     function selectedDuel() {
@@ -3710,6 +3950,486 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     function selectedReplayRun() {
       const context = selectedReplayContext();
       return context?.run || null;
+    }
+
+    function arcadeEntriesForFilters() {
+      if (duelMode) {
+        return filteredDuelIndexes.map(idx => {
+          const duel = duelEntries[idx] || {};
+          const modelA = String(duel.model_a || '');
+          const modelB = String(duel.model_b || '');
+          return {
+            idx,
+            seed: String(duel.seed ?? ''),
+            attempt: getDuelAttemptKind(duel),
+            runLabel: `${shortProfile(modelA)} vs ${shortProfile(modelB)}`,
+          };
+        });
+      }
+      return filteredRunIndexes.map(idx => {
+        const run = runs[idx] || {};
+        return {
+          idx,
+          seed: String(run.seed ?? ''),
+          attempt: getRunAttemptKind(run),
+          runLabel: shortProfile(run.model_profile),
+        };
+      });
+    }
+
+    function syncArcadeControls() {
+      if (!arcadeSeedSelect || !arcadeRunSelect || !arcadePrevBtn || !arcadeNextBtn) return;
+
+      const entries = arcadeEntriesForFilters();
+      if (!entries.length) {
+        arcadeSeedSelect.innerHTML = '<option value=\"\">n/a</option>';
+        arcadeRunSelect.innerHTML = '<option value=\"\">n/a</option>';
+        arcadeSeedSelect.disabled = true;
+        arcadeRunSelect.disabled = true;
+        arcadePrevBtn.disabled = true;
+        if (arcadePlayBtn) arcadePlayBtn.disabled = true;
+        arcadeNextBtn.disabled = true;
+        setArcadeAttemptBadge('run');
+        return;
+      }
+
+      const currentIdx = duelMode ? selectedDuelIndex : selectedRunIndex;
+      const currentEntry = entries.find(e => e.idx === currentIdx) || entries[0];
+      const seedValues = Array.from(new Set(entries.map(e => e.seed))).sort((a, b) => {
+        const na = Number(a);
+        const nb = Number(b);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+        return a.localeCompare(b);
+      });
+
+      const selectedSeed = String(currentEntry.seed || seedValues[0] || '');
+      arcadeSeedSelect.innerHTML = seedValues
+        .map(seed => `<option value="${escapeHtml(seed)}"${seed === selectedSeed ? ' selected' : ''}>Seed ${escapeHtml(seed)}</option>`)
+        .join('');
+
+      const seedEntries = entries.filter(entry => entry.seed === selectedSeed);
+      const selectedRunIdx = seedEntries.some(entry => entry.idx === currentEntry.idx)
+        ? currentEntry.idx
+        : (seedEntries[0]?.idx ?? entries[0].idx);
+      const selectedRunEntry = seedEntries.find(entry => entry.idx === selectedRunIdx) || seedEntries[0] || entries[0];
+      arcadeRunSelect.innerHTML = seedEntries.map(entry => {
+        const selected = entry.idx === selectedRunIdx ? ' selected' : '';
+        const label = `${attemptLabel(entry.attempt)} - ${entry.runLabel}`;
+        return `<option value="${entry.idx}"${selected}>${escapeHtml(label)}</option>`;
+      }).join('');
+
+      arcadeSeedSelect.disabled = false;
+      arcadeRunSelect.disabled = false;
+      const seedPos = seedEntries.findIndex(entry => entry.idx === selectedRunIdx);
+      arcadePrevBtn.disabled = seedPos <= 0;
+      if (arcadePlayBtn) arcadePlayBtn.disabled = false;
+      arcadeNextBtn.disabled = seedPos < 0 || seedPos >= seedEntries.length - 1;
+      setArcadeAttemptBadge(selectedRunEntry?.attempt || 'run');
+    }
+
+    function normalizeArcadePosition(value) {
+      if (!value) return null;
+      if (Array.isArray(value) && value.length >= 2) {
+        const x = numberOr(value[0], Number.NaN);
+        const y = numberOr(value[1], Number.NaN);
+        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+        return null;
+      }
+      const x = numberOr(value.x, Number.NaN);
+      const y = numberOr(value.y, Number.NaN);
+      if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+      return null;
+    }
+
+    function tileCodeFromName(tileName) {
+      const tile = String(tileName || 'empty').toLowerCase();
+      if (tile === 'food') return 1;
+      if (tile === 'tree') return 2;
+      if (tile === 'water') return 3;
+      if (tile === 'rock') return 4;
+      return 0;
+    }
+
+    function buildArcadeMap(frames, fallbackWidth = 6, fallbackHeight = 6) {
+      const first = Array.isArray(frames) && frames.length ? frames[0] : null;
+      const snapshot = Array.isArray(first?.map_snapshot) ? first.map_snapshot : null;
+      if (!snapshot || !snapshot.length) {
+        const w = Math.max(2, Number(fallbackWidth || 6));
+        const h = Math.max(2, Number(fallbackHeight || 6));
+        return Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+      }
+      return snapshot.map(row => Array.isArray(row) ? row.map(tileCodeFromName) : []);
+    }
+
+    function derivePickup(actionRequested, actionDelta) {
+      const req = String(actionRequested || '').trim().toLowerCase();
+      if (!req) return null;
+      if (req.startsWith('drink')) return 'drink';
+      if (req.startsWith('eat')) return 'eat';
+      if (!req.startsWith('gather')) return null;
+      const invDelta = (actionDelta && typeof actionDelta === 'object' && actionDelta.inventory_delta && typeof actionDelta.inventory_delta === 'object')
+        ? actionDelta.inventory_delta
+        : {};
+      const pickupOrder = ['meat', 'food', 'water', 'wood', 'stone'];
+      for (const key of pickupOrder) {
+        const value = Number(invDelta[key] || 0);
+        if (Number.isFinite(value) && value > 0) return key;
+      }
+      return null;
+    }
+
+    function compactActionLabel(raw) {
+      const action = String(raw || '').trim().toLowerCase();
+      if (!action) return 'wait';
+      if (action.startsWith('move ')) return action;
+      if (action.startsWith('gather')) return 'gather';
+      if (action.startsWith('eat')) return 'eat';
+      if (action.startsWith('drink')) return 'drink';
+      if (action.startsWith('attack')) return 'attack';
+      if (action.startsWith('rest')) return 'rest';
+      if (action.startsWith('wait')) return 'wait';
+      return action;
+    }
+
+    function buildActionSummary(turns, sideKey, label) {
+      const counts = {};
+      for (const turn of turns) {
+        const raw = String(turn?.[sideKey] || '').trim().toLowerCase();
+        if (!raw) continue;
+        const kind = raw.split(' ')[0];
+        counts[kind] = (counts[kind] || 0) + 1;
+      }
+      const ordered = ['move', 'gather', 'eat', 'drink', 'attack', 'rest', 'wait', 'dead'];
+      const chunks = ordered
+        .filter(k => (counts[k] || 0) > 0)
+        .map(k => `${k}×${counts[k]}`);
+      return `${label}: ${chunks.join('  ') || 'n/a'}`;
+    }
+
+    function arcadeContextKey(context) {
+      if (!context || !context.run) return '';
+      const runId = String(context.run.run_id || '');
+      const duelKey = context.mode === 'duel'
+        ? String(context.duel?.duel_key || context.duel?.pair_key || '')
+        : '';
+      return `${context.mode || 'run'}::${runId}::${duelKey}`;
+    }
+
+    function buildArcadeRunData(context) {
+      const run = context?.run || null;
+      if (!run) return null;
+      const frames = Array.isArray(run?.replay?.frames) ? run.replay.frames : [];
+      if (!frames.length) return null;
+
+      const world = run?.replay?.world || {};
+      const width = Math.max(2, numberOr(world.width, 6));
+      const height = Math.max(2, numberOr(world.height, 6));
+      const map = buildArcadeMap(frames, width, height);
+
+      const sourceProfile = String(run.model_profile || context?.modelA || 'agent_a');
+      const firstOpp = Array.isArray(frames[0]?.opponent_steps) && frames[0].opponent_steps.length
+        ? frames[0].opponent_steps[0]
+        : null;
+      const opponentProfile = String(
+        firstOpp?.model_profile
+        || run?.summary?.opponent_model_profile
+        || context?.modelB
+        || 'opponent'
+      );
+
+      const initialNpcsRaw = Array.isArray(world.initial_npcs) ? world.initial_npcs : [];
+      const npcDefs = initialNpcsRaw
+        .map(raw => normalizeNpcState(raw))
+        .filter(Boolean)
+        .map(npc => ({
+          id: String(npc.npc_id || ''),
+          col: Number(npc.x),
+          row: Number(npc.y),
+          alive: npc.alive !== false,
+          hp: numberOr(npc.hp, 6),
+          maxHp: 6,
+          hostile: Boolean(npc.hostile),
+        }))
+        .filter(npc => Number.isFinite(npc.col) && Number.isFinite(npc.row));
+
+      const foodTiles = [];
+      const waterTiles = [];
+      for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < (map[y] || []).length; x++) {
+          if (map[y][x] === 1) foodTiles.push([x, y]);
+          if (map[y][x] === 3) waterTiles.push([x, y]);
+        }
+      }
+
+      const summary = run.summary || {};
+      const statMax = Math.max(
+        100,
+        numberOr(run?.replay?.protocol?.rules?.energy_max, 100),
+        numberOr(run?.replay?.protocol?.rules?.hunger_max, 100),
+        numberOr(run?.replay?.protocol?.rules?.thirst_max, 100),
+      );
+
+      let prevPrimary = {
+        pos: normalizeArcadePosition(frames[0]?.agent_position_before) || normalizeArcadePosition(frames[0]?.agent_position_after) || { x: 0, y: 0 },
+        score: 0,
+        energy: numberOr(frames[0]?.observation?.energy, statMax),
+        hunger: numberOr(frames[0]?.observation?.hunger, 0),
+        thirst: numberOr(frames[0]?.observation?.thirst, 0),
+        alive: frames[0]?.observation?.alive !== false,
+      };
+      const firstOppObs = firstOpp?.observation || {};
+      let prevOpponent = {
+        pos: normalizeArcadePosition(firstOpp?.position_before) || normalizeArcadePosition(firstOpp?.position_after) || { ...prevPrimary.pos },
+        score: 0,
+        energy: numberOr(firstOppObs?.energy, statMax),
+        hunger: numberOr(firstOppObs?.hunger, 0),
+        thirst: numberOr(firstOppObs?.thirst, 0),
+        alive: firstOppObs?.alive !== false,
+      };
+
+      const turns = [];
+      let clashTurns = 0;
+      for (const frame of frames) {
+        const opp = Array.isArray(frame?.opponent_steps) && frame.opponent_steps.length
+          ? frame.opponent_steps[0]
+          : null;
+        const actionA = compactActionLabel(frame?.action_result?.requested || frame?.action_result?.applied || '-');
+        const actionB = compactActionLabel(opp?.parsed_action || opp?.action_result?.requested || opp?.action_result?.applied || 'wait');
+        if (actionA === 'attack' || actionB === 'attack') clashTurns = Math.max(clashTurns, numberOr(frame?.turn, 0));
+
+        const actionDeltaA = frame?.world_result_delta?.action_delta || {};
+        const actionDeltaB = opp?.world_result_delta?.action_delta || {};
+        const survA = frame?.world_result_delta?.survival_delta || {};
+        const survB = opp?.survival_delta || opp?.world_result_delta?.survival_delta || {};
+
+        const posA = normalizeArcadePosition(frame?.agent_position_after)
+          || normalizeArcadePosition(actionDeltaA?.position_after)
+          || normalizeArcadePosition(frame?.agent_position_before)
+          || normalizeArcadePosition(actionDeltaA?.position_before)
+          || prevPrimary.pos;
+        const posB = normalizeArcadePosition(opp?.position_after)
+          || normalizeArcadePosition(actionDeltaB?.position_after)
+          || normalizeArcadePosition(opp?.position_before)
+          || normalizeArcadePosition(actionDeltaB?.position_before)
+          || prevOpponent.pos;
+
+        const scoreA = numberOr(frame?.cumulative_score, prevPrimary.score);
+        const scoreB = numberOr(opp?.cumulative_score, prevOpponent.score);
+
+        const wasAliveA = prevPrimary.alive;
+        const wasAliveB = prevOpponent.alive;
+        const stateA = {
+          energy: numberOr(survA?.energy_after, prevPrimary.energy),
+          hunger: numberOr(survA?.hunger_after, prevPrimary.hunger),
+          thirst: numberOr(survA?.thirst_after, prevPrimary.thirst),
+          alive: survA?.alive_after === undefined ? prevPrimary.alive : Boolean(survA?.alive_after),
+        };
+        const stateB = {
+          energy: numberOr(survB?.energy_after, prevOpponent.energy),
+          hunger: numberOr(survB?.hunger_after, prevOpponent.hunger),
+          thirst: numberOr(survB?.thirst_after, prevOpponent.thirst),
+          alive: (opp?.alive_after === undefined && survB?.alive_after === undefined)
+            ? prevOpponent.alive
+            : Boolean(opp?.alive_after ?? survB?.alive_after),
+        };
+
+        const pickupA = derivePickup(actionA, actionDeltaA);
+        const pickupB = derivePickup(actionB, actionDeltaB);
+        const msgA = String(frame?.action_result?.message || '').trim();
+        const msgB = String(opp?.action_result?.message || '').trim();
+
+        const npcEvents = [];
+        if (actionDeltaA?.npc_id && (actionDeltaA?.npc_hp_after !== undefined || actionDeltaA?.npc_killed !== undefined)) {
+          npcEvents.push({
+            id: String(actionDeltaA.npc_id),
+            actor: 'g',
+            type: actionDeltaA.npc_killed ? 'die' : 'hit',
+            hp: numberOr(actionDeltaA.npc_hp_after, null),
+          });
+        }
+        if (actionDeltaB?.npc_id && (actionDeltaB?.npc_hp_after !== undefined || actionDeltaB?.npc_killed !== undefined)) {
+          npcEvents.push({
+            id: String(actionDeltaB.npc_id),
+            actor: 'o',
+            type: actionDeltaB.npc_killed ? 'die' : 'hit',
+            hp: numberOr(actionDeltaB.npc_hp_after, null),
+          });
+        }
+
+        const turnNum = numberOr(frame?.turn, turns.length + 1);
+        let visualActionA = actionA;
+        let visualActionB = actionB;
+        const justDiedA = Boolean(wasAliveA && !stateA.alive);
+        const justDiedB = Boolean(wasAliveB && !stateB.alive);
+        if (!stateA.alive || justDiedA) visualActionA = 'DEAD';
+        if (!stateB.alive || justDiedB) visualActionB = 'DEAD';
+        if (justDiedB && stateA.alive) visualActionA = 'WIN';
+        else if (justDiedA && stateB.alive) visualActionB = 'WIN';
+
+        turns.push({
+          t: turnNum,
+          gPos: [numberOr(posA.x, 0), numberOr(posA.y, 0)],
+          oPos: [numberOr(posB.x, 0), numberOr(posB.y, 0)],
+          gAct: visualActionA,
+          oAct: visualActionB,
+          gSc: scoreA,
+          oSc: scoreB,
+          gE: stateA.energy,
+          gH: stateA.hunger,
+          gT: stateA.thirst,
+          gAlive: stateA.alive,
+          oE: stateB.energy,
+          oH: stateB.hunger,
+          oT: stateB.thirst,
+          oAlive: stateB.alive,
+          gPickup: pickupA,
+          oPickup: pickupB,
+          logG: `${displayName(sourceProfile)}: ${actionA}${msgA ? ` (${msgA})` : ''}`,
+          logO: `${displayName(opponentProfile)}: ${actionB}${msgB ? ` (${msgB})` : ''}`,
+          npcEvents,
+        });
+
+        prevPrimary = { pos: posA, score: scoreA, ...stateA };
+        prevOpponent = { pos: posB, score: scoreB, ...stateB };
+      }
+
+      const finalA = {
+        score: numberOr(summary.final_score, prevPrimary.score),
+        alive: summary.alive === undefined ? prevPrimary.alive : Boolean(summary.alive),
+      };
+      const finalB = {
+        score: numberOr(summary.opponent_final_score, prevOpponent.score),
+        alive: summary.opponent_alive === undefined ? prevOpponent.alive : Boolean(summary.opponent_alive),
+      };
+
+      let winnerSide = 'c';
+      if (finalA.alive && !finalB.alive) winnerSide = 'c';
+      else if (!finalA.alive && finalB.alive) winnerSide = 'o';
+      else if (finalB.score > finalA.score) winnerSide = 'o';
+
+      const winnerName = winnerSide === 'c' ? displayName(sourceProfile) : displayName(opponentProfile);
+      const maxTurns = Math.max(numberOr(summary.max_turns, turns.length), turns.length);
+      const endReasonA = String(summary.end_reason_human || summary.end_reason || '').trim();
+      const endReasonB = String(summary.opponent_death_cause_human || summary.opponent_death_cause || '').trim();
+      const outcomeText = endReasonA
+        ? `${endReasonA}${endReasonB ? ` | Opponent: ${endReasonB}` : ''}`
+        : (winnerSide === 'c' ? 'Focus model wins' : 'Opponent wins');
+
+      const scoreMax = Math.max(
+        20,
+        finalA.score,
+        finalB.score,
+        ...turns.map(t => Math.max(numberOr(t.gSc, 0), numberOr(t.oSc, 0))),
+      ) + 5;
+
+      const actionSummary = [
+        buildActionSummary(turns, 'gAct', displayName(sourceProfile)),
+        buildActionSummary(turns, 'oAct', displayName(opponentProfile)),
+      ].join('\\n');
+
+      return {
+        runId: String(run.run_id || ''),
+        title: `TinyWorld Duel \u2014 ${String(run.run_id || '').slice(0, 16)}`,
+        subtitle: `${attemptLabel(getRunAttemptKind(run))} \u00b7 seed ${formatCount(run.seed, '?')} \u00b7 ${displayName(sourceProfile)} vs ${displayName(opponentProfile)}`,
+        p1: { name: displayName(sourceProfile), short: shortProfile(sourceProfile), side: 'c' },
+        p2: { name: displayName(opponentProfile), short: shortProfile(opponentProfile), side: 'o' },
+        map,
+        width,
+        height,
+        foodTiles,
+        waterPickupTiles: waterTiles,
+        npcs: npcDefs,
+        turns,
+        statMax,
+        scoreMax,
+        clashTurns: clashTurns || Math.max(1, Math.floor(turns.length * 0.4)),
+        winner: { name: winnerName, side: winnerSide },
+        outcomeText,
+        scoreboard: [
+          { label: `${displayName(sourceProfile)} score`, value: String(finalA.score), color: '#22d3ee' },
+          { label: `${displayName(opponentProfile)} score`, value: String(finalB.score), color: '#fb923c' },
+          { label: 'Turns played', value: `${turns.length}/${maxTurns}`, color: '#94a3b8' },
+          { label: 'End reason', value: endReasonA || String(summary.end_reason || 'n/a'), color: '#facc15' },
+          { label: 'Outcome', value: outcomeText, color: '#34d399' },
+        ],
+        actionSummary,
+      };
+    }
+    function buildArcadeSrcdoc(runData) {
+      const template = String(ARCADE_ENGINE_TEMPLATE || '');
+      if (!template || !template.includes('__RUN_DATA_JSON__')) {
+        return '<!doctype html><html><body style="margin:0;background:#06080f;color:#f87171;font-family:monospace;display:grid;place-items:center;height:100vh">Arcade engine template missing or invalid.</body></html>';
+      }
+
+      const npcDefs = Array.isArray(runData?.npcs)
+        ? runData.npcs.map((npc, idx) => ({
+            id: String(npc?.id || `NPC_${idx + 1}`),
+            col: numberOr(npc?.col, 0),
+            row: numberOr(npc?.row, 0),
+            alive: npc?.alive !== false,
+            hp: numberOr(npc?.hp, 6),
+            maxHp: Math.max(1, numberOr(npc?.maxHp, 6)),
+            hitFrames: numberOr(npc?.hitFrames, 0),
+          }))
+        : [];
+
+      const scoreboard = Array.isArray(runData?.scoreboard)
+        ? runData.scoreboard.map(row => ({
+            label: String(row?.label || '-'),
+            value: String(row?.value || '-'),
+            col: String(row?.col || row?.color || '#e6edf7'),
+          }))
+        : [];
+
+      const payload = {
+        ...runData,
+        npcs: npcDefs.map(n => ({ ...n })),
+        _npcDefs: npcDefs.map(n => ({ ...n })),
+        scoreboard,
+        actionSummary: String(runData?.actionSummary || '').replace(/\\n/g, '<br>'),
+      };
+
+      const runJson = JSON.stringify(payload).replace(/<\//g, '<\/');
+      return template.replace('__RUN_DATA_JSON__', runJson);
+    }
+
+    function renderArcade(force = false) {
+      if (!arcadeFrame) return;
+      const context = selectedReplayContext();
+      if (!context || !context.run) {
+        arcadeMeta.textContent = '';
+        arcadeNote.textContent = 'Source run: n/a.';
+        if (arcadeRunId) arcadeRunId.textContent = `run_id: ${dashboardRunId}`;
+        setArcadeAttemptBadge('run');
+        if (force) arcadeFrame.srcdoc = '<!doctype html><html><body style="margin:0;background:#06080f;color:#9ca3af;font-family:monospace;display:grid;place-items:center;height:100vh">No run selected.</body></html>';
+        arcadeCacheKey = '';
+        return;
+      }
+
+      const key = arcadeContextKey(context);
+      if (!force && key && key === arcadeCacheKey) return;
+
+      let runData = arcadeDataCache.get(key) || null;
+      if (!runData) {
+        runData = buildArcadeRunData(context);
+        if (runData) arcadeDataCache.set(key, runData);
+      }
+      if (!runData) {
+        arcadeMeta.textContent = '';
+        arcadeNote.textContent = 'Missing replay frames or incompatible payload.';
+        if (arcadeRunId) arcadeRunId.textContent = `run_id: ${dashboardRunId}`;
+        setArcadeAttemptBadge(getRunAttemptKind(context.run));
+        arcadeFrame.srcdoc = '<!doctype html><html><body style="margin:0;background:#06080f;color:#f87171;font-family:monospace;display:grid;place-items:center;height:100vh">Arcade renderer unavailable for this run.</body></html>';
+        arcadeCacheKey = key;
+        return;
+      }
+
+      arcadeMeta.textContent = '';
+      arcadeNote.textContent = `Source run: ${context.run.run_id} (${displayName(context.run.model_profile)})`;
+      if (arcadeRunId) arcadeRunId.textContent = `run_id: ${dashboardRunId}`;
+      setArcadeAttemptBadge(getRunAttemptKind(context.run));
+      arcadeFrame.srcdoc = buildArcadeSrcdoc(runData);
+      arcadeCacheKey = key;
     }
 
     function clampTurnIndex(index, frameCount) {
@@ -3842,6 +4562,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       };
       const moralA = summaryA?.kpi?.moral_aggression_index;
       const moralB = summaryB?.kpi?.moral_aggression_index;
+      const focusRivalKillsRaw = Number(focusSummary?.rival_kills);
+      const focusRivalKills = Number.isFinite(focusRivalKillsRaw) ? Math.max(0, Math.round(focusRivalKillsRaw)) : null;
+      const focusRivalKillsText = focusRivalKills == null ? '--/1' : `${formatCount(focusRivalKills, '0')}/1`;
 
       return [
         { label: 'Score', value: formatAB(summaryA.final_score, summaryB.final_score), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} final score` },
@@ -3851,7 +4574,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           tip: `${shortProfile(modelA)} and ${shortProfile(modelB)} turns survived`,
         },
         { label: 'Attack', value: formatAB(summaryA.attack_count, summaryB.attack_count), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} total attacks` },
-        { label: 'Rival Kills', value: formatAB(summaryA.rival_kills, summaryB.rival_kills), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} rival kills` },
+        { label: 'Rival Kills', value: focusRivalKillsText, tip: `Focus model rival kills / rivals in duel (${shortProfile(focusModel)})` },
         { label: 'NPC Kills', value: formatAB(summaryA.npc_kills, summaryB.npc_kills), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} NPC kills` },
         { label: 'Moral Aggression', value: formatABFloat(moralA, moralB, 1), tip: `${shortProfile(modelA)}/${shortProfile(modelB)} moral aggression index` },
         { label: 'Focus model', value: shortProfile(focusModel), tip: 'Current focus for details and state panels' },
@@ -4343,6 +5066,14 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       turnSlider.min = '1';
       turnSlider.max = '1';
       turnSlider.value = '1';
+      if (arcadeFrame) {
+        arcadeMeta.textContent = '';
+        arcadeNote.textContent = 'Source run: n/a.';
+        if (arcadeRunId) arcadeRunId.textContent = `run_id: ${dashboardRunId}`;
+        setArcadeAttemptBadge('run');
+        arcadeFrame.srcdoc = '<!doctype html><html><body style="margin:0;background:#06080f;color:#9ca3af;font-family:monospace;display:grid;place-items:center;height:100vh">Select Seed/Run to render the arcade view.</body></html>';
+        arcadeCacheKey = '';
+      }
     }
 
     function renderReplay() {
@@ -4369,6 +5100,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderMapSummaryCards(run, currentTurnIndex, context);
       renderTurnDetails(run, frame, context);
       renderRunList();
+      renderArcade();
     }
 
     function stopAutoPlay() {
@@ -4414,6 +5146,51 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       renderReplay();
     }
 
+    function moveArcadeRun(offset) {
+      const entries = arcadeEntriesForFilters();
+      if (!entries.length) return;
+
+      const currentIdx = duelMode ? selectedDuelIndex : selectedRunIndex;
+      const currentEntry = entries.find(e => e.idx === currentIdx) || entries[0];
+      const requestedSeed = String(arcadeSeedSelect?.value || '').trim();
+      const selectedSeed = requestedSeed || String(currentEntry.seed || '');
+      const seedEntries = entries.filter(entry => entry.seed === selectedSeed);
+      if (!seedEntries.length) return;
+
+      const seedPos = seedEntries.findIndex(entry => entry.idx === currentEntry.idx);
+      const base = seedPos >= 0 ? seedPos : 0;
+      const nextPos = Math.max(0, Math.min(seedEntries.length - 1, base + offset));
+      if (nextPos === base) {
+        syncArcadeControls();
+        return;
+      }
+
+      const targetIdx = seedEntries[nextPos]?.idx;
+      if (!Number.isFinite(targetIdx)) return;
+
+      if (duelMode) selectedDuelIndex = targetIdx;
+      else selectedRunIndex = targetIdx;
+      currentTurnIndex = 0;
+      stopAutoPlay();
+      renderRunList();
+      renderReplay();
+    }
+
+    function toggleArcadePlay() {
+      if (!arcadeFrame || !arcadeFrame.contentWindow) return;
+      try {
+        const win = arcadeFrame.contentWindow;
+        if (typeof win.togglePause === 'function') {
+          win.togglePause();
+          return;
+        }
+        const playBtn = win.document?.getElementById('btn-play');
+        if (playBtn) playBtn.click();
+      } catch (_) {
+        // no-op: iframe may not be ready yet
+      }
+    }
+
     function moveTurn(offset) {
       const run = selectedReplayRun();
       const frames = run?.replay?.frames || [];
@@ -4436,6 +5213,37 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
       prevRunBtn.addEventListener('click', () => moveRun(-1));
       nextRunBtn.addEventListener('click', () => moveRun(1));
+      if (arcadePrevBtn) arcadePrevBtn.addEventListener('click', () => moveArcadeRun(-1));
+      if (arcadePlayBtn) arcadePlayBtn.addEventListener('click', () => toggleArcadePlay());
+      if (arcadeNextBtn) arcadeNextBtn.addEventListener('click', () => moveArcadeRun(1));
+
+      if (arcadeSeedSelect) {
+        arcadeSeedSelect.addEventListener('change', () => {
+          const wantedSeed = String(arcadeSeedSelect.value || '');
+          const entries = arcadeEntriesForFilters().filter(entry => entry.seed === wantedSeed);
+          if (!entries.length) return;
+          const targetIdx = entries[0].idx;
+          if (duelMode) selectedDuelIndex = targetIdx;
+          else selectedRunIndex = targetIdx;
+          currentTurnIndex = 0;
+          stopAutoPlay();
+          renderRunList();
+          renderReplay();
+        });
+      }
+
+      if (arcadeRunSelect) {
+        arcadeRunSelect.addEventListener('change', () => {
+          const targetIdx = Number(arcadeRunSelect.value);
+          if (!Number.isFinite(targetIdx)) return;
+          if (duelMode) selectedDuelIndex = targetIdx;
+          else selectedRunIndex = targetIdx;
+          currentTurnIndex = 0;
+          stopAutoPlay();
+          renderRunList();
+          renderReplay();
+        });
+      }
 
       prevTurnBtn.addEventListener('click', () => moveTurn(-1));
       nextTurnBtn.addEventListener('click', () => moveTurn(1));
@@ -4522,7 +5330,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 </html>
 """
 
-    return html_head + html_data + html_tail
+    return html_head + html_data + html_arcade_template + html_tail
 
 
 def generate_compare_viewer(compare_path: Path, output_path: Path, title: str | None = None) -> Path:
@@ -4546,6 +5354,50 @@ def _short_path(path: Path) -> str:
         return str(resolved)
 
 
+def _is_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex((host, port)) == 0
+
+
+def _ensure_http_server(port: int, root_dir: Path) -> tuple[int | None, bool]:
+    if _is_port_open(port):
+        return None, False
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "http.server",
+            str(port),
+            "--bind",
+            "127.0.0.1",
+            "--directory",
+            str(root_dir),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    time.sleep(0.25)
+    if process.poll() is not None:
+        raise RuntimeError(f"failed to start local HTTP server on port {port}")
+    return process.pid, True
+
+
+def _build_http_viewer_url(viewer_path: Path, root_dir: Path, port: int) -> str:
+    resolved_viewer = viewer_path.resolve()
+    resolved_root = root_dir.resolve()
+
+    try:
+        relative_path = resolved_viewer.relative_to(resolved_root).as_posix()
+    except ValueError:
+        relative_path = resolved_viewer.name
+
+    encoded_path = quote(relative_path, safe="/")
+    return f"http://127.0.0.1:{port}/{encoded_path}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate HTML compare dashboard from TinyWorld compare JSON")
     parser.add_argument("--compare", type=str, required=True, help="Path to compare JSON artifact")
@@ -4556,11 +5408,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Open the generated dashboard in your default browser.",
     )
+    parser.add_argument(
+        "--serve",
+        nargs="?",
+        const=8765,
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Serve the generated dashboard via local HTTP (http://127.0.0.1:PORT). If PORT is omitted, 8765 is used.",
+    )
     return parser
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.serve is not None and not (1 <= int(args.serve) <= 65535):
+        parser.error("--serve port must be between 1 and 65535.")
     color_enabled = use_color()
 
     compare_path = Path(args.compare)
@@ -4586,8 +5450,15 @@ def main() -> None:
     print(f"  Compare JSON: {_short_path(compare_path)}")
     print(f"  HTML output:  {_short_path(generated)}")
 
+    browser_target = generated.resolve().as_uri()
+    if args.serve is not None:
+        _, started = _ensure_http_server(int(args.serve), Path.cwd())
+        browser_target = _build_http_viewer_url(generated, Path.cwd(), int(args.serve))
+        server_state = "started" if started else "already running"
+        print(f"  Server:       {browser_target} ({server_state})")
+
     if args.open_browser:
-        opened = webbrowser.open(generated.resolve().as_uri())
+        opened = webbrowser.open(browser_target)
         if opened:
             print("  Browser:      opened in your default browser")
         else:

@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TinyWorld Duel Story — Seed 2 Initial</title>
+  <style>
+    :root {
+      --bg: #0a0b10;
+      --bg2: #111521;
+      --panel: #141a2a;
+      --line: #25304a;
+      --text: #e9efff;
+      --muted: #97a6cf;
+      --cyan: #22d3ee;
+      --orange: #fb923c;
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #facc15;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(1200px 700px at 20% -20%, #1a2544 0%, transparent 60%),
+                  radial-gradient(1000px 600px at 120% 0%, #2a1d3a 0%, transparent 50%),
+                  linear-gradient(180deg, var(--bg2), var(--bg));
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    .app {
+      width: min(1200px, 96vw);
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 12px;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.005));
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      backdrop-filter: blur(2px);
+    }
+    .scene-wrap {
+      padding: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .scene-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .title {
+      font-size: 15px;
+      letter-spacing: 0.06em;
+      color: var(--cyan);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .viewport {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      background: #070a12;
+      isolation: isolate;
+      transform: translateZ(0);
+      transition: transform 80ms linear;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #090d18;
+    }
+    .crt {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255,255,255,0.03) 0px,
+          rgba(255,255,255,0.03) 1px,
+          transparent 2px,
+          transparent 4px
+        );
+      mix-blend-mode: soft-light;
+      opacity: 0.28;
+      z-index: 2;
+    }
+    .hud-bottom {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .timeline {
+      height: 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #0d1222;
+      overflow: hidden;
+      position: relative;
+    }
+    .timeline .fill {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), #5eead4);
+      box-shadow: 0 0 18px rgba(34,211,238,0.45);
+      transition: width 160ms linear;
+    }
+    .timeline .needle {
+      position: absolute;
+      top: -3px;
+      width: 2px;
+      height: 16px;
+      background: #fff;
+      box-shadow: 0 0 10px rgba(255,255,255,0.6);
+      left: 0%;
+      transform: translateX(-1px);
+      transition: left 160ms linear;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: #0f1527;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .15s, transform .12s, background .15s;
+    }
+    button:hover { border-color: var(--cyan); transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    .btn-accent { background: rgba(34,211,238,0.14); border-color: rgba(34,211,238,0.45); }
+    .side {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #0f1423;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      letter-spacing: .08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .stats {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .label { color: var(--muted); }
+    .val { color: var(--text); font-weight: 700; }
+    .cyan { color: var(--cyan); }
+    .orange { color: var(--orange); }
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .story {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #d6def7;
+      min-height: 86px;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    @media (max-width: 1000px) {
+      .app { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel scene-wrap">
+      <div class="scene-head">
+        <div>
+          <div class="title">TinyWorld Duel Story</div>
+          <div class="subtitle">Seed 2 · Initial · GPT OSS 20B vs Gemini 2.5 Flash Lite</div>
+        </div>
+        <div class="subtitle" id="turnLabel">Turn 1 / 31</div>
+      </div>
+
+      <div class="viewport" id="viewport">
+        <canvas id="scene" width="960" height="540"></canvas>
+        <div class="crt"></div>
+      </div>
+
+      <div class="hud-bottom">
+        <div class="timeline" aria-label="timeline">
+          <div class="fill" id="tlFill"></div>
+          <div class="needle" id="tlNeedle"></div>
+        </div>
+        <div class="controls">
+          <button id="playPause" class="btn-accent">Pause</button>
+          <button id="resetBtn">Reset Scene</button>
+          <button id="audioBtn">Audio: Off</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel side">
+      <div class="card">
+        <h3>Live Duel</h3>
+        <div class="stats">
+          <div class="row"><span class="label">GPT OSS 20B</span><span class="val cyan" id="scoreA">0</span></div>
+          <div class="row"><span class="label">Gemini 2.5 Flash Lite</span><span class="val orange" id="scoreB">0</span></div>
+          <div class="row"><span class="label">Action (GPT)</span><span class="val" id="actionA">-</span></div>
+          <div class="row"><span class="label">Action (Gemini)</span><span class="val" id="actionB">-</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Narration</h3>
+        <div class="story" id="storyText"></div>
+      </div>
+
+      <div class="card">
+        <h3>Outcome</h3>
+        <div class="stats">
+          <div class="row"><span class="label">Final Score (GPT)</span><span class="val cyan">51</span></div>
+          <div class="row"><span class="label">Final Score (Gemini)</span><span class="val orange">25</span></div>
+          <div class="row"><span class="label">Result</span><span class="val green">GPT wins (opponent defeated)</span></div>
+        </div>
+      </div>
+
+      <div class="hint" id="audioHint">Ambient audio uses browser-generated sound only.</div>
+    </aside>
+  </div>
+
+  <script>
+
+(() => {
+  const canvas = document.getElementById('scene');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.imageSmoothingEnabled = false;
+
+  const turnLabel = document.getElementById('turnLabel');
+  const scoreAEl = document.getElementById('scoreA');
+  const scoreBEl = document.getElementById('scoreB');
+  const actionAEl = document.getElementById('actionA');
+  const actionBEl = document.getElementById('actionB');
+  const storyText = document.getElementById('storyText');
+  const tlFill = document.getElementById('tlFill');
+  const tlNeedle = document.getElementById('tlNeedle');
+  const playPauseBtn = document.getElementById('playPause');
+  const resetBtn = document.getElementById('resetBtn');
+  const audioBtn = document.getElementById('audioBtn');
+  const audioHint = document.getElementById('audioHint');
+  const viewport = document.getElementById('viewport');
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const GRID = 6;
+  const TILE = 68;
+  const mapX = 70;
+  const mapY = 62;
+
+  const tiles = [
+    ['rock','empty','rock','empty','rock','empty'],
+    ['empty','food','empty','empty','empty','food'],
+    ['water','water','food','tree','water','tree'],
+    ['rock','tree','empty','water','tree','rock'],
+    ['empty','empty','empty','tree','empty','water'],
+    ['tree','rock','food','rock','tree','water'],
+  ];
+
+  const actionsA = [
+    'move north','gather','move east','move north','gather','drink','move east','move south','move south','gather',
+    'eat','move east','gather','move north','drink','move west','move west','gather','rest','move north',
+    'drink','move east','move east','move north','rest','rest','rest','move east','move north','gather','move south'
+  ];
+  const actionsB = [
+    'rest','move east','gather','rest','rest','rest','move north','rest','rest','wait',
+    'rest','rest','move west','rest','wait','rest','rest','rest','wait','rest',
+    'rest','rest','rest','rest','rest','rest','rest','rest','rest','rest','rest'
+  ];
+
+  const scoreAByTurn = [1,5,6,7,11,14,16,17,20,23,26,28,31,33,35,37,39,40,42,43,44,45,46,47,47,48,49,50,51,50,51];
+  const scoreBByTurn = [1,2,6,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,24,25,26,26,27,27,30,35,25];
+
+  const beats = [
+    'Opening move: GPT scouts north while Gemini stays still.',
+    'GPT starts collecting resources early. Gemini remains conservative.',
+    'Mid-game split: GPT keeps converting tiles into score, Gemini slows down.',
+    'Late pressure grows for Gemini: hunger and thirst climb with low inventory.',
+    'Turn 31: Gemini collapses from starvation + dehydration. GPT survives and wins.'
+  ];
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  function move(pos, action) {
+    let [x, y] = pos;
+    if (action === 'move north') y -= 1;
+    if (action === 'move south') y += 1;
+    if (action === 'move east') x += 1;
+    if (action === 'move west') x -= 1;
+    return [clamp(x, 0, GRID - 1), clamp(y, 0, GRID - 1)];
+  }
+
+  const turns = [];
+  let posA = [2, 5];
+  let posB = [3, 5];
+  for (let i = 0; i < 31; i++) {
+    posA = move(posA, actionsA[i]);
+    posB = move(posB, actionsB[i]);
+    turns.push({
+      turn: i + 1,
+      a: { action: actionsA[i], pos: [...posA], score: scoreAByTurn[i], alive: true },
+      b: { action: actionsB[i], pos: [...posB], score: scoreBByTurn[i], alive: i < 30 },
+    });
+  }
+
+  let pointer = { x: W * 0.5, y: H * 0.5 };
+  let progress = 0; // float in [0, turns.length-1]
+  let playing = true;
+  const TURN_SEC = 0.82;
+  const TICK_MS = 40;
+  let ticker = null;
+
+  function tileColor(t) {
+    if (t === 'water') return ['#103f62', '#135a89'];
+    if (t === 'tree') return ['#1f4d2d', '#26723f'];
+    if (t === 'food') return ['#5b3415', '#8b4a17'];
+    if (t === 'rock') return ['#2b2f3f', '#3a4158'];
+    return ['#11182b', '#131d31'];
+  }
+
+  function drawPixelRect(x, y, w, h, c1, c2) {
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, h);
+  }
+
+  function drawMap() {
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        const px = mapX + x * TILE;
+        const py = mapY + y * TILE;
+        const [c1, c2] = tileColor(tiles[y][x]);
+        drawPixelRect(px + 1, py + 1, TILE - 2, TILE - 2, c1, c2);
+        ctx.strokeStyle = '#273148';
+        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+      }
+    }
+  }
+
+  function drawAgent(pos, color, name, dead = false) {
+    const [x, y] = pos;
+    const px = mapX + x * TILE + TILE * 0.2;
+    const py = mapY + y * TILE + TILE * 0.2;
+    const s = TILE * 0.6;
+    ctx.save();
+    if (dead) ctx.globalAlpha = 0.45;
+    ctx.fillStyle = color;
+    ctx.fillRect(px, py, s, s);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(px + 10, py + 12, 6, 6);
+    ctx.fillRect(px + s - 16, py + 12, 6, 6);
+    if (dead) {
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(px + 8, py + 8);
+      ctx.lineTo(px + s - 8, py + s - 8);
+      ctx.moveTo(px + s - 8, py + 8);
+      ctx.lineTo(px + 8, py + s - 8);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#dbeafe';
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillText(name, px - 3, py + s + 14);
+    ctx.restore();
+  }
+
+  function renderScene() {
+    const i = Math.floor(progress);
+    const a = progress - i;
+    const turn = turns[Math.min(i, turns.length - 1)];
+    const next = turns[Math.min(i + 1, turns.length - 1)];
+
+    const parX = (pointer.x / W - 0.5) * 10;
+    const parY = (pointer.y / H - 0.5) * 10;
+
+    ctx.fillStyle = '#060a12';
+    ctx.fillRect(0, 0, W, H);
+    const glowX = mapX + 200 + parX * 2;
+    const glowY = mapY + 120 + parY * 2;
+    const rg = ctx.createRadialGradient(glowX, glowY, 20, glowX, glowY, 340);
+    rg.addColorStop(0, 'rgba(34,211,238,0.18)');
+    rg.addColorStop(1, 'rgba(34,211,238,0.0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.translate(parX, parY);
+    drawMap();
+
+    const ax = turn.a.pos[0] + (next.a.pos[0] - turn.a.pos[0]) * a;
+    const ay = turn.a.pos[1] + (next.a.pos[1] - turn.a.pos[1]) * a;
+    const bx = turn.b.pos[0] + (next.b.pos[0] - turn.b.pos[0]) * a;
+    const by = turn.b.pos[1] + (next.b.pos[1] - turn.b.pos[1]) * a;
+
+    drawAgent([ax, ay], '#22d3ee', 'GPT');
+    drawAgent([bx, by], '#fb923c', 'GEM', !turn.b.alive);
+
+    if (!turn.b.alive) {
+      ctx.fillStyle = 'rgba(248,113,113,0.2)';
+      ctx.fillRect(mapX, mapY, TILE * GRID, TILE * GRID);
+      ctx.fillStyle = '#fca5a5';
+      ctx.font = 'bold 26px ui-monospace, monospace';
+      ctx.fillText('GEMINI COLLAPSED', mapX + 120, mapY + 220);
+      ctx.font = '13px ui-monospace, monospace';
+      ctx.fillStyle = '#fecaca';
+      ctx.fillText('Starvation + dehydration at turn 31', mapX + 145, mapY + 244);
+    }
+    ctx.restore();
+
+    // HUD updates
+    turnLabel.textContent = `Turn ${turn.turn} / 31`;
+    scoreAEl.textContent = String(turn.a.score);
+    scoreBEl.textContent = String(turn.b.score);
+    actionAEl.textContent = turn.a.action;
+    actionBEl.textContent = turn.b.action;
+
+    const p = (turn.turn - 1) / 30;
+    const pct = (p * 100).toFixed(1) + '%';
+    tlFill.style.width = pct;
+    tlNeedle.style.left = pct;
+
+    if (turn.turn <= 6) storyText.textContent = beats[0];
+    else if (turn.turn <= 16) storyText.textContent = beats[1];
+    else if (turn.turn <= 24) storyText.textContent = beats[2];
+    else if (turn.turn <= 30) storyText.textContent = beats[3];
+    else storyText.textContent = beats[4];
+
+    ctx.fillStyle = '#93a4cf';
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillText('Seed 2 · Initial · 6x6 island · AIB-0.3.0', 16, H - 14);
+  }
+
+  function tick() {
+    if (playing) {
+      progress += TICK_MS / 1000 / TURN_SEC;
+      if (progress > turns.length - 1) progress = turns.length - 1;
+    }
+    renderScene();
+  }
+
+  function startTicker() {
+    if (ticker) clearInterval(ticker);
+    ticker = setInterval(tick, TICK_MS);
+  }
+
+  function resetScene() {
+    progress = 0;
+    playing = true;
+    playPauseBtn.textContent = 'Pause';
+    renderScene();
+  }
+
+  playPauseBtn.addEventListener('click', () => {
+    playing = !playing;
+    playPauseBtn.textContent = playing ? 'Pause' : 'Play';
+  });
+  resetBtn.addEventListener('click', resetScene);
+
+  // Audio (browser-generated only)
+  let audioCtx = null;
+  let masterGain = null;
+  let audioOn = false;
+  function mkNoiseBuffer(ctx, seconds = 2) {
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let s = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      s = (s + 0.02 * white) / 1.02;
+      data[i] = s * 2.5;
+    }
+    return buffer;
+  }
+  async function toggleAudio() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.0001;
+        masterGain.connect(audioCtx.destination);
+        const f = audioCtx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = 650;
+        f.Q.value = 0.6;
+        f.connect(masterGain);
+        const o1 = audioCtx.createOscillator();
+        o1.type = 'triangle';
+        o1.frequency.value = 52;
+        const g1 = audioCtx.createGain(); g1.gain.value = 0.018;
+        o1.connect(g1).connect(f);
+        const o2 = audioCtx.createOscillator();
+        o2.type = 'sine';
+        o2.frequency.value = 98;
+        const g2 = audioCtx.createGain(); g2.gain.value = 0.012;
+        o2.connect(g2).connect(f);
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = mkNoiseBuffer(audioCtx, 2.5);
+        noise.loop = true;
+        const ng = audioCtx.createGain(); ng.gain.value = 0.004;
+        noise.connect(ng).connect(f);
+        o1.start(); o2.start(); noise.start();
+      }
+      if (!audioOn) {
+        await audioCtx.resume();
+        audioOn = true;
+        masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        masterGain.gain.linearRampToValueAtTime(0.22, audioCtx.currentTime + 0.45);
+        audioBtn.textContent = 'Audio: On';
+        audioHint.textContent = 'Ambient audio active (generated in browser).';
+      } else {
+        audioOn = false;
+        masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        masterGain.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3);
+        audioBtn.textContent = 'Audio: Off';
+        audioHint.textContent = 'Ambient audio muted.';
+      }
+    } catch {
+      audioHint.textContent = 'Audio blocked by browser policy. Scene still runs normally.';
+      audioBtn.textContent = 'Audio: Blocked';
+    }
+  }
+  audioBtn.addEventListener('click', toggleAudio);
+
+  viewport.addEventListener('mousemove', (e) => {
+    const r = viewport.getBoundingClientRect();
+    pointer.x = ((e.clientX - r.left) / r.width) * W;
+    pointer.y = ((e.clientY - r.top) / r.height) * H;
+    const dx = (e.clientX - (r.left + r.width * 0.5)) / r.width;
+    const dy = (e.clientY - (r.top + r.height * 0.5)) / r.height;
+    viewport.style.transform = `perspective(900px) rotateY(${dx * 2.2}deg) rotateX(${(-dy) * 1.8}deg)`;
+  });
+  viewport.addEventListener('mouseleave', () => {
+    viewport.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg)';
+    pointer.x = W * 0.5;
+    pointer.y = H * 0.5;
+  });
+
+  renderScene();
+  startTicker();
+})();
+
+  </script>
+</body>
+</html>

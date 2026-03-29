@@ -784,6 +784,7 @@ def run_match_once(
     opponent_include_memory: bool = False,
     opponent_session_lessons: list[str] | None = None,
     opponent_current_seed_lessons: list[str] | None = None,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     project_root = Path.cwd()
     benchmark_cfg, scenarios_cfg = load_configs(benchmark_config_path, scenarios_config_path)
@@ -972,6 +973,8 @@ def run_match_once(
     opponent_meat_collected = 0
     defeated_by_opponent = False
     opponent_defeated_by_primary = False
+    pvp_continue_enabled = bool(pvp_continue)
+    opponent_defeated_turn: int | None = None
 
     tokens_sum = 0.0
     tokens_seen = False
@@ -1020,6 +1023,11 @@ def run_match_once(
         agent = world.agents[DEFAULT_AGENT_ID]
         if not agent.alive:
             break
+
+        primary_attacked_rival_ids_this_turn: set[str] = set()
+        primary_direct_kill_rival_ids_this_turn: set[str] = set()
+        opponent_attacked_primary_this_turn = False
+        opponent_directly_killed_primary_this_turn = False
 
         world.turn = turn
         _emit_progress(
@@ -1176,9 +1184,13 @@ def run_match_once(
                         npc_kills += 1
                 elif target_type == "agent":
                     attack_rival_count += 1
+                    killed_agent_id = str(action_outcome.world_delta.get("target_agent_id", "")).strip()
+                    if killed_agent_id:
+                        primary_attacked_rival_ids_this_turn.add(killed_agent_id)
                     if bool(action_outcome.world_delta.get("target_killed", False)):
                         rival_kills += 1
-                        killed_agent_id = str(action_outcome.world_delta.get("target_agent_id", "")).strip()
+                        if killed_agent_id:
+                            primary_direct_kill_rival_ids_this_turn.add(killed_agent_id)
                         if killed_agent_id in set(opponent_agent_ids):
                             opponent_defeated_by_primary = True
                 inventory_delta = action_outcome.world_delta.get("inventory_delta", {})
@@ -1406,8 +1418,15 @@ def run_match_once(
                             opponent_npc_kills += 1
                     elif opponent_target_type == "agent":
                         opponent_attack_rival_count += 1
+                        opponent_target_agent_id = str(
+                            opponent_action_outcome.world_delta.get("target_agent_id", "")
+                        ).strip()
+                        if opponent_target_agent_id == DEFAULT_AGENT_ID:
+                            opponent_attacked_primary_this_turn = True
                         if bool(opponent_action_outcome.world_delta.get("target_killed", False)):
                             opponent_rival_kills += 1
+                            if opponent_target_agent_id == DEFAULT_AGENT_ID:
+                                opponent_directly_killed_primary_this_turn = True
                     opponent_inventory_delta = opponent_action_outcome.world_delta.get("inventory_delta", {})
                     opponent_food_gain = (
                         int(opponent_inventory_delta.get("food", 0))
@@ -1531,6 +1550,31 @@ def run_match_once(
                     for key, value in dict(world.agents[opponent_agent_id].inventory).items()
                 }
                 opponent_steps.append(pending_step)
+
+        if pvp_duel_enabled:
+            # Credit PvP kill when attack happened this turn and rival dies at end-of-turn
+            # on the same duel turn, even if the direct attack flag was not the terminal cause.
+            if not opponent_defeated_by_primary:
+                for opponent_agent_id in opponent_agent_ids:
+                    if opponent_agent_id not in primary_attacked_rival_ids_this_turn:
+                        continue
+                    if opponent_agent_id in primary_direct_kill_rival_ids_this_turn:
+                        continue
+                    opponent_agent = world.agents.get(opponent_agent_id)
+                    if opponent_agent is None or bool(opponent_agent.alive):
+                        continue
+                    rival_kills += 1
+                    opponent_defeated_by_primary = True
+                    break
+
+            if (
+                not defeated_by_opponent
+                and not world.agents[DEFAULT_AGENT_ID].alive
+                and opponent_attacked_primary_this_turn
+                and not opponent_directly_killed_primary_this_turn
+            ):
+                opponent_rival_kills += 1
+                defeated_by_opponent = True
         last_survival_update = survival_update
         survival_score_delta, survival_score_events = score_survival(survival_update.alive_after, scoring_cfg)
 
@@ -1667,7 +1711,13 @@ def run_match_once(
         if not world.agents[DEFAULT_AGENT_ID].alive:
             break
         if pvp_duel_enabled:
-            if not any(world.agents[agent_id].alive for agent_id in opponent_agent_ids):
+            if (
+                opponent_defeated_turn is None
+                and opponent_agent_ids
+                and not any(world.agents[agent_id].alive for agent_id in opponent_agent_ids)
+            ):
+                opponent_defeated_turn = turn
+            if not pvp_continue_enabled and not any(world.agents[agent_id].alive for agent_id in opponent_agent_ids):
                 break
 
     final_agent = world.agents[DEFAULT_AGENT_ID]
@@ -1680,7 +1730,7 @@ def run_match_once(
     )
     if not final_agent.alive:
         end_reason = "agent_dead"
-    elif pvp_duel_enabled and opponent_agent_ids and opponents_alive_after == 0:
+    elif pvp_duel_enabled and opponent_agent_ids and opponents_alive_after == 0 and not pvp_continue_enabled:
         end_reason = "opponent_defeated"
     else:
         end_reason = "max_turns_reached"
@@ -1768,8 +1818,10 @@ def run_match_once(
         "opponent_rival_kills": opponent_rival_kills,
         "opponent_meat_collected": opponent_meat_collected,
         "pvp_duel": pvp_duel_enabled,
+        "pvp_continue": pvp_continue_enabled,
         "opponent_agent_count": len(opponent_agent_ids),
         "opponents_alive_after": opponents_alive_after,
+        "opponent_defeated_turn": opponent_defeated_turn,
         "opponent_model_profile": (
             opponent_model_binding.model_profile
             if opponent_model_binding is not None
@@ -2021,6 +2073,7 @@ def run_duel_once(
     attempt_kind: str = "initial",
     adaptive_pair_key: str | None = None,
     memory_by_model: dict[str, dict[str, list[str]]] | None = None,
+    pvp_continue: bool = False,
 ) -> dict[str, Any]:
     model_memory = memory_by_model or {}
     memory_a = model_memory.get(model_a_name, {}) if isinstance(model_memory.get(model_a_name, {}), dict) else {}
@@ -2058,4 +2111,5 @@ def run_duel_once(
         opponent_include_memory=include_memory_b,
         opponent_session_lessons=list(memory_b.get("session_lessons") or []),
         opponent_current_seed_lessons=list(memory_b.get("current_seed_lessons") or []),
+        pvp_continue=pvp_continue,
     )
