@@ -5836,6 +5836,29 @@ def main() -> None:
                                         live_attempt_scores_by_key[
                                             (event_key[0], int(event_key[1]), attempt_kind)
                                         ] = int(final_score)
+                                # PvP duel canonical summary carries opponent score in the same payload.
+                                # Keep the adaptive live panel aligned by writing both sides when available.
+                                opponent_final_score = _safe_int(summary.get("opponent_final_score"))
+                                if opponent_final_score is not None:
+                                    opponent_profile = str(summary.get("opponent_model_profile", "")).strip()
+                                    if not opponent_profile:
+                                        opponent_profile = str(
+                                            (pvp_opponent_profile_map or {}).get(model_profile_value, "")
+                                        ).strip()
+                                    if not opponent_profile:
+                                        opponent_profile = str(
+                                            (pvp_opponent_profile_map or {}).get(event_key[0], "")
+                                        ).strip()
+                                    opponent_seed = (
+                                        int(seed_value)
+                                        if seed_value is not None
+                                        else int(event_key[1])
+                                    )
+                                    if opponent_profile:
+                                        with live_attempt_scores_lock:
+                                            live_attempt_scores_by_key[
+                                                (opponent_profile, opponent_seed, attempt_kind)
+                                            ] = int(opponent_final_score)
                             with active_attempts_lock:
                                 active_attempts_by_key.pop((event_key[0], int(event_key[1])), None)
                             return
