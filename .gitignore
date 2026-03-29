@@ -23,3 +23,7 @@ artifacts/results/*
 
 artifacts/runs/*
 !artifacts/runs/.gitkeep
+
+# Local secrets (use example templates instead)
+configs/providers.yaml
+configs/providers.local.yaml

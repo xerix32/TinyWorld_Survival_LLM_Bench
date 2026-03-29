@@ -54,9 +54,22 @@ It is designed to compare models fairly across identical seeds, with reproducibl
 
 ## Provider and model configuration
 Providers and model profiles are configured in:
-- `configs/providers.yaml` (default)
-- `configs/providers.local.yaml` (local variant)
+- `configs/providers.example.yaml` (tracked template)
+- `configs/providers.local.example.yaml` (tracked local-template variant)
 - `configs/pricing.yaml` (deterministic estimated-cost fallback rates)
+
+Runtime provider files are local and ignored by git:
+- `configs/providers.yaml`
+- `configs/providers.local.yaml`
+
+Quick setup:
+```bash
+cp configs/providers.example.yaml configs/providers.yaml
+cp configs/providers.local.example.yaml configs/providers.local.yaml
+
+export VERCEL_AI_GATEWAY_API_KEY=\"<your_vercel_gateway_key>\"
+export GROQ_API_KEY=\"<your_groq_key>\"
+```
 
 A model profile binds:
 - `provider` (e.g. `vercel_gateway`, `groq_gateway`, `local_lmstudio`)
