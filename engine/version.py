@@ -1,3 +1,3 @@
 """Project version constant."""
 
-__version__ = "3.0.34"
+__version__ = "3.0.35"

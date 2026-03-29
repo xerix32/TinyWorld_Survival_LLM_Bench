@@ -302,6 +302,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       background: var(--bg);
       border-radius: 4px;
       border: 1px solid var(--border);
+      overflow: hidden;
     }
     .range-bar .range-fill {
       position: absolute;
@@ -3238,6 +3239,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     function renderCompactLeaderboard() {
       const el = document.getElementById('lbBody');
       if (!el || !models.length) { if (el) el.innerHTML = ''; return; }
+      const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 
       const allScores = models.flatMap(m => [
         Number(m.best_final_score ?? m.avg_final_score ?? 0),
@@ -3269,15 +3271,20 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
         const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
 
-        const worstPct = ((worst - chartMin) / chartSpan * 100).toFixed(1);
-        const bestPct = ((best - chartMin) / chartSpan * 100).toFixed(1);
-        const avgPct = ((avg - chartMin) / chartSpan * 100).toFixed(1);
-        const widthPct = (bestPct - worstPct).toFixed(1);
+        const worstPctNum = clampPct((worst - chartMin) / chartSpan * 100);
+        const bestPctNum = clampPct((best - chartMin) / chartSpan * 100);
+        const avgPctNum = clampPct((avg - chartMin) / chartSpan * 100);
+        const leftPctNum = Math.min(worstPctNum, bestPctNum);
+        const widthPctNum = Math.max(0, Math.abs(bestPctNum - worstPctNum));
+        const worstPct = worstPctNum.toFixed(1);
+        const avgPct = avgPctNum.toFixed(1);
+        const leftPct = leftPctNum.toFixed(1);
+        const widthPct = widthPctNum.toFixed(1);
 
         const mColor = m._color || '#888';
         const rangeBar = best !== worst
           ? `<div class="range-bar" data-tip="${formatFloat(worst, 0)} – ${formatFloat(avg, 1)} – ${formatFloat(best, 0)}">
-              <div class="range-fill" style="left:${worstPct}%;width:${widthPct}%;background:${mColor};opacity:0.25"></div>
+              <div class="range-fill" style="left:${leftPct}%;width:${widthPct}%;background:${mColor};opacity:0.25"></div>
               <div class="range-dot" style="left:${avgPct}%;background:${mColor}"></div>
             </div>`
           : `<div class="range-bar" data-tip="All runs: ${formatFloat(avg, 1)}">
