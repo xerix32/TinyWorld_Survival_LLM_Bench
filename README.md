@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **3.0.1**
+Version: **3.0.29**
 
 TinyWorld Survival Bench is a deterministic benchmark framework for evaluating LLM decision-making in grid-world survival and duel scenarios.
 It is designed to compare models fairly across identical seeds, with reproducible logs, strict action protocol validation, and interactive HTML analysis dashboards.
@@ -13,7 +13,16 @@ It is designed to compare models fairly across identical seeds, with reproducibl
 ### Run Explorer (PvP Duel)
 ![Run Explorer PvP Duel](screenshots/compare_run_explorer.png)
 
+### Arcade Render (PvP Duel)
+![Arcade Render PvP Duel](screenshots/compare_arcade_render.png)
+
 TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
+
+## Arcade Render (v3.x)
+- Compare dashboard includes a dedicated **Arcade Render** tab.
+- It replays selected duel runs using the integrated pixel engine (`showcase/tinyworld_arcade_engine_template.html`).
+- The left sidebar lets you pick `Seed` + `Run` and inspect `run_id` + source run reference.
+- Works from generated compare HTML (`bench.view_compare`) and from compare runs (`bench.run_compare`).
 
 ## What v0.1 includes
 - Deterministic seeded 6x6 world generation.
