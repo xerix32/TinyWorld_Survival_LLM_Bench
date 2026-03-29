@@ -1,6 +1,6 @@
 # TinyWorld Survival Bench
 
-Version: **3.0.29**
+Version: **3.0.30**
 
 TinyWorld Survival Bench is a deterministic benchmark framework for evaluating LLM decision-making in grid-world survival and duel scenarios.
 It is designed to compare models fairly across identical seeds, with reproducible logs, strict action protocol validation, and interactive HTML analysis dashboards.

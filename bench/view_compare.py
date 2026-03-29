@@ -1658,13 +1658,13 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       border-radius: var(--radius-sm);
       overflow: hidden;
       background: #05070f;
-      min-height: 620px;
+      min-height: 700px;
     }
 
     .arcade-frame {
       width: 100%;
-      height: 76vh;
-      min-height: 620px;
+      height: 82vh;
+      min-height: 700px;
       border: 0;
       display: block;
       background: #05070f;
@@ -1786,8 +1786,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       .sidebar { max-height: none; }
       .arcade-layout { grid-template-columns: 1fr; }
       .arcade-sidebar { position: static; }
-      .arcade-shell { min-height: 460px; }
-      .arcade-frame { min-height: 460px; height: 68vh; }
+      .arcade-shell { min-height: 520px; }
+      .arcade-frame { min-height: 520px; height: 72vh; }
     }
   </style>
 </head>
@@ -1826,7 +1826,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average input / output tokens per run (high output ratio may indicate thinking)\" class=\"tip-down\" data-sort-key=\"completion_tokens_avg\" data-sort-desc=\"1\">I/O Tokens</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
                 <th data-tip=\"Average total attack actions per run (higher = more aggressive behavior)\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Aggression</th>
-                <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggr</th>
+                <th data-tip=\"Average NPC kills per run\" class=\"tip-down\" data-sort-key=\"avg_npc_kills\" data-sort-desc=\"1\">NPC Kills</th>
+                <th data-tip=\"Average rival-agent kills per run\" class=\"tip-down\" data-sort-key=\"avg_rival_kills\" data-sort-desc=\"1\">LLM Kills</th>
+                <th data-tip=\"Among duel runs with at least one attack, percentage where this model attacked first\" class=\"tip-down\" data-sort-key=\"first_strike_pct\" data-sort-desc=\"1\">First Strike</th>
+                <th data-tip=\"Share of attacks directed at rival agents (avg_attack_rival_count / avg_attack_count)\" class=\"tip-down\" data-sort-key=\"rival_attack_share_pct\" data-sort-desc=\"1\">Rival Focus</th>
+                <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down moral-col\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggr</th>
               </tr>
             </thead>
             <tbody id=\"lbBody\"></tbody>
@@ -1872,7 +1876,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average total attack actions per run\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Avg Attack</th>
                 <th data-tip=\"Average NPC kills per run\" class=\"tip-down\" data-sort-key=\"avg_npc_kills\" data-sort-desc=\"1\">Avg NPC Kills</th>
                 <th data-tip=\"Average rival-agent kills per run\" class=\"tip-down\" data-sort-key=\"avg_rival_kills\" data-sort-desc=\"1\">Avg Rival Kills</th>
-                <th data-tip=\"Average moral aggression index (0-100)\" class=\"tip-down\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Avg Moral</th>
+                <th data-tip=\"Among duel runs with at least one attack, percentage where this model attacked first\" class=\"tip-down\" data-sort-key=\"first_strike_pct\" data-sort-desc=\"1\">First Strike</th>
+                <th data-tip=\"Share of attacks directed at rival agents (avg_attack_rival_count / avg_attack_count)\" class=\"tip-down\" data-sort-key=\"rival_attack_share_pct\" data-sort-desc=\"1\">Rival Focus</th>
+                <th data-tip=\"Average moral aggression index (0-100)\" class=\"tip-down moral-col\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Avg Moral</th>
                 <th data-tip=\"Average API response time per turn (total latency / total turns)\" class=\"tip-down\" data-sort-key=\"latency_per_turn\">Avg Latency / turn</th>
                 <th data-tip=\"Total tokens consumed across all runs for this model\" class=\"tip-down\" data-sort-key=\"tokens_used_total\" data-sort-desc=\"1\">Total Tokens</th>
               </tr>
@@ -2234,6 +2240,18 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         if (scores.length) noMemAvgByProfile.set(mp, scores.reduce((a, b) => a + b, 0) / scores.length);
       }
     }
+    const normalizeMoralMode = (raw) => {
+      if (typeof raw === 'boolean') return raw ? 'on' : 'off';
+      const text = String(raw ?? '').trim().toLowerCase();
+      if (!text) return null;
+      if (text === 'true' || text === 'on') return 'on';
+      if (text === 'false' || text === 'off') return 'off';
+      return text;
+    };
+    const moralModesObserved = new Set(
+      [normalizeMoralMode(meta?.moral_mode), ...runs.map(row => normalizeMoralMode(row?.summary?.moral_mode))].filter(Boolean)
+    );
+    const hasMoralFraming = moralModesObserved.has('on') || moralModesObserved.has('mixed');
     const hasAdaptive = adaptiveAvgByProfile.size > 0;
     const isPvpDataset = duelMode || legacyPvpMode;
 
@@ -2707,21 +2725,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         return Number.isFinite(fallback) ? fallback : null;
       })();
       const moralMode = (() => {
-        const normalize = (raw) => {
-          if (typeof raw === 'boolean') return raw ? 'on' : 'off';
-          const text = String(raw ?? '').trim().toLowerCase();
-          if (!text) return null;
-          if (text === 'true' || text === 'on') return 'on';
-          if (text === 'false' || text === 'off') return 'off';
-          return text;
-        };
-
-        const metaMode = normalize(meta?.moral_mode);
+        const metaMode = normalizeMoralMode(meta?.moral_mode);
         if (metaMode) return metaMode;
 
         const modes = Array.from(new Set(
           (runs || [])
-            .map(row => normalize(row?.summary?.moral_mode))
+            .map(row => normalizeMoralMode(row?.summary?.moral_mode))
             .filter(Boolean)
         ));
         if (modes.length === 1) return modes[0];
@@ -2883,6 +2892,69 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       };
     }
 
+    function getSurvivalVisualPct(modelRow, maxSurvived = 1) {
+      const clampPct = (value) => Math.max(0, Math.min(100, Number(value)));
+      const strictPct = Number(modelRow?._survival_full_turn_pct);
+      const vsPct = Number(modelRow?._survival_vs_pct);
+      const deathRatePct = Number(modelRow?.death_rate_pct);
+      const legacySurvivalPct = 100 - deathRatePct;
+      const turnsBasedPct = (Number(modelRow?.avg_turns_survived ?? 0) / Math.max(1, Number(maxSurvived))) * 100;
+
+      if (isPvpDataset) {
+        if (Number.isFinite(vsPct)) return clampPct(vsPct);
+        if (Number.isFinite(legacySurvivalPct) && legacySurvivalPct > 0) return clampPct(legacySurvivalPct);
+        if (Number.isFinite(turnsBasedPct)) return clampPct(turnsBasedPct);
+        return 0;
+      }
+
+      if (Number.isFinite(strictPct)) return clampPct(strictPct);
+      if (Number.isFinite(legacySurvivalPct)) return clampPct(legacySurvivalPct);
+      if (Number.isFinite(turnsBasedPct)) return clampPct(turnsBasedPct);
+      return 0;
+    }
+
+    function computeFirstStrikeStats(modelProfile) {
+      const modelRuns = runs.filter(r => String(r?.model_profile || '') === String(modelProfile));
+      if (!modelRuns.length) return { firstStrikePct: null, observed: 0, firstStrikes: 0 };
+
+      let observed = 0;
+      let firstStrikes = 0;
+      modelRuns.forEach(r => {
+        const s = (r && typeof r.summary === 'object') ? r.summary : null;
+        if (!s || !Boolean(s.pvp_duel)) return;
+        const focusProfile = String(r?.model_profile || s?.model_profile || modelProfile || '').trim();
+        const frames = Array.isArray(r?.replay?.frames) ? r.replay.frames : [];
+        let firstAttacker = '';
+
+        for (const frame of frames) {
+          const focusAction = String(frame?.action_result?.applied || frame?.action_result?.requested || '').trim().toLowerCase();
+          if (focusAction === 'attack') {
+            firstAttacker = focusProfile;
+            break;
+          }
+          const oppSteps = Array.isArray(frame?.opponent_steps) ? frame.opponent_steps : [];
+          for (const step of oppSteps) {
+            const oppAction = String(step?.parsed_action || step?.action_result?.applied || '').trim().toLowerCase();
+            if (oppAction === 'attack') {
+              firstAttacker = String(step?.model_profile || step?.agent_id || '').trim();
+              break;
+            }
+          }
+          if (firstAttacker) break;
+        }
+
+        if (!firstAttacker) return;
+        observed += 1;
+        if (firstAttacker === focusProfile) firstStrikes += 1;
+      });
+
+      return {
+        firstStrikePct: observed > 0 ? (firstStrikes / observed) * 100 : null,
+        observed,
+        firstStrikes,
+      };
+    }
+
     function enrichModelsFromRuns() {
       models.forEach(m => {
         const modelRuns = runs.filter(r => String(r.model_profile) === String(m.model_profile));
@@ -2899,6 +2971,21 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const survival = computeModelSurvivalPcts(String(m.model_profile));
         m._survival_full_turn_pct = survival.fullTurnPct;
         m._survival_vs_pct = survival.vsSurvivalPct;
+
+        const firstStrike = computeFirstStrikeStats(String(m.model_profile));
+        m._first_strike_pct = firstStrike.firstStrikePct;
+        m._first_strike_observed = firstStrike.observed;
+        m._first_strike_count = firstStrike.firstStrikes;
+
+        const avgAttack = Number(m.avg_attack_count ?? NaN);
+        const avgRivalAttack = Number(m.avg_attack_rival_count ?? NaN);
+        m._rival_attack_share_pct = (
+          Number.isFinite(avgAttack)
+          && Number.isFinite(avgRivalAttack)
+          && avgAttack > 0
+        )
+          ? (avgRivalAttack / avgAttack) * 100
+          : null;
       });
     }
 
@@ -2955,6 +3042,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (key === 'rank') return Number(m.rank ?? 999);
       if (key === 'survival_pct') return Number(m._survival_full_turn_pct ?? (100 - Number(m.death_rate_pct ?? 100)));
       if (key === 'vs_survival_pct') return Number(m._survival_vs_pct ?? (100 - Number(m.death_rate_pct ?? 100)));
+      if (key === 'first_strike_pct') return Number(m._first_strike_pct ?? -1);
+      if (key === 'rival_attack_share_pct') return Number(m._rival_attack_share_pct ?? -1);
       if (key === 'latency_per_turn') return modelLatencyPerTurn(m) ?? Infinity;
       if (key === 'completion_tokens_avg') return Number(m.completion_tokens_total ?? 0) / Math.max(1, Number(m.runs ?? 1));
       return Number(m[key] ?? 0);
@@ -3092,6 +3181,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
       const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
       const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
+      const npcKills = formatFloat(m.avg_npc_kills, 2, 'n/a');
+      const rivalKills = formatFloat(m.avg_rival_kills, 2, 'n/a');
+      const firstStrike = m._first_strike_pct == null ? 'n/a' : `${formatFloat(m._first_strike_pct, 1)}%`;
+      const rivalFocusShare = m._rival_attack_share_pct == null ? 'n/a' : `${formatFloat(m._rival_attack_share_pct, 1)}%`;
       const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
       const hasAdaptiveStats = adaptiveAvgByProfile.size > 0;
       const adaptiveAvgScore = adaptiveAvgScoreForModel(m.model_profile);
@@ -3127,7 +3220,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <div class="ws-metric" data-tip="Estimated total cost across all runs"><div class="ws-metric-value">${cost}</div><div class="ws-metric-label">Cost</div></div>
           <div class="ws-metric" data-tip="Average map coverage percentage"><div class="ws-metric-value">${coverage}</div><div class="ws-metric-label">Coverage</div></div>
           <div class="ws-metric" data-tip="Average total attack actions per run (higher = more aggressive)"><div class="ws-metric-value">${aggression}</div><div class="ws-metric-label">Aggression</div></div>
-          <div class="ws-metric" data-tip="Average moral aggression index (0-100, higher = less restrained)"><div class="ws-metric-value">${moralAggression}</div><div class="ws-metric-label">Moral</div></div>
+          <div class="ws-metric" data-tip="Average NPC kills per run"><div class="ws-metric-value">${npcKills}</div><div class="ws-metric-label">NPC Kills</div></div>
+          <div class="ws-metric" data-tip="Average rival-agent kills per run"><div class="ws-metric-value">${rivalKills}</div><div class="ws-metric-label">LLM Kills</div></div>
+          <div class="ws-metric" data-tip="Among duel runs with at least one attack, percentage where this model attacked first"><div class="ws-metric-value">${firstStrike}</div><div class="ws-metric-label">First Strike</div></div>
+          <div class="ws-metric" data-tip="Share of attacks directed at rival agents (avg_attack_rival_count / avg_attack_count)"><div class="ws-metric-value">${rivalFocusShare}</div><div class="ws-metric-label">Rival Focus</div></div>
+          ${hasMoralFraming ? `<div class="ws-metric moral-col" data-tip="Average moral aggression index (0-100, higher = less restrained)"><div class="ws-metric-value">${moralAggression}</div><div class="ws-metric-label">Moral</div></div>` : ''}
         </div>
       </div>`;
     }
@@ -3149,6 +3246,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       // Show/hide adaptive column
       document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
       document.querySelectorAll('.pvp-col').forEach(el => { el.style.display = isPvpDataset ? '' : 'none'; });
+      document.querySelectorAll('.moral-col').forEach(el => { el.style.display = hasMoralFraming ? '' : 'none'; });
 
       el.innerHTML = models.map((m, i) => {
         const avgInitial = Number(m.avg_final_score ?? 0);
@@ -3163,6 +3261,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
         const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
         const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
+        const npcKills = formatFloat(m.avg_npc_kills, 2, 'n/a');
+        const rivalKills = formatFloat(m.avg_rival_kills, 2, 'n/a');
+        const firstStrike = m._first_strike_pct == null ? 'n/a' : `${formatFloat(m._first_strike_pct, 1)}%`;
+        const rivalFocusShare = m._rival_attack_share_pct == null ? 'n/a' : `${formatFloat(m._rival_attack_share_pct, 1)}%`;
         const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
         const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
 
@@ -3226,7 +3328,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${ioCell}</td>
           <td>${coverage}</td>
           <td>${aggression}</td>
-          <td>${moralAggression}</td>
+          <td>${npcKills}</td>
+          <td>${rivalKills}</td>
+          <td data-tip="${m._first_strike_observed ? `${formatCount(m._first_strike_count)} / ${formatCount(m._first_strike_observed)} duel runs with first attack` : 'No duel run with attack observed'}">${firstStrike}</td>
+          <td>${rivalFocusShare}</td>
+          <td class="moral-col">${moralAggression}</td>
         </tr>`;
       }).join('');
     }
@@ -3240,7 +3346,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       // use per-model colors from _color
       const axes = [
         { key: 'score',      label: 'Score',      tip: 'Avg final score normalised to best model (0-100)' },
-        { key: 'survival',   label: 'Survival',   tip: 'Avg turns survived normalised to best model (0-100)' },
+        { key: 'survival',   label: 'Survival',   tip: 'Survival metric used in leaderboard (PvP: VS survival rate; non-PvP: strict full-turn survival rate)' },
         { key: 'coverage',   label: 'Coverage',   tip: '% of unique map cells visited' },
         { key: 'efficiency', label: 'Efficiency',  tip: 'Resource conversion: % of gathered food/water consumed' },
         { key: 'stability',  label: 'Stability',  tip: 'Repeatability: 100 − score spread (best−worst). Higher = more consistent across different seeds' },
@@ -3254,10 +3360,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const vals = models.map(m => {
         const spread = (Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0));
         const maxSpread = Math.max(...models.map(x => (Number(x.best_final_score ?? 0) - Number(x.worst_final_score ?? 0))), 1);
-        const survPct = 100 - Number(m.death_rate_pct ?? 0);
+        const survivalPct = getSurvivalVisualPct(m, maxSurvived);
         return {
           score:      Number(m.avg_final_score ?? 0) / maxScore * 100,
-          survival:   survPct > 0 ? survPct : (Number(m.avg_turns_survived ?? 0) / maxSurvived * 100),
+          survival:   survivalPct,
           coverage:   Number(m.avg_coverage_pct ?? 0),
           efficiency: Number(m.avg_conversion_efficiency_pct ?? 0),
           stability:  100 - (spread / maxSpread * 100),
@@ -3329,7 +3435,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         { label: '⚡ Speed',      tip: 'Inverse of avg API latency per turn (lower latency = bigger slice)', fn: m => { const l = modelLatencyPerTurn(m); return l ? 1 / l : 0; } },
         { label: '⚙️ Efficiency', tip: 'Resource conversion: % of gathered food/water successfully consumed (eat+drink / total gathered)', fn: m => Number(m.avg_conversion_efficiency_pct ?? 0) },
         { label: '🗺️ Coverage',  tip: 'Map exploration: % of unique cells visited out of total map cells', fn: m => Number(m.avg_coverage_pct ?? 0) },
-        { label: '❤️ Survival',  tip: 'Avg turns survived (when all die: raw turn count; otherwise: 100 − death rate %)', fn: m => { const s = 100 - Number(m.death_rate_pct ?? 100); return s > 0 ? s : Number(m.avg_turns_survived ?? 0); } },
+        { label: '❤️ Survival',  tip: 'Same survival metric as leaderboard (PvP: VS survival rate; non-PvP: strict full-turn survival rate)', fn: m => getSurvivalVisualPct(m, Math.max(...models.map(x => Number(x.avg_turns_survived ?? 0)), 1)) },
         { label: '🎯 Stability', tip: 'Repeatability across seeds: smaller spread between best and worst run = bigger slice', fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return s > 0 ? 1 / s : 1; } },
       ];
 
@@ -3380,8 +3486,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const races = [
         { label: '🗺️ Coverage',          tip: 'Average map coverage %',
           fn: m => Number(m.avg_coverage_pct ?? 0),         fmt: v => `${v.toFixed(1)}%` },
-        { label: '❤️ Survival',           tip: 'Average turns survived',
-          fn: m => Number(m.avg_turns_survived ?? 0),       fmt: v => v.toFixed(1) },
+        { label: '❤️ Survival',           tip: 'Same survival metric as leaderboard (PvP: VS survival rate; non-PvP: strict full-turn survival rate)',
+          fn: m => getSurvivalVisualPct(m, Math.max(...models.map(x => Number(x.avg_turns_survived ?? 0)), 1)),       fmt: v => v.toFixed(1) + '%' },
         { label: '🎯 Stability',          tip: 'Repeatability: 100 − (best − worst score). Higher = more consistent results across different seeds',
           fn: m => { const s = Number(m.best_final_score ?? 0) - Number(m.worst_final_score ?? 0); return Math.max(0, 100 - s); },
           fmt: v => v.toFixed(0) },
@@ -3542,7 +3648,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
 
     function renderRanking() {
       if (!models.length) {
-        rankingBody.innerHTML = '<tr><td colspan="18" style="color:var(--text-dim)">No model stats.</td></tr>';
+        rankingBody.innerHTML = '<tr><td colspan="20" style="color:var(--text-dim)">No model stats.</td></tr>';
         return;
       }
 
@@ -3566,7 +3672,9 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${formatFloat(row.avg_attack_count, 2, 'n/a')}</td>
           <td>${formatFloat(row.avg_npc_kills, 2, 'n/a')}</td>
           <td>${formatFloat(row.avg_rival_kills, 2, 'n/a')}</td>
-          <td>${formatFloat(row.avg_moral_aggression_index, 1, 'n/a')}</td>
+          <td>${row._first_strike_pct == null ? 'n/a' : `${formatFloat(row._first_strike_pct, 1)}%`}</td>
+          <td>${row._rival_attack_share_pct == null ? 'n/a' : `${formatFloat(row._rival_attack_share_pct, 1)}%`}</td>
+          <td class="moral-col">${formatFloat(row.avg_moral_aggression_index, 1, 'n/a')}</td>
           <td>${avgLatencyPerCall}</td>
           <td>${formatCount(row.tokens_used_total)}</td>
         </tr>`;
