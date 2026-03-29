@@ -15,6 +15,7 @@ from urllib.parse import quote
 import webbrowser
 
 from bench.cli_ui import colorize, use_color
+from bench.pricing import estimate_cost_from_total_tokens, load_pricing_config, resolve_model_pricing
 from engine.version import __version__
 
 
@@ -1826,8 +1827,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
                 <th data-tip=\"Average input / output tokens per run (high output ratio may indicate thinking)\" class=\"tip-down\" data-sort-key=\"completion_tokens_avg\" data-sort-desc=\"1\">I/O Tokens</th>
                 <th data-tip=\"Average map coverage percentage\" class=\"tip-down\" data-sort-key=\"avg_coverage_pct\" data-sort-desc=\"1\">Coverage</th>
                 <th data-tip=\"Average total attack actions per run (higher = more aggressive behavior)\" class=\"tip-down\" data-sort-key=\"avg_attack_count\" data-sort-desc=\"1\">Aggression</th>
-                <th data-tip=\"Average NPC kills per run\" class=\"tip-down\" data-sort-key=\"avg_npc_kills\" data-sort-desc=\"1\">NPC Kills</th>
-                <th data-tip=\"Average rival-agent kills per run\" class=\"tip-down\" data-sort-key=\"avg_rival_kills\" data-sort-desc=\"1\">LLM Kills</th>
+                <th data-tip=\"Average total kills per run (NPC + rival agents)\" class=\"tip-down\" data-sort-key=\"avg_total_kills\" data-sort-desc=\"1\">Kills</th>
                 <th data-tip=\"Among duel runs with at least one attack, percentage where this model attacked first\" class=\"tip-down\" data-sort-key=\"first_strike_pct\" data-sort-desc=\"1\">First Strike</th>
                 <th data-tip=\"Share of attacks directed at rival agents (avg_attack_rival_count / avg_attack_count)\" class=\"tip-down\" data-sort-key=\"rival_attack_share_pct\" data-sort-desc=\"1\">Rival Focus</th>
                 <th data-tip=\"Average moral aggression index (0-100, higher = less restrained)\" class=\"tip-down moral-col\" data-sort-key=\"avg_moral_aggression_index\" data-sort-desc=\"1\">Moral Aggr</th>
@@ -2541,6 +2541,12 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       return Number.isFinite(raw) ? raw : null;
     }
 
+    function syncConditionalColumns() {
+      document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
+      document.querySelectorAll('.pvp-col').forEach(el => { el.style.display = isPvpDataset ? '' : 'none'; });
+      document.querySelectorAll('.moral-col').forEach(el => { el.style.display = hasMoralFraming ? '' : 'none'; });
+    }
+
     function getRunAttemptKind(run) {
       const raw = String(
         run?.attempt_kind
@@ -3044,6 +3050,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       if (key === 'vs_survival_pct') return Number(m._survival_vs_pct ?? (100 - Number(m.death_rate_pct ?? 100)));
       if (key === 'first_strike_pct') return Number(m._first_strike_pct ?? -1);
       if (key === 'rival_attack_share_pct') return Number(m._rival_attack_share_pct ?? -1);
+      if (key === 'avg_total_kills') return Number(m._avg_total_kills ?? 0);
       if (key === 'latency_per_turn') return modelLatencyPerTurn(m) ?? Infinity;
       if (key === 'completion_tokens_avg') return Number(m.completion_tokens_total ?? 0) / Math.max(1, Number(m.runs ?? 1));
       return Number(m[key] ?? 0);
@@ -3181,8 +3188,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
       const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
       const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
-      const npcKills = formatFloat(m.avg_npc_kills, 2, 'n/a');
-      const rivalKills = formatFloat(m.avg_rival_kills, 2, 'n/a');
+      const totalKillsRaw = Number(m.avg_npc_kills ?? 0) + Number(m.avg_rival_kills ?? 0);
+      const totalKills = formatFloat(totalKillsRaw, 2, 'n/a');
       const firstStrike = m._first_strike_pct == null ? 'n/a' : `${formatFloat(m._first_strike_pct, 1)}%`;
       const rivalFocusShare = m._rival_attack_share_pct == null ? 'n/a' : `${formatFloat(m._rival_attack_share_pct, 1)}%`;
       const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
@@ -3220,8 +3227,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <div class="ws-metric" data-tip="Estimated total cost across all runs"><div class="ws-metric-value">${cost}</div><div class="ws-metric-label">Cost</div></div>
           <div class="ws-metric" data-tip="Average map coverage percentage"><div class="ws-metric-value">${coverage}</div><div class="ws-metric-label">Coverage</div></div>
           <div class="ws-metric" data-tip="Average total attack actions per run (higher = more aggressive)"><div class="ws-metric-value">${aggression}</div><div class="ws-metric-label">Aggression</div></div>
-          <div class="ws-metric" data-tip="Average NPC kills per run"><div class="ws-metric-value">${npcKills}</div><div class="ws-metric-label">NPC Kills</div></div>
-          <div class="ws-metric" data-tip="Average rival-agent kills per run"><div class="ws-metric-value">${rivalKills}</div><div class="ws-metric-label">LLM Kills</div></div>
+          <div class="ws-metric" data-tip="Average total kills per run (NPC + rival agents)"><div class="ws-metric-value">${totalKills}</div><div class="ws-metric-label">Kills</div></div>
           <div class="ws-metric" data-tip="Among duel runs with at least one attack, percentage where this model attacked first"><div class="ws-metric-value">${firstStrike}</div><div class="ws-metric-label">First Strike</div></div>
           <div class="ws-metric" data-tip="Share of attacks directed at rival agents (avg_attack_rival_count / avg_attack_count)"><div class="ws-metric-value">${rivalFocusShare}</div><div class="ws-metric-label">Rival Focus</div></div>
           ${hasMoralFraming ? `<div class="ws-metric moral-col" data-tip="Average moral aggression index (0-100, higher = less restrained)"><div class="ws-metric-value">${moralAggression}</div><div class="ws-metric-label">Moral</div></div>` : ''}
@@ -3243,11 +3249,6 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const chartMax = globalMax + (globalMax - globalMin) * 0.15 || 1;
       const chartSpan = chartMax - chartMin || 1;
 
-      // Show/hide adaptive column
-      document.querySelectorAll('.adaptive-col').forEach(el => { el.style.display = hasAdaptive ? '' : 'none'; });
-      document.querySelectorAll('.pvp-col').forEach(el => { el.style.display = isPvpDataset ? '' : 'none'; });
-      document.querySelectorAll('.moral-col').forEach(el => { el.style.display = hasMoralFraming ? '' : 'none'; });
-
       el.innerHTML = models.map((m, i) => {
         const avgInitial = Number(m.avg_final_score ?? 0);
         const avg = noMemAvgByProfile.get(m.model_profile) ?? avgInitial;
@@ -3261,8 +3262,8 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const cost = formatUsd(m.estimated_cost_grand_total, 'n/a');
         const coverage = m.avg_coverage_pct == null ? 'n/a' : `${formatFloat(m.avg_coverage_pct, 1)}%`;
         const aggression = m.avg_attack_count == null ? 'n/a' : formatFloat(m.avg_attack_count, 2);
-        const npcKills = formatFloat(m.avg_npc_kills, 2, 'n/a');
-        const rivalKills = formatFloat(m.avg_rival_kills, 2, 'n/a');
+        const totalKillsRaw = Number(m.avg_npc_kills ?? 0) + Number(m.avg_rival_kills ?? 0);
+        const totalKills = formatFloat(totalKillsRaw, 2, 'n/a');
         const firstStrike = m._first_strike_pct == null ? 'n/a' : `${formatFloat(m._first_strike_pct, 1)}%`;
         const rivalFocusShare = m._rival_attack_share_pct == null ? 'n/a' : `${formatFloat(m._rival_attack_share_pct, 1)}%`;
         const moralAggression = m.avg_moral_aggression_index == null ? 'n/a' : formatFloat(m.avg_moral_aggression_index, 1);
@@ -3298,6 +3299,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         }
         // Store computed values on model for sorting
         m.adaptive_avg_score = adaptiveAvgByProfile.get(m.model_profile) ?? null;
+        m._avg_total_kills = totalKillsRaw;
 
         // I/O Tokens cell
         const ioRuns = Math.max(1, Number(m.runs ?? 1));
@@ -3328,13 +3330,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${ioCell}</td>
           <td>${coverage}</td>
           <td>${aggression}</td>
-          <td>${npcKills}</td>
-          <td>${rivalKills}</td>
+          <td>${totalKills}</td>
           <td data-tip="${m._first_strike_observed ? `${formatCount(m._first_strike_count)} / ${formatCount(m._first_strike_observed)} duel runs with first attack` : 'No duel run with attack observed'}">${firstStrike}</td>
           <td>${rivalFocusShare}</td>
           <td class="moral-col">${moralAggression}</td>
         </tr>`;
       }).join('');
+
+      // Must run after rows are rendered, otherwise newly-created cells stay visible.
+      syncConditionalColumns();
     }
 
     /* ── Radar Chart ── */
@@ -3342,6 +3346,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const svg = document.getElementById('radarChart');
       const legendEl = document.getElementById('radarLegend');
       if (!svg || !models.length) { if (svg) svg.innerHTML = ''; if (legendEl) legendEl.innerHTML = ''; return; }
+      const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 
       // use per-model colors from _color
       const axes = [
@@ -3362,11 +3367,11 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const maxSpread = Math.max(...models.map(x => (Number(x.best_final_score ?? 0) - Number(x.worst_final_score ?? 0))), 1);
         const survivalPct = getSurvivalVisualPct(m, maxSurvived);
         return {
-          score:      Number(m.avg_final_score ?? 0) / maxScore * 100,
-          survival:   survivalPct,
-          coverage:   Number(m.avg_coverage_pct ?? 0),
-          efficiency: Number(m.avg_conversion_efficiency_pct ?? 0),
-          stability:  100 - (spread / maxSpread * 100),
+          score:      clampPct(Number(m.avg_final_score ?? 0) / maxScore * 100),
+          survival:   clampPct(survivalPct),
+          coverage:   clampPct(Number(m.avg_coverage_pct ?? 0)),
+          efficiency: clampPct(Number(m.avg_conversion_efficiency_pct ?? 0)),
+          stability:  clampPct(100 - (spread / maxSpread * 100)),
         };
       });
 
@@ -3400,15 +3405,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         const v = vals[i];
         const mColor = m._color || '#888';
         const pts = axes.map((a, ai) => {
-          const pct = (v[a.key] ?? 0) / 100;
+          const pct = clampPct(v[a.key] ?? 0) / 100;
           return `${px(ai, R * pct)},${py(ai, R * pct)}`;
         }).join(' ');
         html += `<polygon points="${pts}" fill="${mColor}" fill-opacity="0.12"
                   stroke="${mColor}" stroke-width="2" stroke-opacity="0.8"/>`;
         // dots at vertices (with tooltip)
         axes.forEach((a, ai) => {
-          const pct = (v[a.key] ?? 0) / 100;
-          const val = (v[a.key] ?? 0).toFixed(1);
+          const valNum = clampPct(v[a.key] ?? 0);
+          const pct = valNum / 100;
+          const val = valNum.toFixed(1);
           html += `<circle cx="${px(ai, R * pct)}" cy="${py(ai, R * pct)}" r="5"
                     fill="${mColor}" opacity="0.9" data-tip="${m.model_profile}: ${a.label} ${val}" style="cursor:pointer"/>`;
         });
@@ -3679,6 +3685,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           <td>${formatCount(row.tokens_used_total)}</td>
         </tr>`;
       }).join('');
+      syncConditionalColumns();
     }
 
     function renderPairwise() {
@@ -5445,12 +5452,123 @@ def generate_compare_viewer(compare_path: Path, output_path: Path, title: str | 
     with compare_path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
 
+    _apply_estimated_cost_fallback(payload)
+
     page_title = title or "TinyWorld Compare Dashboard"
     html_doc = render_html(payload=payload, page_title=page_title)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_doc, encoding="utf-8")
     return output_path
+
+
+def _apply_estimated_cost_fallback(payload: dict[str, Any]) -> None:
+    """Best-effort cost fallback for stale compare JSON used only by viewer rendering."""
+    try:
+        pricing_path = (Path.cwd() / "configs/pricing.yaml").resolve()
+        if not pricing_path.exists():
+            return
+        pricing_cfg = load_pricing_config(pricing_path)
+    except Exception:
+        return
+
+    runs = payload.get("runs")
+    if not isinstance(runs, list):
+        return
+
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+
+        summary = run.get("summary")
+        if not isinstance(summary, dict):
+            continue
+
+        if run.get("tokens_used") is None and summary.get("tokens_used") is not None:
+            run["tokens_used"] = summary.get("tokens_used")
+
+        if run.get("estimated_cost") is not None and summary.get("estimated_cost") is not None:
+            continue
+
+        provider_id = str(summary.get("provider_id", run.get("provider_id", ""))).strip()
+        model_name = str(summary.get("model", run.get("model", ""))).strip()
+        tokens = summary.get("tokens_used", run.get("tokens_used"))
+        try:
+            tokens_int = int(tokens) if tokens is not None else None
+        except (TypeError, ValueError):
+            tokens_int = None
+        if tokens_int is None:
+            continue
+
+        pricing = resolve_model_pricing(
+            pricing_cfg=pricing_cfg,
+            provider_id=provider_id,
+            model=model_name,
+        )
+        cost = estimate_cost_from_total_tokens(pricing=pricing, total_tokens=tokens_int)
+        if cost is None:
+            continue
+
+        cost = round(float(cost), 6)
+        run["estimated_cost"] = cost
+        run["estimated_cost_source"] = run.get("estimated_cost_source") or "pricing_fallback_viewer"
+        summary["estimated_cost"] = cost
+        summary["estimated_cost_source"] = summary.get("estimated_cost_source") or "pricing_fallback_viewer"
+
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return
+
+    for model_row in models:
+        if not isinstance(model_row, dict):
+            continue
+        profile = str(model_row.get("model_profile", "")).strip()
+        if not profile:
+            continue
+
+        model_runs = [r for r in runs if isinstance(r, dict) and str(r.get("model_profile", "")).strip() == profile]
+        if not model_runs:
+            continue
+
+        baseline_cost = 0.0
+        baseline_seen = False
+        adaptive_cost = 0.0
+        adaptive_seen = False
+
+        for r in model_runs:
+            s = r.get("summary")
+            if not isinstance(s, dict):
+                continue
+            cost_val = s.get("estimated_cost", r.get("estimated_cost"))
+            try:
+                cost_f = float(cost_val) if cost_val is not None else None
+            except (TypeError, ValueError):
+                cost_f = None
+            if cost_f is None:
+                continue
+            attempt_kind = str(r.get("attempt_kind", s.get("attempt_kind", "initial"))).strip()
+            if attempt_kind == "initial":
+                baseline_cost += cost_f
+                baseline_seen = True
+            else:
+                adaptive_cost += cost_f
+                adaptive_seen = True
+
+        if model_row.get("estimated_cost_total") is None and baseline_seen:
+            model_row["estimated_cost_total"] = round(baseline_cost, 6)
+        if model_row.get("estimated_cost_adaptive") is None and adaptive_seen:
+            model_row["estimated_cost_adaptive"] = round(adaptive_cost, 6)
+        if model_row.get("estimated_cost_grand_total") is None:
+            total = 0.0
+            total_seen = False
+            if baseline_seen:
+                total += baseline_cost
+                total_seen = True
+            if adaptive_seen:
+                total += adaptive_cost
+                total_seen = True
+            if total_seen:
+                model_row["estimated_cost_grand_total"] = round(total, 6)
 
 
 def _short_path(path: Path) -> str:

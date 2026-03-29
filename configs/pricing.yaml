@@ -42,6 +42,14 @@ providers:
         output_per_million_usd: 15.00
         cache_read_per_million_usd: 0.25
 
+      openai/gpt-5.4-mini:
+        input_per_million_usd: 0.75
+        output_per_million_usd: 4.50
+
+      openai/gpt-5.1-instant:
+        input_per_million_usd: 1.25
+        output_per_million_usd: 10.00
+
       google/gemini-2.0-flash-lite:
         input_per_million_usd: 0.07
         output_per_million_usd: 0.30
