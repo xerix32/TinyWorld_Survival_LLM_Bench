@@ -16,29 +16,32 @@ It is designed to compare models fairly across identical seeds, with reproducibl
 ### Arcade Render (PvP Duel)
 ![Arcade Render PvP Duel](screenshots/compare_arcade_render.png)
 
-TinyWorld Survival Bench is a deterministic, benchmark-first grid-world runner for evaluating LLMs (and humans) as turn-based agents.
-
 ## Arcade Render (v3.x)
 - Compare dashboard includes a dedicated **Arcade Render** tab.
 - It replays selected duel runs using the integrated pixel engine (`showcase/tinyworld_arcade_engine_template.html`).
 - The left sidebar lets you pick `Seed` + `Run` and inspect `run_id` + source run reference.
 - Works from generated compare HTML (`bench.view_compare`) and from compare runs (`bench.run_compare`).
 
-## What v0.1 includes
+## What v3.x includes
 - Deterministic seeded 6x6 world generation.
-- Single-agent benchmark loop with strict action validation.
+- Single-agent and duel-native PvP benchmark loops with strict action validation.
 - Prompt templates externalized under `prompts/`.
 - Per-run JSON logs and suite CSV summaries.
+- Compare pipeline with run-scoped artifacts (`artifacts/runs/<run_id>/...`) and checkpoint/resume.
+- Optional adaptive-memory flow with `initial`, `control_rerun`, `adaptive_rerun`.
+- Optional moral framing (`--moral`) and moral/aggression KPIs in compare outputs.
+- PvP duel scenario with integrated Arcade Render tab in compare viewer.
 - Dummy deterministic baseline model wrapper.
 - OpenAI-compatible provider wrapper (usable for Vercel/Groq/LM Studio).
 - Human CLI mode using the same engine and command protocol.
 
-## Command Protocol (v0.1)
+## Command Protocol (AIB-0.3.0)
 - `move north`
 - `move south`
 - `move east`
 - `move west`
 - `gather`
+- `attack`
 - `eat`
 - `drink`
 - `rest`
@@ -131,6 +134,7 @@ python -m bench.run_compare
 - `--models dummy_v0_1`
 - `--num-runs 5`
 - `--seed-start 1`
+- `--scenario` from `configs/benchmark.yaml` (current default: `v0_2_hunt`)
 - `--providers-config configs/providers.yaml`
 - `--runs-root artifacts/runs`
 - `--model-workers 1`
@@ -147,15 +151,28 @@ python -m bench.run_compare \
 
 When `--adaptive-memory` is enabled, each model/seed runs:
 1. initial attempt on seed `N` (baseline/original score)
-2. seed reflection (same model, same-seed rerun lessons, strict JSON)
-3. same-seed rerun on `N` with session lessons + current-seed lessons injected
-4. cross-seed refinement (same model, transferable seed-agnostic lessons, strict JSON)
-5. session memory update for the next seed in the same adaptive session
+2. seed reflection (same model, strict JSON lessons)
+3. control rerun on seed `N` without memory injection (`control_rerun`)
+4. adaptive rerun on seed `N` with memory injection (`adaptive_rerun`)
+5. cross-seed refinement (transferable seed-agnostic lessons for next seeds)
+6. session memory update for the next seed in the same adaptive session
 
 Adaptive reporting is separate from baseline:
 - baseline totals/averages are computed from initial attempts
 - adaptive totals/averages are computed from memory-injected reruns
 - deltas are reported as adaptive minus baseline
+- control variance is tracked via `control_rerun` (no-memory rerun reference)
+
+PvP duel compare (duel-native pipeline):
+```bash
+python -m bench.run_compare \
+  --models vercel_gpt_oss_20b,vercel_gemini_2_5_flash_lite \
+  --scenario v0_2_pvp_duel \
+  --num-runs 2 \
+  --adaptive-memory \
+  --moral \
+  --pvp-continue
+```
 
 Example model-vs-model compare:
 ```bash
