@@ -24,6 +24,13 @@ artifacts/results/*
 artifacts/runs/*
 !artifacts/runs/.gitkeep
 
+# Generated caches/temp catalogs
+artifacts/.cache/*
+!artifacts/.cache/.gitkeep
+
+artifacts/tmp/*
+!artifacts/tmp/.gitkeep
+
 # Local secrets (use example templates instead)
 configs/providers.yaml
 configs/providers.local.yaml
