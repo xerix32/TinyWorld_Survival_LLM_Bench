@@ -26,6 +26,7 @@ twsb-aggregate = "bench.aggregate:main"
 twsb-play-human = "bench.play_human:main"
 twsb-view-log = "bench.view_log:main"
 twsb-view-compare = "bench.view_compare:main"
+twsb-view-runs = "bench.view_runs:main"
 
 [tool.setuptools]
 include-package-data = true

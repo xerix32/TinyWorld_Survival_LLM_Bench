@@ -247,6 +247,18 @@ Optional flags:
 - `--output artifacts/replays/<compare_dashboard>.html`
 - `--title \"My TinyWorld Compare\"`
 
+## Browse all runs in a local catalog (sortable + regenerate)
+```bash
+python -m bench.view_runs --serve 8080 --open-browser
+```
+
+What you get:
+- sortable table with run id, start time, scenario, protocol, bench/engine versions, models/seeds
+- `Open HTML` button for existing compare dashboards
+- `Regenerate` button (rebuild compare HTML from the run's compare JSON)
+- `Cmd Viewer` (copy `bench.view_compare` command)
+- `Cmd Bench` (copy suggested `bench.run_compare` command; not executed)
+
 ## Play manually (human CLI)
 ```bash
 python -m bench.play_human --seed 7

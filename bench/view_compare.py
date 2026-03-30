@@ -76,7 +76,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
     }
 
     .wrap {
-      max-width: 1400px;
+      max-width: 1600px;
       margin: 0 auto;
       padding: 16px 20px;
       display: grid;
@@ -748,6 +748,23 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       border-radius: var(--radius-sm);
       max-height: 400px;
     }
+    .table-wrap.expanded { max-height: none; }
+    .lb-expand-btn {
+      display: block;
+      margin: 6px auto 0;
+      padding: 4px 16px;
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .lb-expand-btn:hover { color: var(--text); border-color: var(--border-bright); }
 
     .table-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
     .table-wrap::-webkit-scrollbar-track { background: var(--bg-raised); }
@@ -1837,6 +1854,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <tbody id=\"lbBody\"></tbody>
           </table>
         </div>
+        <button class=\"lb-expand-btn\" id=\"lbExpandBtn\" type=\"button\">Show all</button>
       </div>
 
       <div class=\"charts-row\">
@@ -2291,6 +2309,16 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         }
       });
     });
+
+    /* ── Leaderboard expand/collapse ── */
+    const lbExpandBtn = document.getElementById('lbExpandBtn');
+    if (lbExpandBtn) {
+      const lbWrap = lbExpandBtn.previousElementSibling;
+      lbExpandBtn.addEventListener('click', () => {
+        const expanded = lbWrap.classList.toggle('expanded');
+        lbExpandBtn.textContent = expanded ? 'Collapse' : 'Show all';
+      });
+    }
 
     function initTooltips() {
       tooltipEl = document.createElement('div');

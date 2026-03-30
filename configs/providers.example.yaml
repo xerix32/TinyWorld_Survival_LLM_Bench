@@ -190,6 +190,12 @@ model_profiles:
     temperature: 0.2
     max_tokens: 12000
 
+  vercel_nemotron_3_super_120b_a12b:
+    provider: vercel_gateway
+    model: nvidia/nemotron-3-super-120b-a12b
+    temperature: 0.2
+    max_tokens: 12000
+
   vercel_gpt_4_1_nano:
     provider: vercel_gateway
     model: openai/gpt-4.1-nano
