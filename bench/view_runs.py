@@ -71,8 +71,17 @@ def _load_compare_meta(compare_json: Path) -> dict:
         payload = json.loads(compare_json.read_text(encoding="utf-8"))
     except Exception:
         return {}
-    meta = payload.get("meta") if isinstance(payload, dict) else None
-    return meta if isinstance(meta, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+    meta = payload.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    # Extract max score across all models
+    model_summaries = payload.get("models") or payload.get("model_summaries") or []
+    if isinstance(model_summaries, list) and model_summaries:
+        scores = [s.get("avg_final_score") for s in model_summaries if isinstance(s, dict) and s.get("avg_final_score") is not None]
+        if scores:
+            meta["max_score"] = max(scores)
+    return meta
 
 
 def _build_bench_command(meta: dict) -> str:
@@ -139,6 +148,8 @@ def _file_fingerprint(path: Path | None) -> dict[str, Any] | None:
 def _build_row(run_id: str, compare_json: Path | None, compare_html: Path | None, meta: dict[str, Any]) -> dict[str, Any]:
     models = meta.get("models")
     seed_list = meta.get("seed_list")
+    models_list = models if isinstance(models, list) else []
+    is_human = any("human" in str(m).lower() for m in models_list)
     return {
         "run_id": run_id,
         "started": _run_id_to_local_started(run_id) or "n/a",
@@ -146,9 +157,11 @@ def _build_row(run_id: str, compare_json: Path | None, compare_html: Path | None
         "protocol": str(meta.get("protocol_version", "n/a")),
         "bench": str(meta.get("bench_version", "n/a")),
         "engine": str(meta.get("engine_version", "n/a")),
-        "models": len(models) if isinstance(models, list) else 0,
+        "models": len(models_list),
         "seeds": len(seed_list) if isinstance(seed_list, list) else 0,
         "adaptive": "yes" if bool(meta.get("adaptive_mode")) else "no",
+        "is_human": is_human,
+        "max_score": meta.get("max_score"),
         "compare_json": _short_path(compare_json) if compare_json else "",
         "compare_html": _short_path(compare_html) if compare_html else "",
         "can_regen": bool(compare_json),
@@ -343,11 +356,13 @@ def _render_index_html() -> str:
     }
     .pager .info { color: #9ec3df; min-width: 210px; text-align: right; }
     .muted { color: #7ea1bf; }
+    .main-row:hover { background: #1e2530; }
+    .detail-row td { font-size: 12px; }
   </style>
 </head>
 <body>
   <div class=\"wrap\">
-    <h1>TinyWorld Runs Catalog</h1>
+    <h1>TinyWorld Runs Catalog <span style="font-size:0.55em;color:#7ea1bf;font-weight:400">v""" + __version__ + """</span></h1>
     <div class=\"bar\">
       <button id=\"refreshBtn\">Refresh</button>
       <input id=\"filterInput\" type=\"text\" placeholder=\"Filter by run/scenario/protocol/model count...\" />
@@ -357,7 +372,7 @@ def _render_index_html() -> str:
     <div class=\"table-wrap\">
       <table id=\"runsTable\">
         <colgroup id=\"runsCols\">
-          <col style=\"width: 160px\" />
+          <col style=\"width: 170px\" />
           <col style=\"width: 150px\" />
           <col style=\"width: 118px\" />
           <col style=\"width: 90px\" />
@@ -366,8 +381,7 @@ def _render_index_html() -> str:
           <col style=\"width: 62px\" />
           <col style=\"width: 60px\" />
           <col style=\"width: 78px\" />
-          <col style=\"width: 300px\" />
-          <col style=\"width: 300px\" />
+          <col style=\"width: 80px\" />
           <col style=\"width: 196px\" />
         </colgroup>
         <thead>
@@ -381,9 +395,8 @@ def _render_index_html() -> str:
             <th data-k=\"models\" data-col-idx=\"6\"><span class=\"th-wrap\">Models <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
             <th data-k=\"seeds\" data-col-idx=\"7\"><span class=\"th-wrap\">Seeds <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
             <th data-k=\"adaptive\" data-col-idx=\"8\"><span class=\"th-wrap\">Adaptive <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
-            <th data-k=\"compare_json\" data-col-idx=\"9\"><span class=\"th-wrap\">Compare JSON <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
-            <th data-k=\"compare_html\" data-col-idx=\"10\"><span class=\"th-wrap\">HTML <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
-            <th data-col-idx=\"11\"><span class=\"th-wrap\">Actions</span><span class=\"resizer\"></span></th>
+            <th data-k=\"max_score\" data-col-idx=\"9\"><span class=\"th-wrap\">Max Score <span class=\"sort-ind\">↕</span></span><span class=\"resizer\"></span></th>
+            <th data-col-idx=\"10\"><span class=\"th-wrap\">Actions</span><span class=\"resizer\"></span></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -453,6 +466,10 @@ def _render_index_html() -> str:
     function comparator(a, b) {
       const av = a[sortKey];
       const bv = b[sortKey];
+      const aN = av == null; const bN = bv == null;
+      if (aN && bN) return 0;
+      if (aN) return 1;
+      if (bN) return -1;
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sortDir;
       return String(av).localeCompare(String(bv)) * sortDir;
     }
@@ -462,7 +479,7 @@ def _render_index_html() -> str:
       let out = [...rows].sort(comparator);
       if (!q) return out;
       return out.filter((r) => {
-        const s = `${r.run_id} ${r.started} ${r.scenario} ${r.protocol} ${r.bench} ${r.engine} ${r.models} ${r.seeds} ${r.adaptive}`.toLowerCase();
+        const s = `${r.run_id} ${r.started} ${r.scenario} ${r.protocol} ${r.bench} ${r.engine} ${r.models} ${r.seeds} ${r.adaptive} ${r.is_human ? 'human' : ''}`.toLowerCase();
         return s.includes(q);
       });
     }
@@ -516,11 +533,21 @@ def _render_index_html() -> str:
       document.getElementById('pagePrevBtn').disabled = (pageIndex <= 0);
       document.getElementById('pageNextBtn').disabled = (pageIndex >= totalPages - 1 || total === 0);
 
-      body.innerHTML = pageRows.map((r) => {
+      body.innerHTML = pageRows.map((r, ri) => {
         const openDisabled = r.can_open ? '' : 'disabled';
         const regenDisabled = r.can_regen ? '' : 'disabled';
-        return `<tr>
-          <td class="mono run-id">${esc(r.run_id)}</td>
+        const humanTag = r.is_human ? '<div style="font-size:10px;color:#ffc107;margin-top:2px">human</div>' : '';
+        const rowIdx = start + ri;
+        const detailRow = `<tr class="detail-row" id="detail-${rowIdx}" style="display:none">
+          <td colspan="11" style="padding:8px 12px;background:#1a1d23;border-bottom:1px solid #333">
+            <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:0.78rem">
+              <div><span style="color:#7ea1bf">Compare JSON:</span> <span class="mono">${esc(r.compare_json) || 'n/a'}</span></div>
+              <div><span style="color:#7ea1bf">Dashboard HTML:</span> <span class="mono">${esc(r.compare_html) || 'n/a'}</span></div>
+            </div>
+          </td>
+        </tr>`;
+        return `<tr class="main-row" style="cursor:pointer" onclick="toggleDetail(${rowIdx})">
+          <td class="mono run-id">${esc(r.run_id)}${humanTag}</td>
           <td class="mono">${startedHtml(r.started)}</td>
           <td>${esc(r.scenario)}</td>
           <td>${esc(r.protocol)}</td>
@@ -529,17 +556,16 @@ def _render_index_html() -> str:
           <td>${esc(r.models)}</td>
           <td>${esc(r.seeds)}</td>
           <td>${esc(r.adaptive)}</td>
-          <td class="mono path">${pathHtml(r.compare_json)}</td>
-          <td class="mono path">${pathHtml(r.compare_html)}</td>
+          <td style="text-align:right;font-weight:600;color:${r.max_score != null ? '#4caf50' : '#555'}">${r.max_score != null ? r.max_score : '-'}</td>
           <td>
             <div class="act">
-              <button class="icon-btn" ${openDisabled} title="Open HTML" aria-label="Open HTML" onclick="window.open('/${esc(r.compare_html)}','_blank')">🌐</button>
-              <button class="icon-btn" ${regenDisabled} title="Regenerate viewer HTML" aria-label="Regenerate viewer HTML" onclick="regen('${esc(r.run_id)}')">♻️</button>
-              <button class="icon-btn" title="Copy view_compare command" aria-label="Copy view_compare command" onclick="copyText(${JSON.stringify(r.regen_cmd)})">📋V</button>
-              <button class="icon-btn" title="Copy run_compare command" aria-label="Copy run_compare command" onclick="copyText(${JSON.stringify(r.bench_cmd)})">📋B</button>
+              <button class="icon-btn" ${openDisabled} title="Open HTML" aria-label="Open HTML" onclick="event.stopPropagation();window.open('/${esc(r.compare_html)}','_blank')">🌐</button>
+              <button class="icon-btn" ${regenDisabled} title="Regenerate viewer HTML" aria-label="Regenerate viewer HTML" onclick="event.stopPropagation();regen('${esc(r.run_id)}')">♻️</button>
+              <button class="icon-btn" title="Copy view_compare command" aria-label="Copy view_compare command" onclick="event.stopPropagation();copyText(${JSON.stringify(r.regen_cmd)})">📋V</button>
+              <button class="icon-btn" title="Copy run_compare command" aria-label="Copy run_compare command" onclick="event.stopPropagation();copyText(${JSON.stringify(r.bench_cmd)})">📋B</button>
             </div>
           </td>
-        </tr>`;
+        </tr>${detailRow}`;
       }).join('');
       updateSortIndicators();
     }
@@ -645,11 +671,16 @@ def _render_index_html() -> str:
         if (sortKey === k) sortDir *= -1;
         else {
           sortKey = k;
-          sortDir = 1;
+          sortDir = -1;
         }
         pageIndex = 0;
         render();
       });
+    }
+
+    function toggleDetail(idx) {
+      const row = document.getElementById('detail-' + idx);
+      if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
     }
 
     setupColumnResizers();
