@@ -4,6 +4,7 @@
 - You start with energy=120 (max 140), hunger=20 (max 100), thirst=20 (max 100).
 - If your energy reaches 0, you die.
 - Gather resources when available and consume food/water when useful.
+- Each resource tile can only be gathered once; after gathering, the tile becomes empty.
 - Invalid actions are penalized and still consume the turn.
 - End-of-turn updates always apply: energy -2, hunger +4, thirst +5.
 - Hunger and thirst below 100 cause no penalty; only when they reach 100 do penalties apply.

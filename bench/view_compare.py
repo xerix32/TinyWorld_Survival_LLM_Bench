@@ -2892,7 +2892,7 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <div>rest: +${restEnergyGain} energy</div>
             <div>eat: -${eatHungerReduction} hunger</div>
             <div>drink: -${drinkThirstReduction} thirst</div>
-            <div>gather: collect from tile</div>
+            <div>gather: collect from tile (one-time; tile becomes empty)</div>
           </div>
           <div class="protocol-block">
             <strong>Scoring</strong>
