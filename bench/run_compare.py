@@ -2171,7 +2171,7 @@ def _build_from_logs(
 
     profile_order: dict[str, int] = {}
     seed_order: dict[int, int] = {}
-    protocol_version = "AIB-0.3.0"
+    protocol_version = "AIB-0.3.1"
     scenario = "-"
     pricing_cfg: dict[str, Any] | None = None
     pricing_path = Path(pricing_config_path)
@@ -2217,7 +2217,7 @@ def _build_from_logs(
                 run_summary=summary,
                 rules_cfg=benchmark_rules if isinstance(benchmark_rules, dict) else {},
                 initial_tiles=initial_tiles if isinstance(initial_tiles, list) else [],
-                protocol_version=str(run_log.get("protocol_version", "AIB-0.3.0")),
+                protocol_version=str(run_log.get("protocol_version", "AIB-0.3.1")),
             )
             summary["analysis_version"] = analysis["analysis_version"]
             summary["analysis_schema_version"] = analysis["analysis_schema_version"]
@@ -2470,7 +2470,7 @@ def _derive_duel_view_logs(
     benchmark_cfg = config_snapshot.get("benchmark", {}) if isinstance(config_snapshot, dict) else {}
     rules_cfg = benchmark_cfg.get("rules", {}) if isinstance(benchmark_cfg, dict) else {}
     initial_tiles = canonical.get("world_snapshots", {}).get("initial_tiles", [])
-    protocol_version = str(canonical.get("protocol_version", summary_a.get("protocol_version", "AIB-0.3.0")))
+    protocol_version = str(canonical.get("protocol_version", summary_a.get("protocol_version", "AIB-0.3.1")))
 
     if summary_a.get("model_profile") != model_a_profile:
         summary_a["model_profile"] = model_a_profile
@@ -4174,7 +4174,7 @@ def main() -> None:
     adaptive_pair_rows: list[dict[str, Any]] = []
     adaptive_memory_by_model: dict[str, list[str]] = {}
     scenario = str(args.scenario or benchmark_cfg.get("default_scenario", "-"))
-    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.3.0"))
+    protocol_version = str(benchmark_cfg.get("protocol_version", "AIB-0.3.1"))
     model_profiles: list[str] = []
     seed_list: list[int] = []
     requested_models: list[str] = []

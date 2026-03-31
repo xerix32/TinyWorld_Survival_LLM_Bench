@@ -722,6 +722,15 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       font-family: var(--font-mono);
     }
 
+    .protocol-summary {
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      line-height: 1.45;
+      border-top: 1px dashed var(--border);
+      padding-top: 8px;
+    }
+
     /* ── PANEL CARD ── */
     .panel {
       background: var(--bg-card);
@@ -2837,6 +2846,19 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
       const energyMax = Math.max(1, numberOr(rules.energy_max, 100));
       const hungerMax = Math.max(1, numberOr(rules.hunger_max, 100));
       const thirstMax = Math.max(1, numberOr(rules.thirst_max, 100));
+      const matchTurnsRaw = Number(meta?.max_turns ?? runs[0]?.summary?.max_turns ?? 50);
+      const matchTurns = Number.isFinite(matchTurnsRaw) && matchTurnsRaw > 0 ? Math.round(matchTurnsRaw) : 50;
+      const startEnergy = numberOr(rules.start_energy, '-');
+      const startHunger = numberOr(rules.start_hunger, '-');
+      const startThirst = numberOr(rules.start_thirst, '-');
+      const passiveEnergyLoss = numberOr(rules.passive_energy_loss, 0);
+      const passiveHungerGain = numberOr(rules.passive_hunger_gain, '-');
+      const passiveThirstGain = numberOr(rules.passive_thirst_gain, '-');
+      const starvationPenalty = numberOr(rules.starvation_energy_penalty, 0);
+      const dehydrationPenalty = numberOr(rules.dehydration_energy_penalty, 0);
+      const restEnergyGain = numberOr(rules.rest_energy_gain, '-');
+      const eatHungerReduction = numberOr(rules.eat_hunger_reduction, '-');
+      const drinkThirstReduction = numberOr(rules.drink_thirst_reduction, '-');
 
       panel.innerHTML = `
         <div class="protocol-head">Protocol ${p.protocol_version || meta.protocol_version || '-'}</div>
@@ -2849,27 +2871,27 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           </div>
           <div class="protocol-block">
             <strong>Start State</strong>
-            <div>Energy ${numberOr(rules.start_energy, '-')}/${energyMax}</div>
-            <div>Hunger ${numberOr(rules.start_hunger, '-')}/${hungerMax}</div>
-            <div>Thirst ${numberOr(rules.start_thirst, '-')}/${thirstMax}</div>
+            <div>Energy ${startEnergy}/${energyMax}</div>
+            <div>Hunger ${startHunger}/${hungerMax}</div>
+            <div>Thirst ${startThirst}/${thirstMax}</div>
           </div>
           <div class="protocol-block">
             <strong>Passive / Turn</strong>
-            <div>Energy ${formatSignedScore(-numberOr(rules.passive_energy_loss, 0))}</div>
-            <div>Hunger +${numberOr(rules.passive_hunger_gain, '-')}</div>
-            <div>Thirst +${numberOr(rules.passive_thirst_gain, '-')}</div>
+            <div>Energy ${formatSignedScore(-passiveEnergyLoss)}</div>
+            <div>Hunger +${passiveHungerGain}</div>
+            <div>Thirst +${passiveThirstGain}</div>
           </div>
           <div class="protocol-block">
             <strong>Critical Thresholds</strong>
-            <div>hunger=${hungerMax}: ${formatSignedScore(-numberOr(rules.starvation_energy_penalty, 0))} energy</div>
-            <div>thirst=${thirstMax}: ${formatSignedScore(-numberOr(rules.dehydration_energy_penalty, 0))} energy</div>
+            <div>hunger=${hungerMax}: ${formatSignedScore(-starvationPenalty)} energy</div>
+            <div>thirst=${thirstMax}: ${formatSignedScore(-dehydrationPenalty)} energy</div>
             <div>death: energy &lt;= 0</div>
           </div>
           <div class="protocol-block">
             <strong>Action Effects</strong>
-            <div>rest: +${numberOr(rules.rest_energy_gain, '-')} energy</div>
-            <div>eat: -${numberOr(rules.eat_hunger_reduction, '-')} hunger</div>
-            <div>drink: -${numberOr(rules.drink_thirst_reduction, '-')} thirst</div>
+            <div>rest: +${restEnergyGain} energy</div>
+            <div>eat: -${eatHungerReduction} hunger</div>
+            <div>drink: -${drinkThirstReduction} thirst</div>
             <div>gather: collect from tile</div>
           </div>
           <div class="protocol-block">
@@ -2880,6 +2902,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
             <div>invalid: ${formatSignedScore(scoring.invalid_action)}</div>
             <div>death: ${formatSignedScore(scoring.death)}</div>
           </div>
+        </div>
+        <div class="protocol-summary">
+          Match length: ${matchTurns} turns.<br/>
+          Game loop (text): you start at Energy ${startEnergy}/${energyMax}, Hunger ${startHunger}/${hungerMax}, Thirst ${startThirst}/${thirstMax}. Every turn applies passive drain (Energy -${passiveEnergyLoss}, Hunger +${passiveHungerGain}, Thirst +${passiveThirstGain}). If Hunger or Thirst reaches max, extra Energy penalties apply each turn. Actions manage pressure (rest/eat/drink/gather), score rewards survival and useful actions, invalid outputs waste the turn and lose points, and death happens at Energy &lt;= 0.
         </div>
         <div class="protocol-note">
           Parser: ${p.parser_case_mode || '-'} | Invalid policy: ${p.invalid_action_policy || '-'}
@@ -4793,6 +4819,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
           ${detailedSummary
             ? `<details class="analysis-detail"><summary>Deterministic Analysis</summary><div class="detail-body">${escapeHtml(detailedSummary)}</div></details>`
             : ''}
+          <button type="button" class="play-seed-btn" title="Play this seed as human in the browser" style="margin-top:6px;padding:4px 12px;font-size:0.72rem;font-family:var(--font);background:#333;color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer"
+            onclick="window.open('http://127.0.0.1:8765/?seed=${duel.seed}&scenario=${encodeURIComponent(DATA.meta?.scenario || 'v0_2_hunt')}&autostart=1', '_blank')">
+            &#9654; Play This Seed
+          </button>
         `;
 
         replayHeader.querySelectorAll('[data-switch-duel]').forEach(btn => {
@@ -4883,6 +4913,10 @@ def render_html(payload: dict[str, Any], page_title: str) -> str:
         ${detailedSummary
           ? `<details class="analysis-detail"><summary>Deterministic Analysis</summary><div class="detail-body">${escapeHtml(detailedSummary)}</div></details>`
           : ''}
+        <button type="button" class="play-seed-btn" title="Play this seed as human in the browser" style="margin-top:6px;padding:4px 12px;font-size:0.72rem;font-family:var(--font);background:#333;color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer"
+          onclick="window.open('http://127.0.0.1:8765/?seed=${run.seed}&scenario=${encodeURIComponent(DATA.meta?.scenario || 'v0_2_hunt')}&autostart=1', '_blank')">
+          &#9654; Play This Seed
+        </button>
       `;
 
       replayHeader.querySelectorAll('[data-switch-run]').forEach(btn => {

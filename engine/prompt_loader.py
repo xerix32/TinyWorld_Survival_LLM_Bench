@@ -81,7 +81,9 @@ class PromptLoader:
         }
 
     def render_system_prompt(self, context: dict[str, Any] | None = None) -> str:
-        return self.render_template("system/agent_core.md", context or {})
+        effective_context = dict(context or {})
+        effective_context.setdefault("max_turns", 50)
+        return self.render_template("system/agent_core.md", effective_context)
 
     def render_turn_prompt(
         self,

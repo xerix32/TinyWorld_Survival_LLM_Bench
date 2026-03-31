@@ -695,7 +695,7 @@ def _build_run_analytics(
     effective_protocol_version = str(
         protocol_version
         or run_summary.get("protocol_version")
-        or "AIB-0.3.0"
+        or "AIB-0.3.1"
     )
     run_identity = {
         "protocol_version": effective_protocol_version,
@@ -880,7 +880,12 @@ def run_match_once(
     initial_tiles = serialize_tiles(world)
     initial_npcs = serialize_npcs(world)
     prompt_loader = PromptLoader(prompts_dir)
-    system_prompt = prompt_loader.render_system_prompt({"moral_mode": bool(moral_mode)})
+    system_prompt = prompt_loader.render_system_prompt(
+        {
+            "moral_mode": bool(moral_mode),
+            "max_turns": run_max_turns,
+        }
+    )
     prompt_metadata = prompt_loader.get_prompt_metadata()
     system_prompt_sha256 = prompt_pair_hash(system_prompt, "")
 
