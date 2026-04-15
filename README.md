@@ -5,6 +5,35 @@ Version: **3.0.30**
 TinyWorld Survival Bench is a deterministic benchmark framework for evaluating LLM decision-making in grid-world survival and duel scenarios.
 It is designed to compare models fairly across identical seeds, with reproducible logs, strict action protocol validation, and interactive HTML analysis dashboards.
 
+## Quick Start (Setup + Config + Run)
+```bash
+# 1) Install
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
+
+# 2) Create local provider config files from tracked templates
+#    (copy them; do NOT rename/remove the *.example files)
+cp configs/providers.example.yaml configs/providers.yaml
+cp configs/providers.local.example.yaml configs/providers.local.yaml
+
+# 3) Set provider keys (if using hosted providers)
+export VERCEL_AI_GATEWAY_API_KEY="<your_vercel_gateway_key>"
+export GROQ_API_KEY="<your_groq_key>"
+
+# 4) Run a single match
+python -m bench.run_match --seed 7 --model local_gpt_oss_20b --providers-config configs/providers.local.yaml
+
+# 5) Run a small compare
+python -m bench.run_compare --models dummy_v0_1,local_gpt_oss_20b --seeds 1,2
+```
+
+Notes:
+- `configs/providers.yaml` and `configs/providers.local.yaml` are local-only and git-ignored.
+- For LM Studio/local backends you can keep `api_key: lm-studio` and skip hosted API keys.
+- If you already have local config files, do not overwrite them with `cp`.
+
 ## Screenshots
 
 ### Compare Leaderboard
